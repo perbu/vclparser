@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/varnish/vclparser/ast"
+	"github.com/varnish/vclparser/parser"
 	"github.com/varnish/vclparser/types"
 	"github.com/varnish/vclparser/vmod"
 )
@@ -64,4 +65,19 @@ func ValidateVCLFile(program *ast.Program, registry *vmod.Registry) ([]string, e
 	}
 
 	return nil, nil
+}
+
+// ParseWithCustomVMODValidation parses VCL input and performs VMOD validation with a custom registry
+func ParseWithCustomVMODValidation(input, filename string, registry *vmod.Registry) (*ast.Program, []string, error) {
+	// Parse the VCL code
+	program, err := parser.Parse(input, filename)
+	if err != nil {
+		return program, nil, err
+	}
+
+	// Perform VMOD validation with the provided registry
+	analyzer := NewAnalyzer(registry)
+	validationErrors := analyzer.Analyze(program)
+
+	return program, validationErrors, nil
 }

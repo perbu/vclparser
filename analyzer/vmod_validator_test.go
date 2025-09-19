@@ -69,7 +69,7 @@ $Method BACKEND .backend(STRING key)`
 func parseVCL(t *testing.T, vclCode string) *ast.Program {
 	// Use lexer and parser directly to avoid import cycle
 	l := lexer.New(vclCode, "test.vcl")
-	p := parser.New(l)
+	p := parser.New(l, vclCode, "test.vcl")
 	program := p.ParseProgram()
 
 	if len(p.Errors()) > 0 {
@@ -132,6 +132,10 @@ sub vcl_recv {
 	}
 
 	// Test function call without import
+	// Create a fresh symbol table for this test
+	symbolTable = types.NewSymbolTable()
+	validator = NewVMODValidator(registry, symbolTable)
+
 	vclCode = `vcl 4.0;
 
 sub vcl_recv {

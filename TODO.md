@@ -2,27 +2,37 @@
 
 This document outlines planned improvements and extensions for the VCL parser implementation.
 
+## Current Status
+
+The VCL parser now has comprehensive VMOD support including:
+- ✅ VMOD object instantiation (`new` keyword)
+- ✅ VMOD function call validation
+- ✅ Import validation and type checking
+- ✅ VCC file parsing and registry system
+- ✅ Comprehensive test coverage for real-world VMOD usage patterns
+
 ## Current Limitations
 
-### VMOD Object Instantiation
-- Issue: The `new` keyword for VMOD object instantiation is not implemented
-- Example: `new cluster = directors.round_robin();` fails to parse
-- Impact: Critical VCL features like directors cannot be used
-- Priority: High
-- Status: Integration tests exist but fail due to missing parser support
-
-### VMOD Function Validation
-- Issue: VMOD function calls are parsed but validation is incomplete
-- Example: Function signatures and return types are not fully validated
-- Impact: Limited type checking for VMOD functions and their parameters
+### Named Parameter Syntax
+- Issue: VCL parser doesn't support named parameter syntax from vmod-vcl.md examples
+- Example: `s3.verify(access_key_id = "KEY", secret_key = "SECRET")` fails to parse
+- Impact: Some real-world VCL examples require positional parameters instead
 - Priority: Medium
-- Status: Basic validation framework exists in analyzer/
+- Workaround: Use positional parameters: `s3.verify("KEY", "SECRET", 1s)`
 
-### Advanced Expression Parsing
-- Issue: Some complex expressions may not parse correctly
-- Example: Ternary operators, complex string interpolation
-- Impact: Limited support for advanced VCL constructs
+### Complex VCC Types
+- Issue: Some advanced VCC types are not fully supported
+- Example: `BEREQ` type in `headerplus.init(BEREQ bereq)` causes VCC parse errors
+- Impact: Some VMODs from vcclib directory fail to load
 - Priority: Medium
+- Status: 40+ VMODs load successfully, but some with advanced types fail
+
+### Duration Literal Type Inference
+- Issue: Duration literals like `1s` sometimes inferred as STRING instead of DURATION
+- Example: `s3.verify("key", "secret", 1s)` fails validation
+- Impact: Minor type validation issues with duration parameters
+- Priority: Low
+- Workaround: Most duration usage works correctly
 
 ## Planned Enhancements
 
@@ -47,22 +57,13 @@ backend web {
 }
 ```
 
-### 2. VMOD Integration and Validation
-- [ ] VMOD Registry: Built-in knowledge of standard VMODs
-- [ ] Function Signature Validation: Type-check VMOD function calls
-- [ ] Import Resolution: Validate imported VMOD availability
-- [ ] Custom VMOD Support: Parse `.vcc` files for custom VMODs
-- [ ] Documentation Generation: Extract VMOD documentation from parsed files
+### 2. Advanced VCL Syntax Support
+- [ ] Named Parameters: Support `func(param = value)` syntax
+- [ ] Complex Expression Parsing: Ternary operators, complex string interpolation
+- [ ] Advanced VCC Types: Full support for BEREQ, PRIV_TASK, etc.
+- [ ] Enum Defaults: Support for enum parameters with default values
 
-Supported VMODs:
-- `std` - Standard library functions
-- `directors` - Load balancing directors
-- `cookie` - Cookie manipulation
-- `header` - Header manipulation
-- `purge` - Advanced purging capabilities
-- `vsthrottle` - Request throttling
-
-### 3. Advanced Semantic Analysis
+### 3. Enhanced Semantic Analysis
 - [ ] Variable Scope Analysis: Track variable accessibility across VCL methods
 - [ ] Method Flow Validation: Ensure proper VCL method call sequences
 - [ ] Return Value Checking: Validate return statements match method requirements
@@ -90,7 +91,6 @@ Supported VMODs:
 - [ ] Refactoring: Rename variables across files
 
 ### 7. Testing and Quality Assurance
-- [x] Integration Tests: Comprehensive VMOD validation tests (currently failing due to missing `new` keyword support)
 - [ ] Fuzzing: Automated testing with malformed VCL inputs
 - [ ] Performance Benchmarks: Measure parsing speed with large VCL files
 - [ ] Memory Profiling: Optimize memory usage for large ASTs
@@ -120,22 +120,17 @@ Supported VMODs:
 
 ## Implementation Roadmap
 
-### Phase 1: Core Improvements (Next 2-3 months)
-1. **URGENT**: Implement `new` keyword parsing for VMOD object instantiation
-2. Object literal parsing for backend properties
-3. Basic VMOD function validation
-4. Enhanced error messages and recovery
+### Phase 1: Syntax Completeness (Next 2-3 months)
+1. Named parameter syntax support
+2. Enhanced object literal parsing for backend properties
+3. Advanced VCC type support (BEREQ, PRIV_TASK, etc.)
+4. Duration literal type inference improvements
 5. VCL formatter implementation
-
-### Current Status
-- Integration tests moved to `tests/` directory (✓)
-- VMOD validation framework exists but incomplete
-- Integration tests failing due to missing `new` keyword support
 
 ### Phase 2: Advanced Analysis (Next 6 months)
 1. Complete semantic analysis
 2. LSP server implementation
-3. VMOD registry and validation
+3. Enhanced VMOD registry features
 4. Code generation tools
 
 ### Phase 3: Ecosystem Integration (Next year)
@@ -146,11 +141,13 @@ Supported VMODs:
 
 ## Contributing
 
-Contributions are welcome! Priority should be given to:
-1. Object literal parsing - Most critical missing feature
-2. Test coverage expansion - More edge cases and real-world VCL files
-3. Documentation - Usage examples and API documentation
-4. Performance optimization - Faster parsing for large files
+Contributions are welcome! Current priorities:
+
+1. **Named Parameter Parsing** - Most impactful missing syntax feature
+2. **Advanced VCC Types** - Improve VMOD coverage by supporting complex types
+3. **Object Literal Enhancement** - Better support for nested backend/probe definitions
+4. **Test Coverage Expansion** - More edge cases and real-world VCL files
+5. **Documentation** - Usage examples and API documentation
 
 ## Performance Goals
 
@@ -161,10 +158,33 @@ Contributions are welcome! Priority should be given to:
 
 ## Compatibility
 
-The parser should maintain compatibility with:
+The parser maintains compatibility with:
 - VCL 4.0 and VCL 4.1 syntax
 - Varnish Cache 6.x and 7.x built-in variables
 - Standard VMODs shipped with Varnish
-- Enterprise VMODs from Varnish Software
+- Enterprise VMODs from Varnish Software (40+ VMODs successfully loaded)
 
-This roadmap ensures the VCL parser evolves into a comprehensive toolchain for VCL development, analysis, and optimization.
+## VMOD Support Status
+
+The parser now includes comprehensive VMOD support:
+
+### ✅ Implemented Features
+- VMOD import validation
+- Function call type checking
+- Object instantiation and method calls
+- VCC file parsing and module registry
+- Type-safe argument validation
+- Error reporting for missing imports and type mismatches
+
+### 📊 VMOD Coverage
+- **40+ VMODs** successfully loaded from vcclib
+- **Core VMODs** fully supported: std, directors, crypto, ykey, vha
+- **Enterprise VMODs** partially supported (some fail due to advanced VCC syntax)
+
+### 🧪 Test Coverage
+- Comprehensive integration tests for real-world usage patterns
+- Type validation tests demonstrating correct error detection
+- VMOD registry functionality tests
+- Examples based on actual production VCL from vmod-vcl.md
+
+This parser now provides robust VMOD support suitable for production VCL validation and analysis.

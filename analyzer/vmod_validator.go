@@ -51,6 +51,8 @@ func (v *VMODValidator) visit(node ast.Node) {
 		v.validateMemberExpression(n)
 	case *ast.SubDecl:
 		v.visitSubroutine(n)
+	case *ast.NewStatement:
+		v.validateNewStatement(n)
 	default:
 		// Visit children for other node types
 		v.visitChildren(node)
@@ -112,12 +114,19 @@ func (v *VMODValidator) validateCallExpression(callExpr *ast.CallExpression) {
 	}
 
 	// Check if this is a VMOD function call or object method call
-	_, isModuleCall := memberExpr.Object.(*ast.Identifier)
-	if isModuleCall {
-		// Module function call: module.function()
-		v.validateModuleFunctionCall(memberExpr, callExpr.Arguments)
+	if objIdent, ok := memberExpr.Object.(*ast.Identifier); ok {
+		// Check if this identifier refers to a known VMOD object first
+		objectSymbol := v.symbolTable.Lookup(objIdent.Name)
+		if objectSymbol != nil && objectSymbol.Kind == types.SymbolVMODObject {
+			// Object method call: object.method()
+			v.validateObjectMethodCall(memberExpr, callExpr.Arguments)
+		} else {
+			// Treat as module function call: module.function()
+			// This will handle both known and unknown modules appropriately
+			v.validateModuleFunctionCall(memberExpr, callExpr.Arguments)
+		}
 	} else {
-		// Object method call: object.method()
+		// More complex expressions - treat as object method call
 		v.validateObjectMethodCall(memberExpr, callExpr.Arguments)
 	}
 
@@ -195,6 +204,69 @@ func (v *VMODValidator) validateObjectMethodCall(memberExpr *ast.MemberExpressio
 	// For now, we'll need to track the object's module and type
 	// This would require extending the Symbol struct to store more metadata
 	// For this implementation, we'll assume the object is valid if it's in the symbol table
+}
+
+// validateNewStatement validates a VMOD object instantiation statement
+func (v *VMODValidator) validateNewStatement(newStmt *ast.NewStatement) {
+	// Extract variable name being assigned
+	varName, ok := newStmt.Name.(*ast.Identifier)
+	if !ok {
+		v.addError("new statement: variable name must be an identifier")
+		return
+	}
+
+	// Extract VMOD constructor call
+	constructorCall, ok := newStmt.Constructor.(*ast.CallExpression)
+	if !ok {
+		v.addError("new statement: constructor must be a function call")
+		return
+	}
+
+	// Extract module.object() call
+	memberExpr, ok := constructorCall.Function.(*ast.MemberExpression)
+	if !ok {
+		v.addError("new statement: constructor must be a module.object() call")
+		return
+	}
+
+	moduleIdent, ok := memberExpr.Object.(*ast.Identifier)
+	if !ok {
+		v.addError("new statement: module name must be an identifier")
+		return
+	}
+
+	objectIdent, ok := memberExpr.Property.(*ast.Identifier)
+	if !ok {
+		v.addError("new statement: object name must be an identifier")
+		return
+	}
+
+	moduleName := moduleIdent.Name
+	objectName := objectIdent.Name
+
+	// Check if module is imported
+	if !v.symbolTable.IsModuleImported(moduleName) {
+		v.addError(fmt.Sprintf("module %s is not imported", moduleName))
+		return
+	}
+
+	// Validate object construction
+	argTypes := v.extractArgumentTypes(constructorCall.Arguments)
+	if err := v.registry.ValidateObjectConstruction(moduleName, objectName, argTypes); err != nil {
+		v.addError(fmt.Sprintf("VMOD object construction validation failed: %v", err))
+		return
+	}
+
+	// Register the object instance in the symbol table
+	if err := v.symbolTable.DefineVMODObject(varName.Name, moduleName, objectName); err != nil {
+		v.addError(fmt.Sprintf("failed to register VMOD object %s: %v", varName.Name, err))
+		return
+	}
+
+	// Visit constructor arguments for nested validation
+	for _, arg := range constructorCall.Arguments {
+		v.visit(arg)
+	}
 }
 
 // validateFunctionRestrictions validates function usage restrictions
@@ -362,6 +434,9 @@ func (v *VMODValidator) visitChildren(node ast.Node) {
 	case *ast.MemberExpression:
 		v.visit(n.Object)
 		v.visit(n.Property)
+	case *ast.NewStatement:
+		v.visit(n.Name)
+		v.visit(n.Constructor)
 	}
 }
 

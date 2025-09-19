@@ -108,7 +108,7 @@ sub test {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := lexer.New(tt.input, "test.vcl")
-			p := New(l)
+			p := New(l, tt.input, "test.vcl")
 			program := p.ParseProgram()
 
 			hasErrors := len(p.Errors()) > 0
@@ -185,7 +185,7 @@ sub test {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := lexer.New(tt.input, "test.vcl")
-			p := New(l)
+			p := New(l, tt.input, "test.vcl")
 			_ = p.ParseProgram()
 
 			hasErrors := len(p.Errors()) > 0
@@ -213,7 +213,7 @@ sub test {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	if len(p.Errors()) > 0 {

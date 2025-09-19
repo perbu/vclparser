@@ -196,6 +196,38 @@ func (m *Method) ValidateCall(args []VCCType) error {
 	return nil
 }
 
+// ValidateConstruction validates object construction against constructor parameters
+func (o *Object) ValidateConstruction(args []VCCType) error {
+	// Check if we have the required number of arguments
+	requiredParams := 0
+	for _, param := range o.Constructor {
+		if !param.Optional && param.DefaultValue == "" {
+			requiredParams++
+		}
+	}
+
+	if len(args) < requiredParams {
+		return fmt.Errorf("object %s constructor requires at least %d arguments, got %d",
+			o.Name, requiredParams, len(args))
+	}
+
+	if len(args) > len(o.Constructor) {
+		return fmt.Errorf("object %s constructor accepts at most %d arguments, got %d",
+			o.Name, len(o.Constructor), len(args))
+	}
+
+	// Validate argument types
+	for i, arg := range args {
+		expected := o.Constructor[i].Type
+		if !o.isCompatibleType(arg, expected) {
+			return fmt.Errorf("object %s constructor argument %d: expected %s, got %s",
+				o.Name, i+1, expected, arg)
+		}
+	}
+
+	return nil
+}
+
 // isCompatibleType checks if two types are compatible
 func (f *Function) isCompatibleType(actual, expected VCCType) bool {
 	if actual == expected {
@@ -217,6 +249,25 @@ func (f *Function) isCompatibleType(actual, expected VCCType) bool {
 
 // isCompatibleType checks if two types are compatible for methods
 func (m *Method) isCompatibleType(actual, expected VCCType) bool {
+	if actual == expected {
+		return true
+	}
+
+	// STRING_LIST can accept STRING
+	if expected == TypeStringList && actual == TypeString {
+		return true
+	}
+
+	// STRANDS can accept STRING or STRING_LIST
+	if expected == TypeStrands && (actual == TypeString || actual == TypeStringList) {
+		return true
+	}
+
+	return false
+}
+
+// isCompatibleType checks if two types are compatible for object constructors
+func (o *Object) isCompatibleType(actual, expected VCCType) bool {
 	if actual == expected {
 		return true
 	}

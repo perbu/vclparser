@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/varnish/vclparser/analyzer"
 	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/parser"
 	"github.com/varnish/vclparser/vmod"
 )
 
@@ -162,8 +162,8 @@ sub vcl_recv {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Parse with VMOD validation
-			program, validationErrors, err := parser.ParseWithVMODValidation(tc.vclCode, "test.vcl")
+			// Parse with VMOD validation using our custom registry
+			program, validationErrors, err := analyzer.ParseWithCustomVMODValidation(tc.vclCode, "test.vcl", registry)
 
 			// Check parsing succeeded
 			if err != nil {
@@ -430,8 +430,8 @@ $Method BACKEND .backend()`
 	vmod.DefaultRegistry = registry
 	defer func() { vmod.DefaultRegistry = oldRegistry }()
 
-	// Parse with VMOD validation
-	program, validationErrors, err := parser.ParseWithVMODValidation(vclCode, "realistic.vcl")
+	// Parse with VMOD validation using our custom registry
+	program, validationErrors, err := analyzer.ParseWithCustomVMODValidation(vclCode, "realistic.vcl", registry)
 
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)

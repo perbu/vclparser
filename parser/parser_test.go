@@ -11,7 +11,7 @@ func TestVCLVersionDeclaration(t *testing.T) {
 	input := `vcl 4.0;`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	checkParserErrors(t, p)
@@ -34,7 +34,7 @@ backend default {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	checkParserErrors(t, p)
@@ -93,7 +93,7 @@ sub vcl_recv {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	checkParserErrors(t, p)
@@ -146,7 +146,7 @@ acl purge {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	checkParserErrors(t, p)
@@ -180,7 +180,7 @@ func TestExpressionInCondition(t *testing.T) {
 	input := `vcl 4.0; sub test { if (req.method) { return (hash); } }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	_ = p.ParseProgram()
 
 	errors := p.Errors()
@@ -214,7 +214,7 @@ func TestSimpleExpressions(t *testing.T) {
 			input := "vcl 4.0; sub test { " + tt.input + "; }"
 
 			l := lexer.New(input, "test.vcl")
-			p := New(l)
+			p := New(l, input, "test.vcl")
 			program := p.ParseProgram()
 
 			errors := p.Errors()
@@ -271,7 +271,7 @@ sub test {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	checkParserErrors(t, p)
@@ -354,7 +354,7 @@ sub vcl_init {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	checkParserErrors(t, p)

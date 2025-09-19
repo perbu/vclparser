@@ -25,7 +25,7 @@ backend web {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	// This will currently fail, but should pass once object literal parsing is implemented
@@ -156,7 +156,7 @@ backend api {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	// This will currently fail, but should pass once object literal parsing is implemented
@@ -215,7 +215,7 @@ backend simple {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	// This will currently fail, but should pass once object literal parsing is implemented

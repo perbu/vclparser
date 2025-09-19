@@ -62,7 +62,7 @@ func TestCallExpressions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := lexer.New(tt.input, "test.vcl")
-			p := New(l)
+			p := New(l, tt.input, "test.vcl")
 			program := p.ParseProgram()
 
 			if tt.wantErr {
@@ -132,7 +132,7 @@ sub test {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	checkParserErrors(t, p)
@@ -183,7 +183,7 @@ sub test {
 }`
 
 	l := lexer.New(input, "test.vcl")
-	p := New(l)
+	p := New(l, input, "test.vcl")
 	program := p.ParseProgram()
 
 	// This should produce errors due to invalid syntax
@@ -218,7 +218,7 @@ func TestExpressionStatementEnd(t *testing.T) {
 	for i, input := range tests {
 		t.Run(string(rune('A'+i)), func(t *testing.T) {
 			l := lexer.New(input, "test.vcl")
-			p := New(l)
+			p := New(l, input, "test.vcl")
 			program := p.ParseProgram()
 
 			checkParserErrors(t, p)

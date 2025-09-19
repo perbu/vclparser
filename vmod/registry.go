@@ -173,14 +173,7 @@ func (r *Registry) ValidateObjectConstruction(moduleName, objectName string, arg
 		return err
 	}
 
-	// Create a temporary function to validate constructor parameters
-	constructor := &vcc.Function{
-		Name:       objectName + "_constructor",
-		Parameters: object.Constructor,
-		ReturnType: vcc.VCCType(objectName),
-	}
-
-	return constructor.ValidateCall(argTypes)
+	return object.ValidateConstruction(argTypes)
 }
 
 // GetModuleStats returns statistics about loaded modules
@@ -252,14 +245,27 @@ var DefaultRegistry = NewRegistry()
 
 // LoadDefaultVCCFiles loads VCC files from the default vcclib directory
 func LoadDefaultVCCFiles() error {
-	// Try to find vcclib directory relative to current working directory
-	vccDir := "vcclib"
-	if _, err := os.Stat(vccDir); os.IsNotExist(err) {
-		// If not found, return an error but don't fail completely
-		return fmt.Errorf("vcclib directory not found: %s", vccDir)
+	// Try to find vcclib directory in multiple locations
+	possibleDirs := []string{
+		"vcclib",       // Relative to current directory
+		"./vcclib",     // Explicit relative path
+		"../vcclib",    // One level up
+		"../../vcclib", // Two levels up (for nested test directories)
 	}
 
-	return DefaultRegistry.LoadVCCDirectory(vccDir)
+	for _, vccDir := range possibleDirs {
+		if _, err := os.Stat(vccDir); err == nil {
+			// Found the directory, try to load it
+			if err := DefaultRegistry.LoadVCCDirectory(vccDir); err != nil {
+				// Log the error but continue trying other directories
+				continue
+			}
+			return nil // Successfully loaded
+		}
+	}
+
+	// If not found in any location, return an error but don't fail completely
+	return fmt.Errorf("vcclib directory not found in any of the expected locations: %v", possibleDirs)
 }
 
 // Init initializes the default registry

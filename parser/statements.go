@@ -153,12 +153,19 @@ func (p *Parser) parseSetStatement() *ast.SetStatement {
 		return nil
 	}
 
-	// Advance to semicolon if we're not already there
-	if !p.currentTokenIs(lexer.SEMICOLON) {
-		p.nextToken()
+	// Set end position safely
+	if p.currentToken.Type != lexer.EOF {
+		stmt.EndPos = p.currentToken.End
+	} else {
+		stmt.EndPos = stmt.Value.End()
 	}
-	stmt.EndPos = p.currentToken.End
-	p.skipSemicolon()
+
+	// Consume the semicolon if present
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken() // move to semicolon
+		stmt.EndPos = p.currentToken.End
+	}
+
 	return stmt
 }
 
@@ -172,9 +179,20 @@ func (p *Parser) parseUnsetStatement() *ast.UnsetStatement {
 
 	p.nextToken() // move past 'unset'
 	stmt.Variable = p.parseExpression()
-	stmt.EndPos = p.currentToken.End
 
-	p.skipSemicolon()
+	// Set end position safely
+	if p.currentToken.Type != lexer.EOF {
+		stmt.EndPos = p.currentToken.End
+	} else {
+		stmt.EndPos = stmt.Variable.End()
+	}
+
+	// Consume the semicolon if present
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken() // move to semicolon
+		stmt.EndPos = p.currentToken.End
+	}
+
 	return stmt
 }
 
@@ -327,6 +345,10 @@ func (p *Parser) parseNewStatement() *ast.NewStatement {
 	}
 
 	p.nextToken() // move past '='
+
+	// Debug: check token position before parsing constructor
+	// fmt.Printf("DEBUG: About to parse constructor, current: %s, peek: %s\n", p.currentToken.Type, p.peekToken.Type)
+
 	stmt.Constructor = p.parseExpression()
 
 	if stmt.Constructor == nil {
@@ -334,8 +356,19 @@ func (p *Parser) parseNewStatement() *ast.NewStatement {
 		return nil
 	}
 
-	stmt.EndPos = p.currentToken.End
-	p.skipSemicolon()
+	// Set end position safely
+	if p.currentToken.Type != lexer.EOF {
+		stmt.EndPos = p.currentToken.End
+	} else {
+		stmt.EndPos = stmt.Constructor.End()
+	}
+
+	// Consume the semicolon if present
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken() // move to semicolon
+		stmt.EndPos = p.currentToken.End
+	}
+
 	return stmt
 }
 

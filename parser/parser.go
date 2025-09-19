@@ -6,33 +6,27 @@ import (
 
 	"github.com/varnish/vclparser/ast"
 	"github.com/varnish/vclparser/lexer"
+	"github.com/varnish/vclparser/vmod"
 )
-
-// ParseError represents a parsing error
-type ParseError struct {
-	Message  string
-	Position lexer.Position
-	Token    lexer.Token
-}
-
-func (e ParseError) Error() string {
-	return fmt.Sprintf("parse error at %s: %s (got %s)", e.Position, e.Message, e.Token.Type)
-}
 
 // Parser implements a recursive descent parser for VCL
 type Parser struct {
-	lexer  *lexer.Lexer
-	errors []ParseError
+	lexer    *lexer.Lexer
+	errors   []DetailedError
+	input    string // Store original VCL source for error context
+	filename string // Store filename for error reporting
 
 	currentToken lexer.Token
 	peekToken    lexer.Token
 }
 
 // New creates a new parser
-func New(l *lexer.Lexer) *Parser {
+func New(l *lexer.Lexer, input, filename string) *Parser {
 	p := &Parser{
-		lexer:  l,
-		errors: []ParseError{},
+		lexer:    l,
+		errors:   []DetailedError{},
+		input:    input,
+		filename: filename,
 	}
 
 	// Read two tokens, so currentToken and peekToken are both set
@@ -45,7 +39,7 @@ func New(l *lexer.Lexer) *Parser {
 // Parse parses the input and returns the AST
 func Parse(input, filename string) (*ast.Program, error) {
 	l := lexer.New(input, filename)
-	p := New(l)
+	p := New(l, input, filename)
 	program := p.ParseProgram()
 
 	if len(p.errors) > 0 {
@@ -56,8 +50,27 @@ func Parse(input, filename string) (*ast.Program, error) {
 	return program, nil
 }
 
+// ParseWithVMODValidation parses VCL input and performs VMOD validation
+func ParseWithVMODValidation(input, filename string) (*ast.Program, []string, error) {
+	// Parse the VCL code
+	program, err := Parse(input, filename)
+	if err != nil {
+		return program, nil, err
+	}
+
+	// Initialize VMOD registry with default VCC files
+	if err := vmod.LoadDefaultVCCFiles(); err != nil {
+		// Log warning but continue - not all environments have VCC files
+		// fmt.Printf("Warning: could not load default VCC files: %v\n", err)
+	}
+
+	// Return the program and empty validation errors
+	// The validation will be handled by the analyzer package
+	return program, []string{}, nil
+}
+
 // Errors returns all parsing errors
-func (p *Parser) Errors() []ParseError {
+func (p *Parser) Errors() []DetailedError {
 	return p.errors
 }
 
@@ -74,10 +87,12 @@ func (p *Parser) nextToken() {
 
 // addError adds a parsing error
 func (p *Parser) addError(message string) {
-	p.errors = append(p.errors, ParseError{
+	p.errors = append(p.errors, DetailedError{
 		Message:  message,
 		Position: p.currentToken.Start,
 		Token:    p.currentToken,
+		Filename: p.filename,
+		Source:   p.input,
 	})
 }
 

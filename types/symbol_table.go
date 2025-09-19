@@ -57,6 +57,11 @@ type Symbol struct {
 	Writable  bool
 	Unsetable bool
 	Methods   []string // VCL methods where this symbol is accessible
+
+	// VMOD-specific metadata
+	ModuleName  string   // For VMOD objects and functions
+	ObjectType  string   // For VMOD objects, the object type name
+	VMODMethods []string // Available methods on VMOD objects
 }
 
 func (s *Symbol) String() string {
@@ -390,19 +395,23 @@ func (st *SymbolTable) DefineModule(moduleName string) error {
 func (st *SymbolTable) DefineVMODFunction(moduleName, functionName string, returnType Type) error {
 	fullName := moduleName + "." + functionName
 	return st.Define(&Symbol{
-		Name: fullName,
-		Kind: SymbolVMODFunction,
-		Type: returnType,
+		Name:       fullName,
+		Kind:       SymbolVMODFunction,
+		Type:       returnType,
+		ModuleName: moduleName,
 	})
 }
 
 // DefineVMODObject adds a VMOD object instance to the symbol table
 func (st *SymbolTable) DefineVMODObject(objectName, moduleName, objectType string) error {
 	return st.Define(&Symbol{
-		Name:  objectName,
-		Kind:  SymbolVMODObject,
-		Type:  Object,
-		Scope: st.currentScope.Name,
+		Name:       objectName,
+		Kind:       SymbolVMODObject,
+		Type:       Object,
+		Scope:      st.currentScope.Name,
+		ModuleName: moduleName,
+		ObjectType: objectType,
+		// VMODMethods will be populated from VCC registry if needed
 	})
 }
 
