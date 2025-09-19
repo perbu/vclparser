@@ -107,6 +107,10 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 			Name: p.currentToken.Value,
 		}
 	case lexer.CNUM:
+		// Check if this number is followed by a time unit (like "30s")
+		if p.isNumberFollowedByTimeUnit() {
+			return p.parseTimeExpressionFromNumber()
+		}
 		return p.parseIntegerLiteral()
 	case lexer.FNUM:
 		return p.parseFloatLiteral()
@@ -372,14 +376,37 @@ func (p *Parser) parseObjectExpression() *ast.ObjectExpression {
 			continue
 		}
 
+		// Skip empty lines or extra whitespace
+		if p.currentTokenIs(lexer.SEMICOLON) {
+			p.nextToken()
+			continue
+		}
+
 		prop := &ast.Property{
 			BaseNode: ast.BaseNode{
 				StartPos: p.currentToken.Start,
 			},
 		}
 
-		// Parse key
-		prop.Key = p.parseExpression()
+		// Parse key - in VCL, object properties start with a dot (e.g., .url)
+		if p.currentTokenIs(lexer.DOT) {
+			p.nextToken() // move past '.'
+			if !p.currentTokenIs(lexer.ID) {
+				p.addError("expected property name after '.'")
+				return nil
+			}
+			// Create an identifier for the property name (without the dot)
+			prop.Key = &ast.Identifier{
+				BaseNode: ast.BaseNode{
+					StartPos: p.currentToken.Start,
+					EndPos:   p.currentToken.End,
+				},
+				Name: p.currentToken.Value,
+			}
+		} else {
+			// Fallback to parsing as a general expression
+			prop.Key = p.parseExpression()
+		}
 
 		if !p.expectPeek(lexer.ASSIGN) {
 			return nil
@@ -391,14 +418,18 @@ func (p *Parser) parseObjectExpression() *ast.ObjectExpression {
 
 		expr.Properties = append(expr.Properties, prop)
 
-		if p.peekTokenIs(lexer.COMMA) {
-			p.nextToken() // move to ','
+		// VCL uses semicolons to separate object properties
+		if p.peekTokenIs(lexer.SEMICOLON) {
+			p.nextToken() // move to ';'
+			prop.EndPos = p.currentToken.End
+			p.nextToken() // move past ';' to next property or '}'
+		} else {
+			p.nextToken() // move to next token if no semicolon
 		}
-
-		p.nextToken()
 	}
 
-	if !p.expectToken(lexer.RBRACE) {
+	if !p.currentTokenIs(lexer.RBRACE) {
+		p.addError("expected '}' to close object expression")
 		return nil
 	}
 
@@ -429,6 +460,45 @@ func (p *Parser) parseIPExpression() *ast.IPExpression {
 }
 
 // Helper functions to detect literal types
+
+// isNumberFollowedByTimeUnit checks if current CNUM token is followed by a time unit
+func (p *Parser) isNumberFollowedByTimeUnit() bool {
+	if p.currentToken.Type != lexer.CNUM {
+		return false
+	}
+
+	// Check if next token is a time unit identifier
+	if p.peekToken.Type != lexer.ID {
+		return false
+	}
+
+	// Check for common time/duration suffixes
+	timeUnits := []string{"s", "m", "h", "d", "w", "ms", "us", "ns"}
+	for _, unit := range timeUnits {
+		if p.peekToken.Value == unit {
+			return true
+		}
+	}
+	return false
+}
+
+// parseTimeExpressionFromNumber parses time expressions from number + unit (e.g., "30" + "s")
+func (p *Parser) parseTimeExpressionFromNumber() *ast.TimeExpression {
+	numberValue := p.currentToken.Value
+	startPos := p.currentToken.Start
+
+	p.nextToken() // move to time unit
+	unitValue := p.currentToken.Value
+	endPos := p.currentToken.End
+
+	return &ast.TimeExpression{
+		BaseNode: ast.BaseNode{
+			StartPos: startPos,
+			EndPos:   endPos,
+		},
+		Value: numberValue + unitValue, // combine "30" + "s" = "30s"
+	}
+}
 
 // isTimeOrDurationLiteral checks if current token looks like a time/duration literal
 func (p *Parser) isTimeOrDurationLiteral() bool {

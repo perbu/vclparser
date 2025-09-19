@@ -63,18 +63,29 @@ func (p *Parser) parseBackendProperty() *ast.BackendProperty {
 		},
 	}
 
-	if !p.expectPeek(lexer.ID) {
+	p.nextToken() // move to the property name token
+
+	// Property name can be either an ID or certain keywords like "probe"
+	if p.currentTokenIs(lexer.ID) || p.currentTokenIs(lexer.PROBE_KW) {
+		prop.Name = p.currentToken.Value
+	} else {
+		p.addError("expected property name after '.'")
 		return nil
 	}
-
-	prop.Name = p.currentToken.Value
 
 	if !p.expectPeek(lexer.ASSIGN) {
 		return nil
 	}
 
 	p.nextToken() // move to value
-	prop.Value = p.parseExpression()
+
+	// If the property is a probe and the value is a block, parse it as an object expression
+	if prop.Name == "probe" && p.currentTokenIs(lexer.LBRACE) {
+		prop.Value = p.parseObjectExpression()
+	} else {
+		// Otherwise, parse it as a normal expression (e.g., a string or identifier)
+		prop.Value = p.parseExpression()
+	}
 
 	// Move past the value to the semicolon
 	if p.peekTokenIs(lexer.SEMICOLON) {
@@ -118,9 +129,11 @@ func (p *Parser) parseProbeDecl() *ast.ProbeDecl {
 		prop := p.parseProbeProperty()
 		if prop != nil {
 			decl.Properties = append(decl.Properties, prop)
+			// parseProbeProperty already advances past the semicolon
+		} else {
+			// Skip to next token if parsing failed
+			p.nextToken()
 		}
-
-		p.nextToken()
 	}
 
 	if !p.expectToken(lexer.RBRACE) {
@@ -156,9 +169,15 @@ func (p *Parser) parseProbeProperty() *ast.ProbeProperty {
 
 	p.nextToken() // move to value
 	prop.Value = p.parseExpression()
-	prop.EndPos = p.currentToken.End
 
-	p.skipSemicolon()
+	// Move past the value to the semicolon
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken() // move to semicolon
+		prop.EndPos = p.currentToken.End
+		p.nextToken() // move past semicolon
+	} else {
+		prop.EndPos = p.currentToken.End
+	}
 
 	return prop
 }
