@@ -303,19 +303,33 @@ func (p *Parser) parseCallExpression(fn ast.Expression) *ast.CallExpression {
 	}
 
 	p.nextToken() // move to '('
-	p.nextToken() // move past '('
 
-	// Parse arguments
-	if !p.currentTokenIs(lexer.RPAREN) {
-		expr.Arguments = append(expr.Arguments, p.parseExpression())
+	// Handle arguments if present
+	if !p.peekTokenIs(lexer.RPAREN) {
+		p.nextToken() // move past '(' to the first argument's token
 
+		// Parse the first argument
+		arg := p.parseExpression()
+		if arg == nil {
+			p.addError("failed to parse function argument")
+			return nil
+		}
+		expr.Arguments = append(expr.Arguments, arg)
+
+		// Parse subsequent arguments separated by commas
 		for p.peekTokenIs(lexer.COMMA) {
 			p.nextToken() // move to ','
 			p.nextToken() // move past ','
-			expr.Arguments = append(expr.Arguments, p.parseExpression())
+			arg := p.parseExpression()
+			if arg == nil {
+				p.addError("failed to parse function argument")
+				return nil
+			}
+			expr.Arguments = append(expr.Arguments, arg)
 		}
 	}
 
+	// After parsing arguments, we MUST find and consume the closing parenthesis
 	if !p.expectPeek(lexer.RPAREN) {
 		return nil
 	}

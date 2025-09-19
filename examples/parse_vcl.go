@@ -240,6 +240,10 @@ func main() {
 
 		// Create symbol table for semantic analysis
 		symbolTable := types.NewSymbolTable()
-		fmt.Printf("\nBuilt-in symbols: %d\n", len(symbolTable.Lookup("req.method").Methods))
+		if reqSymbol := symbolTable.Lookup("req.method"); reqSymbol != nil {
+			fmt.Printf("\nBuilt-in symbols for req.method: %d\n", len(reqSymbol.Methods))
+		} else {
+			fmt.Printf("\nSymbol table created (req.method not found in built-ins)\n")
+		}
 	}
 }

@@ -151,6 +151,10 @@ func (p *Parser) parseSetStatement() *ast.SetStatement {
 		return nil
 	}
 
+	// Advance to semicolon if we're not already there
+	if !p.currentTokenIs(lexer.SEMICOLON) {
+		p.nextToken()
+	}
 	stmt.EndPos = p.currentToken.End
 	p.skipSemicolon()
 	return stmt
@@ -316,7 +320,13 @@ func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 		return nil
 	}
 
-	stmt.EndPos = stmt.Expression.End()
+	// Use current token end position as a safer alternative to calling End()
+	// This avoids the panic that occurs when CallExpression.End() is called
+	if _, ok := stmt.Expression.(*ast.CallExpression); ok {
+		stmt.EndPos = p.currentToken.End
+	} else {
+		stmt.EndPos = stmt.Expression.End()
+	}
 
 	// Advance to semicolon
 	if p.peekTokenIs(lexer.SEMICOLON) {
