@@ -1,0 +1,165 @@
+$Module stale 3 "Stale"
+$License
+
+DESCRIPTION
+===========
+
+Stale object API.
+
+Using a Stale-If-Error implementation that depends on abandoning backend fetches and restarting
+is unsafe for sites which serve moderate to high levels of traffic. This is because the abandon-restart
+loop can cause significant amounts of request serialization since Varnish will only allow a single request per
+object to hit the abandon-restart loop at a time. This API allows for a safe and high performance
+Stale-If-Error implementation and does not depend on abandoning backend fetches.
+
+Note: A bug in vmod_stale version 6.0.6r3 can cause it to function unsafely on hit-for-miss objects.
+This has been resolved in versions 6.0.6r4 and later.
+
+Stale If Error
+--------------
+
+First, make sure a suitable ``beresp.keep`` value is set. This value determines the Stale-If-Error period.
+``beresp.ttl`` and ``beresp.grace`` do not need to be changed.  Remember, the lifetime of an object is
+``ttl + grace + keep``.
+
+::
+
+  sub vcl_backend_response {
+    # Keep these values unchanged
+    set beresp.ttl = ...;
+    set beresp.grace = ...;
+
+    # Add a 7 day Stale-If-Error period
+    set beresp.keep = 7d;
+  }
+
+Or you can use the following VCL to automatically read the ``stale-if-error`` value from the
+``Cache-Control`` header and use it. If no value is found, Stale-If-Error is disabled for the object.
+
+::
+
+  import headerplus;
+  import std;
+
+  sub vcl_backend_response {
+    # Automatically set the stale-if-error value (keep) from Cache-Control
+    headerplus.init(beresp);
+    set beresp.keep = std.duration(
+        headerplus.attr_get("Cache-Control", "stale-if-error") + "s",
+        0s); # This is the default value if not found
+  }
+
+Next, put the following VCL at the top of your ``sub vcl_backend_*`` section.
+
+::
+
+  import stale;
+
+  sub stale_if_error {
+    if (beresp.status >= 500 && stale.exists()) {
+      # Tune this value to match your traffic and caching patterns
+      stale.revive(20m, 1h);
+      stale.deliver();
+      return (abandon);
+    }
+  }
+
+  sub vcl_backend_response {
+    call stale_if_error;
+  }
+
+  sub vcl_backend_error {
+    call stale_if_error;
+  }
+
+Make note of the ``stale.revive(TTL, grace)`` call above. The values used should be large enough to
+limit backend traffic and prevent a thundering herd problem when the backend comes back online.
+It also needs to be small enough to allow Varnish to be responsive to when your backend does come
+back online.
+
+Using ``beresp.keep`` is entirely optional, ``beresp.grace`` can also be re-leveraged for Stale-If-Error.
+If using grace, the client will immediately get a stale object instead of waiting for an error to trigger
+the stale object delivery. If disabling grace via ``req.grace``, the grace behavior will match Stale-If-Error.
+In all cases, if a stale object exists, no fresh error response will reach the client.
+
+The following 2 ``varnishstat`` counters can be used to monitor stale activity:
+
+* ``MAIN.fetch_stale_deliver``
+* ``MAIN.fetch_stale_rearm``
+
+API
+===
+
+The stale API only operates in a backend context (``sub vcl_backend_*``).
+Using the API outside of a backend context will result in a request failure.
+
+$Function BOOL exists()
+$Restrict backend
+
+Does a stale object exist?
+
+$Function BOOL deliver()
+$Restrict backend
+
+Deliver the stale object to the client. Must be used with ``return(abandon)``.
+Failing to do ``return (abandon)`` after calling ``.deliver()`` will cause the fetched object (typically an error object) to be inserted and the stale object to be replaced.
+This typically is exactly the opposite of what you want calling ``.deliver()``.
+
+A successful stale delivery will increment the following ``varnishstat`` counter:
+``MAIN.fetch_stale_deliver``
+
+$Function VOID revive(DURATION ttl, DURATION grace)
+$Restrict backend
+
+Revive the stale object with a new ``ttl`` and ``grace``. The original time of expiration is maintained.
+The object will not revive beyond its initial ``beresp.ttl + beresp.grace + beresp.keep``. The leftover
+time to expiration is stored back as the ``keep`` value.
+
+Reviving an object will increment the ``MAIN.fetch_stale_rearm`` varnishstat counter.
+
+$Function VOID rearm(DURATION ttl, DURATION grace, DURATION keep)
+$Restrict backend
+
+Set a new ``ttl``, ``grace``, and ``keep``. These values overwrite any existing values and
+can extend the time of expiration to any point in time. A value of ``0s`` clears the value out.
+Negative values keep the existing value in place.
+
+Rearming an object will increment the ``MAIN.fetch_stale_rearm`` varnishstat counter.
+
+$Function INT get_status()
+$Restrict backend
+
+Get the status code of the stale object (0 if it doesn't exist).
+
+$Function STRING get_header(STRING name, STRING default = 0)
+$Restrict backend
+
+Get the header value (default if it the header or stale object doesn't exist).
+
+$Function DURATION get_ttl(BOOL remaining = 1)
+$Restrict backend
+
+Get the TTL value from the stale object.
+Using remaining gets the remaining TTL time for the stale object.
+
+$Function DURATION get_grace(BOOL remaining = 0)
+$Restrict backend
+
+Get the grace value from the stale object.
+Using remaining gets the remaining grace time for the stale object.
+
+$Function DURATION get_keep(BOOL remaining = 0)
+$Restrict backend
+
+Get the keep value from the stale object.
+Using remaining gets the overall time to expiration of the stale object.
+
+$Function INT get_hits()
+$Restrict backend
+
+Get the number of hits on the stale object (0 if it doesn't exist).
+
+AVAILABILITY
+============
+
+The ``stale`` VMOD is available in Varnish Enterprise version ``6.0.6r3`` and later.

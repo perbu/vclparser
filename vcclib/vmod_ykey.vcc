@@ -1,0 +1,334 @@
+$Module ykey 3 "Tag-based invalidation (Ykey/Xkey)"
+$ABI strict
+$License
+
+DESCRIPTION
+===========
+
+The ``ykey`` vmod adds secondary keys to objects, allowing fast
+purging on all objects with this key. This VMOD provides the user
+interface for integration into the VCL configuration.
+
+The purge operation may be hard or soft. A hard purge immediately removes
+the matched objects from the cache completely. A soft purge will expire
+the objects, but keep the objects around for their configured grace and
+keep timeouts (grace for stale object delivery to clients while the next
+fetch is in progress, and keep for conditional fetches).
+
+The keys are managed in-core for efficient handling of many keys, and can
+safely handle purge operations on keys that span the entire cache. It also
+interfaces with the MSE stevedore, providing persistence of the Ykey data
+structure on disk for persisted caches. This makes the Ykey data
+immediately accessible upon restarts of Varnish, removing the need
+for the lengthy and I/O intensive re-evaluation of all objects and their
+associated keys.
+
+To use Ykey, you need to import the ykey VMOD into your VCL
+configuration. The keys to associate with an object need to be specified
+specifically by calling one or more of the add key VMOD functions in
+``sub vcl_backend_response``.
+
+The following example adds all keys listed in the backend response
+header named Ykey, and a custom one for all URLs starting with ``/content/image/``.
+
+To purge objects using Ykey, you will need to map the purge function to
+your VCL to invoke it. You should use e.g. ACLs to limit the purges to
+authorized callers. The following example creates a simple purge interface
+invoked as an HTTP endpoint, limited to localhost. If a header called
+Ykey-Purge is present, it will purge using Ykey and the keys listed in
+the header. If not, fall back to regular purge.
+
+::
+
+	import ykey;
+
+	acl purgers { "127.0.0.1"; }
+
+	sub vcl_recv {
+		if (req.method == "PURGE") {
+			if (client.ip !~ purgers) {
+				return (synth(403, "Forbidden"));
+			}
+			if (req.http.Ykey-Purge) {
+				set req.http.n-gone =
+					ykey.purge_header(req.http.Ykey-Purge, sep=" ");
+				# or for soft purge:
+				#   set req.http.n-gone =
+				#	ykey.purge_header(req.http.Ykey-Purge, sep=" ", soft=true);
+				return (synth(200, "Invalidated "+req.http.n-gone+" objects"));
+			} else {
+				return (purge);
+			}
+		}
+	}
+
+Transitioning From Xkey
+-----------------------
+
+The Ykey feature is similar in functionality to the Xkey VMOD, but is better
+integrated in core Varnish in order to solve several scalability
+issues that exist with the Xkey VMOD.
+
+The API provided by the Ykey VMOD is not directly backwards compatible
+with Xkey. Due to technical limitations in the way it integrates with
+Varnish, Xkey had to make use of an object header with a magic name
+(xkey, or for historical reasons X-HashTwo) to list the keys to
+associate with an object. This method was cumbersome to use, especially
+when needing to amend the list of keys provided from the backend in
+VCL. Ykey instead requires the keys to associate with an object
+to be specified in VCL, and provides functions to add each key of a
+backend header in one go.
+
+Another shortcoming in Xkey that has been addressed, is how to separate
+individual key strings from headers. Xkey would always split strings on
+whitespace. In Ykey the way to split strings is configurable, and defaults
+to splitting on commas and whitespace, which matches better with common
+headers.
+
+The following VCL example provides an Xkey backwards compatibility snippet
+that can be integrated into your VCL to quickly start using Ykey by adding
+the keys from the magic Xkey headers (xkey and X-HashTwo), keeping
+with Xkey's method of separating strings.
+
+::
+
+	import ykey;
+
+	sub vcl_backend_response {
+		# Add keys by the xkey backend response header
+		ykey.add_header(beresp.http.xkey, sep=" ");
+		ykey.add_header(beresp.http.X-HashTwo, sep=" ");
+	}
+
+API
+===
+
+$Function VOID add_key(PRIV_TASK, STRING key)
+$Restrict vcl_backend_response vcl_backend_error
+
+Adds the `key` to the list of keys associated with the object being fetched.
+
+$Function VOID add_keys(PRIV_TASK, STRING keys, STRING sep = ", ")
+$Restrict vcl_backend_response vcl_backend_error
+
+Splits the string keys into individual elements, separated by
+characters from the string sep, and adds each of them to the
+list of keys associated with the object being fetched.
+
+$Function VOID add_hashed_keys(STRING keys, STRING sep = ", ")
+$Restrict vcl_backend_response vcl_backend_error
+
+Splits the string keys into individual elements, separated by
+characters from the string sep, and adds each of them to the
+list of keys associated with the object being fetched, with the
+assumption they are already hashed.
+
+$Function VOID add_header(PRIV_TASK, HEADER hdr, STRING sep = ", ")
+$Restrict vcl_backend_response vcl_backend_error
+
+Find all headers named hdr, and do an add_keys operation
+using the specified separator sep on each of them.
+
+$Function VOID add_hashed_header(HEADER hdr, STRING sep = ",  ")
+$Restrict vcl_backend_response vcl_backend_error
+
+Find all headers named hdr, and do an add_hashed_keys operation
+using the specified separator sep on each of them.
+
+$Function VOID add_blob(PRIV_TASK, BLOB blob)
+$Restrict vcl_backend_response vcl_backend_error
+
+Adds a key by hashing the bytes described by blob.
+
+$Function INT purge(PRIV_TASK, STRING key, BOOL soft = 0)
+
+Purge the cache of all objects that have the association key key
+on them. If soft is true, the purge will be a soft purge,
+setting ttl to zero, but leaving grace and keep as is. The
+return value is the number of objects that were affected by the operation.
+
+$Function REAL stat_real(PRIV_TASK, STRING key, ENUM {count,expired,not_on_lru,bodylen,hits,ttl,grace,keep,origin,eviction,last_lru} type, ENUM {sum,min,avg,stdev,pstdev,max} which="sum", INT idx=-1, INT limit=0, INT offset=0, BOOL expired=0, BOOL reuse=1)
+
+$Function INT stat_int(PRIV_TASK, STRING key, ENUM {count,expired,not_on_lru,bodylen,hits,ttl,grace,keep,origin,eviction,last_lru} type, ENUM {sum,min,avg,stdev,pstdev,max} which="sum", INT idx=-1, INT limit=0, INT offset=0, BOOL expired=0, BOOL reuse=1)
+
+These functions are *experimental*. This means that they can
+change without explicit notice *if* the developers decide that
+it will improve the overall design and function of Ykey stat functions.
+
+The functions `stat_real` and `stat_int` both gather
+statistics on objects in the cache with the key `key`, but
+differ in the return type. The first returns a real (floating
+point) number, while the latter returns an integer.
+
+Since these functions give out information about the contents
+of the cache, it is strongly recommended to restrict their
+access somehow, for example through using ACLs, to make sure
+this information does not leak to third parties.
+
+The statistics for a given key is cached during the processing
+of a request, so only the *first* call will carry out the work
+of gathering the statistics. Subsequent calls with the same
+`key` in the same request will simply look up a value and return it.
+
+The caching can be disabled by specifying `reuse=0`, but this
+discouraged since gathering stats for a key comes with a cost.
+The cost increases with the number of objects with the key.
+
+The parameters `type` and `which`, described in more detail
+below, determines what is returned and how the return value
+should be interpreted. For example, for a given `key`, you can
+get the sum of the body lengths of all of the the objects with
+the key by specifying `type=bodylen`and `which=sum`.
+
+The statistics are approximate in the sense that objects which
+are on their way in or out of the cache at the time when
+`stat_real` or `stat_int` is called, might or might not be
+included in the statistics. However, each object is either
+fully accounted for, or not accounted for in the
+statistics. Due to the caching of statistics, you can call
+`stat_real` with the same `key` many times in a single
+transaction, and each call will return statistics for the same
+set of objects.
+
+The parameter `expired` gives you control over how objects
+which has been purged, but not left the cache, are
+accounted. In normal circumstances, these objects will leave
+the cache very soon after the purge, and then the value of the
+parameter will not matter much. However, in situations where
+heavy purging is going on, specifying `expired=1` (overriding
+the default `expired=0`) will gather statistics which include
+such objects. Changing this parameter between different calls
+within the same transaction will invalidate the cache and
+force Ykey to gather the statistics for the key again.
+
+Objects which have not yet made it to the Least Recently Used
+list, are never accounted. Such objects include objects that
+have not been fully fetched, and MSE objects which have been
+not been requested since they were loaded from a persisted store.
+
+The `type` parameter selects what aspect of the objects with
+the given key are considered. It can have the following values:
+
+- ``count`` - the number of objects in the set. When this is selected, the parameter `which` is ignored. When the parameter `expired` is left at its default value `0`, the `count` will not include the expired objects
+
+- ``expired`` - the number of expired objects in the set (recently purged) . The parameter `which` is ignored. When the `expired` parameter is at its default value `0`, this count will be the number of expired objects which are not a part of the rest of the statistics.
+
+- ``not_on_lru`` - the number of objects not on the LRU. The parameter `which` is ignored.
+
+- ``bodylen`` - the body length of the object in the set.
+
+- ``hits`` - the number of cache hits on the object in the set.
+
+- ``ttl`` - the TTL of the object in the set. This is not to be confused with the variable `obj.ttl` in `sub vcl_hit`), which refers to the *remaining* TTL of the *hit* object.
+
+- ``grace`` - the grace of the object in the set.
+
+- ``keep`` - the keep of the object in the set.
+
+- ``origin`` - the time for when the object was inserted by the stevedore.
+
+- ``eviction`` - the time for when the object is expected to leave the cache.
+
+- ``last_lru`` - the time for when the object was last successfully delivered to a client.
+
+The `which` parameter specifies which statistical property of
+the data set is returned:
+
+- ``sum`` - the accumulated sum for a given `type`.
+
+- ``min`` - the minimum value for a given `type`.
+
+- ``avg`` - the average value for a given `type`.
+
+- ``stdev`` - the sample standard deviation for a given `type`. If there are less than two data points, -1 is returned.
+
+- ``pstdev`` - the population standard deviation for a given `type`.
+
+- ``max`` - the maximum value for a given `type`.
+
+One may supply an index, `idx`, to retrieve stat for a given
+object in the set, rather than a summary of all objects in the
+set. Note that when `idx` is set, the value of `which` is
+ignored and the value of `count`, `expired` and `not_on_lru`
+is not defined.
+
+In order to index objects both the `limit` and `offset`
+parameter is required. The `limit` sets the size of the bucket
+for how many objects we want to index, whereas `offset` sets
+the base index.  `idx` is therefore a value in this interval:
+[`offset`, min(`count` - `offset`, `offset` + `limit`)].  Note
+that the cached copy will be invalidated if the newly provided
+interval is outside of the previous provided interval.
+
+$Function INT stat_flag(PRIV_TASK, STRING key, ENUM {hfm,hfp} type, INT idx=-1, INT limit=0, INT offset=0, BOOL expired=0, BOOL reuse=1)
+
+This function is *experimental*. This means that it can change
+without explicit notice *if* the developers decide that it
+will improve the overall design and function of Ykey stat
+functions.
+
+The function `stat_flag` returns the accumulated sum of the
+flags associated with the objects wit the given `key`. If
+`idx` is specified, then the return value is just a boolean.
+
+`type`:
+
+- ``hfm`` - is the object Hit-for-Miss?
+
+- ``hfp`` - is the object Hit-for-Pass?
+
+See `stat_real()` for details on the other parameters.
+
+
+$Function STRING stat_header(PRIV_TASK, STRING key, INT idx, INT limit=0, INT offset=0, BOOL expired=0, BOOL reuse=1, STRING delim=" ")
+
+This function is *experimental*. This means that it can change
+without explicit notice *if* the developers decide that it
+will improve the overall design and function of Ykey stat
+functions.
+
+The function `stat_header` returns the HTTP headers associated
+with the object. The headers are delimited by default using spaces, but
+this can be changed using the `delim` parameter.
+
+See `stat_real()` for details on the parameters.
+
+$Function INT purge_keys(PRIV_TASK, STRING keys, STRING sep = ", ", BOOL soft = 0)
+
+Split the string keys using the separator sep, and do a purge
+on each of them (soft purge if soft is true). The return value
+is the number of objects that were affected by the operation.
+
+$Function INT purge_header(PRIV_TASK, HEADER hdr, STRING sep = ", ", BOOL soft = 0)
+
+Finds all headers named hdr, and do a purge_keys operation
+using the separator sep on each of them. The return value is the
+number of objects affected by the operation.
+
+$Function INT purge_blob(PRIV_TASK, BLOB blob, BOOL soft = 0)
+
+Purge the objects associated with the key described by hashing blob. The
+return value is the number of objects affected by the operation.
+
+$Function STRING get_hashed_keys(STRING sep = ",")
+$Restrict vcl_hit vcl_deliver
+
+Gets all the hashed keys added to an object and returns them as string
+separated by sep.
+
+$Function VOID namespace(PRIV_TASK, STRING namespace)
+
+Makes all Ykey calls after this to be namespaced to the provided
+namespace for the duration of the client/backend. It is
+required that this is called in both the backend request
+and client request if you want everything to be namespaced.
+Calling with a empty or NULL namespace will do nothing.
+
+$Function VOID namespace_reset(PRIV_TASK)
+
+Removes the namespace if one is present.
+
+AVAILABILITY
+============
+
+The ``ykey`` vmod is available in Varnish Enterprise version ``6.0.2r1`` and later.

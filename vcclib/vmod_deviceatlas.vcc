@@ -1,0 +1,335 @@
+#
+# Copyright (c) 2019 Varnish Software AS
+# All rights reserved.
+#
+# Author: Alf-Andre Walla <alf@varnish-software.com>
+#
+
+$Module deviceatlas 3 "DeviceAtlas"
+$License
+
+DESCRIPTION
+===========
+
+DeviceAtlas is a commercial device detection database offered by
+Afilias subsidiary dotMobi. This is available for Varnish Enterprise users with
+a separate DeviceAtlas subscription. This separate subscription gives access to
+the DeviceAtlas VMOD and updates to the device data file. Please contact
+[sales@varnish-software.com](mailto:sales@varnish-software.com)
+for more information on how to get access.
+
+DeviceAtlas has comprehensive knowledge about HTTP
+client's specifications, abilities and physical dimensions. This can
+be used for tailoring HTML responses to the specific type and
+size of the unit.
+
+By moving this determination into Varnish, it is possible to do this
+with low latency and high scalability.
+
+This is implemented as a Varnish Module (VMOD) that interfaces between
+Varnish and the dataset supplied by dotMobi.
+
+Further information can be found at:
+https://www.varnish-software.com/partner/device-atlas
+
+Supported version
+-----------------
+
+Version 2.x with Desktop Browser Properties option enabled.
+
+These properties may not be default data file options and should be checked
+before using this VMOD 
+
+
+Varnish tuning
+--------------
+
+This VMOD needs more stack space than Varnish is configured for by default.
+It is recommended to set the ``thread_pool_stack`` Varnish parameter to at
+least 256KB.
+
+INSTALLATION
+============
+
+The DeviceAtlas VMOD for Varnish is shipped as a separate package in a separate repository.
+Repository details is sent by e-mail. Once the repository for DeviceAtlas is
+enabled, the VMOD can be installed using ``yum`` or ``apt``:
+
+Installation on RHEL and CentOS:
+
+::
+
+  sudo yum install varnish-plus-deviceatlas
+
+Installation on Ubuntu and Debian:
+
+::
+
+  sudo apt-get install varnish-plus-deviceatlas
+
+USAGE
+=====
+
+Basic Example
+-------------
+
+::
+
+  import deviceatlas;
+
+  sub vcl_init {
+    deviceatlas.loadfile("/full/path/to/file.json");
+  }
+
+  sub vcl_deliver {
+    set resp.http.Vendor = deviceatlas.lookup(req.http.User-Agent, "vendor");
+  }
+
+Check if a device is a mobile device (boolean)
+-------------------------------------------
+
+::
+
+  import deviceatlas;
+  import std;
+
+  sub vcl_recv {
+    if (deviceatlas.lookup(req.http.User-Agent, "isMobilePhone") == "1") {
+      std.log("The user-agent is a mobile phone");
+    } else if (deviceatlas.lookup(req.http.User-Agent, "isMobilePhone") == "0") {
+      std.log("The user-agent is not a mobile phone");
+    } else if (deviceatlas.lookup(req.http.User-Agent, "isMobilePhone") == "[unknown]") {
+      std.log("The user-agent is unknown");
+    } else {
+      std.log("Error during lookup");
+    }
+  }
+
+A shorter alternative that does not catch unknowns or errors:
+
+::
+
+  import deviceatlas;
+
+  sub vcl_recv {
+    set req.http.MobilePhone = "no";
+    if (deviceatlas.lookup_int(req.http.User-Agent, "isMobilePhone")) {
+      set req.http.MobilePhone = "yes";
+    }
+  }
+
+Use a specific backend for robots
+---------------------------------
+
+::
+
+  import deviceatlas;
+
+  backend default {
+      .host = "127.0.0.1";
+      .port = "8080";
+  }
+
+  backend robots {
+      .host = "127.0.0.2";
+      .port = "8080";
+  }
+
+  sub vcl_init {
+      deviceatlas.loadfile("/etc/varnish/da.json");
+  }
+
+  sub vcl_recv {
+      # Set the default backend initially
+      set req.backend_hint = default;
+
+      # The isRobot property identifies non-human traffic (robots, crawlers,
+      # checkers, download agents, spam harvesters and feed readers).
+      if (deviceatlas.lookup_int(req.http.User-Agent, "isRobot")) {
+          set req.backend_hint = robots;
+      }
+  }
+
+Detect the device type
+----------------------
+
+::
+
+  import deviceatlas;
+
+  sub vcl_recv {
+    unset req.http.Device-Type;
+
+    # Set desktop as the default device type, and override later if necessary
+    set req.http.Device-Type = "desktop";
+
+    if (deviceatlas.lookup_int(req.http.User-Agent, "isTablet")) {
+      set req.http.Device-Type = "tablet";
+    } else if (deviceatlas.lookup_int(req.http.User-Agent, "mobileDevice") ||
+      deviceatlas.lookup_int(req.http.User-Agent, "touchScreen") ||
+      deviceatlas.lookup_int(req.http.User-Agent, "isMobilePhone") ||
+      deviceatlas.lookup_int(req.http.User-Agent, "isEReader") ||
+      deviceatlas.lookup_int(req.http.User-Agent, "isGamesConsole") ||
+      deviceatlas.lookup_int(req.http.User-Agent, "isApp") ||
+      deviceatlas.lookup_int(req.http.User-Agent, "isInAppWebView")) {
+      set req.http.Device-Type = "mobile";
+    }
+  }
+
+Logging unknown User-Agents
+---------------------------
+
+::
+
+  import std;
+  import deviceatlas;
+
+  sub vcl_deliver {
+      set resp.http.X-cell = deviceatlas.lookup(req.http.User-Agent, "isMobilePhone");
+      if (resp.http.X-cell == "[unknown]") {
+          std.log("UNKNOWN-UA(isMobilePhone): " + req.http.User-Agent);
+      } else {
+          std.log("IsMobilePhone=" + resp.http.X-cell + " " + req.http.User-Agent);
+      }
+      unset resp.http.X-cell;
+  }
+
+The resulting shared memory log entry can be read with ``varnishlog`` or with
+``varnishncsa``:
+
+::
+
+  $ sudo varnishlog -g request -q "VCL_Log ~ UNKNOWN-UA"
+  $ sudo varnishncsa -q "VCL_Log ~ UNKNOWN-UA"
+
+
+Device Data Updates
+-------------------
+
+The device data is packaged in a JSON file. New devices are added to the data file
+every day. In order to ensure accuracy and support for new devices, it is necessary
+to download this JSON file to Varnish hosts on a regular basis.
+The documentation can be found here: https://deviceatlas.com/resources/getting-the-data/device-data
+
+One way to automate this is to let cron handle it.
+
+First create a file ``/etc/cron.daily/deviceatlas-update`` with the following contents:
+
+::
+
+  #!/bin/bash
+
+  # Replace this with your own DeviceAtlas license key.
+  KEY="changeme"
+  FILE="/etc/varnish/da.json.gz"
+
+  wget -q -O "$FILE" "https://deviceatlas.com/getJSON.php?licencekey=$KEY&format=gzip&version=2"
+  if [ $? -ne 0 ]; then
+    echo "Unable to download device data file"
+    exit 1
+  fi
+
+  gunzip -f "$FILE"
+  if [ $? -ne 0 ]; then
+    echo "Unable to extract device data file"
+    exit 1
+  fi
+
+  systemctl -q is-active varnish || exit 0
+  systemctl reload varnish
+
+Make this file executable:
+
+::
+
+  sudo chmod +x /etc/cron.daily/deviceatlas-update
+
+Make sure that ``crond`` is running:
+
+::
+
+  sudo systemctl status crond
+
+API
+===
+
+$Event event_function
+$Function INT loadfile(PRIV_VCL, STRING)
+
+Loads a DeviceAtlas data file into memory.
+Must be run before any calls to ``lookup``, typically in ``sub vcl_init``.
+
+Using ``loadfile`` to load device data from ``/etc/varnish/da.json``.
+
+::
+
+  import deviceatlas;
+
+  sub vcl_init {
+    deviceatlas.loadfile("/etc/varnish/da.json");
+  }
+
+The JSON file is read when running ``loadfile``, (re)starting Varnish or recompiling VCL.
+
+$Function STRING lookup(PRIV_VCL, STRING, STRING)
+
+Looks up a given property for a User-Agent. Returns a string.
+If the property value is not found, ``[unknown]`` is returned.
+Error messages will be reported with a return message starting with ``[ERROR]``.
+
+Using the ``vendor`` property to detect and set the ``Vendor`` response header to
+the vendor of the ``User-Agent``, for example ``Mozilla``.
+
+::
+
+  import deviceatlas;
+
+  sub vcl_deliver {
+    set resp.http.Vendor = deviceatlas.lookup(req.http.User-Agent, "vendor");
+  }
+
+Property names are defined by DeviceAtlas. They are case sensitive. A
+list of known property names is included below, and also listed by the
+vendor on http://deviceatlas.com/properties.
+
+Boolean properties (for example isMobilePhone) are returned as a
+string of either "0" or "1".  Integer properties (for example
+displayColorDepth) are returned as a string with the value in it.
+
+$Function INT lookup_int(PRIV_VCL, STRING, STRING)
+
+This function looks up a given property for a User-Agent and returns an integer.
+Use this for matching on integer properties. Unknown and errors are indicated by return value "0".
+
+Note: Be careful when using this function to check booleans since a return value 0 can mean false, unknown or error.
+
+Looking up the ``displayWidth`` property to detect the display type (such as ``4K``, ``Full HD``, and ``HD``).
+
+::
+
+  import deviceatlas;
+
+  sub vcl_recv {
+    if (deviceatlas.lookup_int(req.http.User-Agent, "displayWidth") >= 3840) {
+      set req.http.Display = "4K";
+    } else if (deviceatlas.lookup_int(req.http.User-Agent, "displayWidth") >= 1920) {
+      set req.http.Display = "Full HD";
+    } else if (deviceatlas.lookup_int(req.http.User-Agent, "displayWidth") >= 1280) {
+      set req.http.Display = "HD";
+    } else if (deviceatlas.lookup_int(req.http.User-Agent, "displayWidth") > 0) {
+      set req.http.Display = "Small";
+    } else {
+      set req.http.Display = "Unknown";
+    }
+  }
+
+$Function STRING  lookup_all(PRIV_VCL, PRIV_TASK, STRING)
+
+A more advanced variant of ``lookup``. Create a search object using all HTTP request
+header fields. Subsequent calls to lookup_all will be fast as the search data is
+only constructed once per request.
+
+AVAILABILITY
+============
+
+The ``deviceatlas`` VMOD is available in Varnish Enterprise version ``6.0.6r8`` and later.

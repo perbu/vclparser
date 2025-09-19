@@ -22,6 +22,7 @@ type Visitor interface {
 	VisitErrorStatement(*ErrorStatement) interface{}
 	VisitRestartStatement(*RestartStatement) interface{}
 	VisitCSourceStatement(*CSourceStatement) interface{}
+	VisitNewStatement(*NewStatement) interface{}
 
 	VisitBinaryExpression(*BinaryExpression) interface{}
 	VisitUnaryExpression(*UnaryExpression) interface{}
@@ -89,6 +90,8 @@ func Accept(node Node, visitor Visitor) interface{} {
 		return visitor.VisitRestartStatement(n)
 	case *CSourceStatement:
 		return visitor.VisitCSourceStatement(n)
+	case *NewStatement:
+		return visitor.VisitNewStatement(n)
 
 	case *BinaryExpression:
 		return visitor.VisitBinaryExpression(n)
@@ -162,6 +165,7 @@ func (bv *BaseVisitor) VisitSyntheticStatement(node *SyntheticStatement) interfa
 func (bv *BaseVisitor) VisitErrorStatement(node *ErrorStatement) interface{}           { return nil }
 func (bv *BaseVisitor) VisitRestartStatement(node *RestartStatement) interface{}       { return nil }
 func (bv *BaseVisitor) VisitCSourceStatement(node *CSourceStatement) interface{}       { return nil }
+func (bv *BaseVisitor) VisitNewStatement(node *NewStatement) interface{}               { return nil }
 func (bv *BaseVisitor) VisitBinaryExpression(node *BinaryExpression) interface{}       { return nil }
 func (bv *BaseVisitor) VisitUnaryExpression(node *UnaryExpression) interface{}         { return nil }
 func (bv *BaseVisitor) VisitCallExpression(node *CallExpression) interface{}           { return nil }

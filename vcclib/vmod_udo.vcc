@@ -1,0 +1,1054 @@
+$Module udo 3 "Unified director object (udo)"
+$ABI strict
+$License
+
+Introduction
+============
+
+This VMOD offers a highly configurable director capable of applying different
+load balancing policies over static or dynamic backends. It also includes
+facilities for operating in a clustered mode with self-routing.
+
+The UDO director can for the most part replace many commonly used directors,
+including ``round-robin``, ``random``, ``fallback``, ``hash``, ``shard``, and
+``goto``.
+
+Static backends
+===============
+
+A ``backend`` defined in VCL is considered a static backend. Any number of
+static backends can be added a UDO director and each ``backend`` must have
+exactly *one* IP address and port. Static backends can only change when a VCL
+reload is performed.
+
+Getting started
+---------------
+
+Here's an example grouping thre backends into a shard.
+::
+
+  vcl 4.1;
+  import udo;
+
+  backend origin_a { .host = "ipA:portA"; }
+  backend origin_b { .host = "ipB:portB"; }
+  backend origin_c { .host = "ipC:portC"; }
+
+  sub vcl_init {
+    # create a director with a hash strategy (could also be fallback or random)
+    new director_a = udo.director(hash);
+
+    # add your backends
+    director_a.add_backend(origin_a);
+    director_a.add_backend(origin_b);
+    director_a.add_backend(origin_c);
+  }
+
+  sub vcl_backend_fetch {
+    # explictly tell Varnish to use our new director, otherwise it'll always use
+    # origin_a, because it's the first one to be defined
+    set bereq.backend = director_a.backend();
+  }
+
+By replacing ``ip:port`` with the address of your HTTP web server, you will be
+able to send a request to Varnish and get a response from the web server.
+
+Health checks
+-------------
+
+To add a backend health check, define a probe and assign it to your backends.
+
+::
+  vcl 4.1;
+  import udo;
+
+  probe origin_probe { .url = "/health"; }
+  backend origin_a { .host = "ip:port"; .probe = origin_probe; }
+  backend origin_b { .host = "ip:port"; .probe = origin_probe; }
+  backend origin_c { .host = "ip:port"; .probe = origin_probe; }
+
+  sub vcl_init {
+    new director_a = udo.director(hash);
+    director_a.add_backend(origin_a);
+    director_a.add_backend(origin_b);
+    director_a.add_backend(origin_c);
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = director_a.backend();
+  }
+
+UDO directors only route fetches to healthy backends, any marked unhealthy by a
+probe is automatically taken out of rotation.
+
+TLS
+---
+
+To enable TLS for static backends, add ``.ssl = 1;``.
+
+::
+
+  vcl 4.1;
+  import udo;
+
+  backend origin_a {
+    .host = "ip:port";
+    .ssl = 1;
+  }
+
+  sub vcl_init {
+    new director_a = udo.director(hash);
+    director_a.add_backend(origin_a);
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = director_a.backend();
+  }
+
+Dynamic backends
+================
+
+Instead of using static backends, UDO directors can generate backends from a DNS
+group. A DNS group contains a ``host`` which is a DNS name that resolves to any
+number of IP addresses, and a ``port`` which determines the port each dynamic
+backend gets (defaults to port ``80``). A UDO director can only create dynamic
+backends from one DNS group.
+
+Getting started
+---------------
+
+The following VCL provides a good and simple starting point to use dynamic backends:
+
+::
+
+  vcl 4.1;
+  
+  import udo;
+  import activedns;
+  
+  # each VCL needs at least one regular backend,
+  # so we create this one that does nothing
+  backend default none;
+  
+  sub vcl_init {
+    # when this VCL is loaded, create a DNS pool that'll
+    # keep track of a specific domain+port
+    new origin_group_a = activedns.dns_group("example.com:80");
+  
+    # create a director with a hash strategy (could also be fallback or random)
+    # and attach it to the DNS group
+    new director_a = udo.director(hash);
+    director_a.subscribe(origin_group_a.get_tag());
+  }
+  
+  sub vcl_backend_fetch {
+    # explictly tell Varnish to use our new director, otherwise it'll use
+    # the default/none one, which will result in 503 responses
+    set bereq.backend = director_a.backend();
+  }
+
+After subscribing to the DNS group, the UDO director will update backends
+whenever DNS changes. On VCL reload, backends are created from the most recent
+DNS resolution.
+
+Health checks
+-------------
+
+Health checks can be added to dynamic backends by defining a probe called
+``origin_probe_template`` and assigning it to the DNS group.
+
+::
+
+  vcl 4.1;
+  import activedns;
+  import udo;
+
+  backend default none;
+
+  probe origin_probe_template {
+    .url = "/health";
+    .threshold = 3;
+    .initial = 3;
+  }
+
+  sub vcl_init {
+    new origin_group_a = activedns.dns_group("example.com:80");
+    origin_group_a.set_probe_template(origin_probe_template);
+
+    new director_a = udo.director(hash);
+    director_a.subscribe(origin_group_a.get_tag());
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = director_a.backend();
+  }
+
+*Note: ``.initial`` is equal to ``.threshold``, which is recommended for dynamic
+backend probes.*
+
+Each backend created by ``director_a`` gets a probe which probes ``/health`` at
+the default interval. The probes use the DNS group host as ``Host`` header
+(``example.com`` in this case).
+
+Backend templates
+-----------------
+
+To generate backends with custom attributes, create a backend template called
+``origin_template`` and assign it to the DNS group.
+
+::
+
+  vcl 4.1;
+  import activedns;
+  import udo;
+
+  probe origin_probe_template {
+    .url = "/health";
+    .threshold = 3;
+    .initial = 3;
+  }
+
+  backend origin_template {
+    .host = "0.0.0.0";
+    .host_header = "example.com";
+    .first_byte_timeout = 5s;
+  }
+
+  sub vcl_init {
+    new origin_group_a = activedns.dns_group("example.com:80");
+    origin_group_a.set_probe_template(origin_probe_template);
+    origin_group_a.set_backend_template(origin_template);
+
+    new director_a = udo.director(hash);
+    director_a.subscribe(origin_group_a.get_tag());
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = director_a.backend();
+  }
+
+*Note: The ``.host`` attribute must be set to make the VCL compiler happy, but
+this field is ignored by the DNS group. The ``.host_header`` attribute is
+however used by the probe.*
+
+For more examples on how to configure DNS groups and backend templates, see the
+[ActiveDNS VMOD documentation](https://docs.varnish-software.com/varnish-enterprise/vmods/activedns).
+
+TLS
+---
+
+To enable TLS for dynamic backends, set the DNS group port to ``443``.
+
+::
+
+  vcl 4.1;
+  import activedns;
+  import udo;
+
+  backend default none;
+
+  sub vcl_init {
+    new origin_group_a = activedns.dns_group("example.com:443");
+
+    new director_a = udo.director(hash);
+    director_a.subscribe(origin_group_a.get_tag());
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = director_a.backend();
+  }
+
+If the DNS group has a backend template, e.g., to enable TLS on a different port
+than ``443``, the template must contain ``.ssl = 1;``.
+
+::
+
+  vcl 4.1;
+  import activedns;
+  import udo;
+
+  backend origin_template {
+    .host = "0.0.0.0";
+    .host_header = "example.com";
+    .ssl = 1;
+  }
+
+  sub vcl_init {
+    new origin_group_a = activedns.dns_group("example.com:8443");
+    origin_group_a.set_backend_template(origin_template);
+
+    new director_a = udo.director(hash);
+    director_a.subscribe(origin_group_a.get_tag());
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = director_a.backend();
+  }
+
+Basic features
+==============
+
+Type
+----
+
+The director type determines the load balancing policy. The available
+director types are ``hash`` (default), ``random``, and ``fallback``.
+
+A ``random`` type director can be created as follows:
+
+::
+
+  vcl 4.1;
+  import udo;
+
+  backend origin_a { .host = "ip:port"; }
+  backend origin_b { .host = "ip:port"; }
+
+  sub vcl_init {
+    new director_a = udo.director(random);
+    director_a.add_backend(origin_a);
+    director_a.add_backend(origin_b);
+  }
+
+The director type can be changed per-request with the ``.set_type()`` method:
+
+::
+
+  sub vcl_backend_fetch {
+    if (bereq.http.Host == "example.com") {
+      director_a.set_type(fallback);
+    }
+  }
+
+Failover
+--------
+
+If a fetch fails, a ``retry`` can be used to automatically failover to another
+backend in the UDO director.
+
+::
+
+  sub vcl_backend_error {
+    return (retry);
+  }
+
+The VCL above will failover to another backend in case the backend was
+unreachable. We can also failover in case the backend was reachable, but didn't
+have the requested object.
+
+::
+
+  sub vcl_backend_response {
+    if (beresp.status == 404) {
+      return (retry);
+    }
+  }
+
+When retrying, the UDO director will always pick a new healthy backend. Backend
+fetches can be retried multiple times until there are no healthy backends left
+or ``max_retries`` has been reached.
+
+If all backends in the UDO director have been tried unsuccessfully, retrying
+again will lead to an immediate fetch error. If you want to retry the same
+backend(s) multiple times per transaction, the following VCL can be used:
+
+::
+  sub vcl_backend_response {
+    if (beresp.status == 404) {
+      director_a.reset(exhausted, beresp.backend);
+      director_a.avoid_backend(beresp.backend);
+      return (retry);
+    }
+  }
+
+  sub vcl_backend_error {
+    director_a.reset(exhausted, beresp.backend);
+    director_a.avoid_backend(beresp.backend);
+    return (retry);
+  }
+
+When the VCL above is used, the failover sequence will start from the top once
+all backends in the director have been tried unsuccessfully.
+
+Failover applies to all director types.
+
+Weight
+------
+
+Backend weights can be used to skew traffic towards or away from specific
+backends. Custom weights can be set when adding static backends to a UDO
+director or automatically derived from SRV records for dynamic backends.
+
+::
+
+  vcl 4.1;
+  import udo;
+
+  backend origin_a { .host = "ip:port"; }
+  backend origin_b { .host = "ip:port"; }
+
+  sub vcl_init {
+    new director_a = udo.director(hash);
+    director_a.add_backend(origin_a, weight = 1);
+    director_a.add_backend(origin_b, weight = 2);
+  }
+
+Here, ``origin_b`` will, statistically, receive double the traffic of
+``origin_a``.
+
+Weight applies to the ``hash`` and ``random`` director types.
+
+Priority
+--------
+
+Backends can be assigned a priority when added to a UDO director or derived
+automatically from SRV records.
+
+The priority selection algorithm follows RFC2782 and can be summarized as "all
+backends with a smaller priority number are tried before any backend with a
+higher priority number is tried".
+
+::
+
+  vcl 4.1;
+  import udo;
+
+  backend origin_a { .host = "ip:port"; }
+  backend origin_b { .host = "ip:port"; }
+  backend origin_c { .host = "ip:port"; }
+
+  sub vcl_init {
+    new director_a = udo.director(hash);
+    director_a.add_backend(origin_a, priority = 1);
+    director_a.add_backend(origin_b, priority = 1);
+    director_a.add_backend(origin_c, priority = 2);
+  }
+
+Here, traffic is only routed to ``origin_c`` when both ``origin_a`` or
+``origin_b`` are unhealthy or used.
+
+Priority applies to all director types.
+
+Advanced features
+=================
+
+Director subtypes
+-----------------
+
+A director subtype can be set to combine two different types in one director.
+Setting a subtype is optional and can be applied to a subset of backends in the
+director. When a subtype is set, the backend list is first sorted according to
+the main director type, then the top of the list is re-sorted according to
+subtype.
+
+For example, a director can be defined with ``hash`` as the main type and
+``random`` as the subtype for the top two backends.
+
+::
+
+  vcl 4.1;
+  import udo;
+
+  backend origin_a { .host = "ip:port"; }
+  backend origin_b { .host = "ip:port"; }
+  backend origin_c { .host = "ip:port"; }
+
+  sub vcl_init {
+    new director_a = udo.director(hash);
+    director_a.add_backend(origin_a);
+    director_a.add_backend(origin_b);
+    director_a.add_backend(origin_c);
+    director_a.set_subtype(random, 2);
+  }
+
+Here, the backend list is first sorted according to the ``hash`` type, then the
+top two backends are re-sorted according to the ``random`` subtype. When applied
+on the edge tier in a two-tier architecture, this results in each object being
+sharded over exactly two storage nodes, achieving both redundancy and horizontal
+scaling.
+
+Director nesting
+----------------
+
+UDO directors can be nested by adding a director as a backend to another. This
+can be used to create a tree-like structure of directors where the root is the
+top level director and the leaves are real backends. When the top level director
+is used for a backend fetch, directors are recursively resolved until a real
+backend is reached. In other words, we move from the root of the director tree
+by selecting branches according to each director's backend selection policy
+until we reach a leaf.
+
+Nesting is possible because the ``.backend()`` method returns a "virtual
+backend" instead of a real one from the director. The recursive backend
+resolution happens right after ``sub vcl_backend_fetch``.
+
+::
+
+  vcl 4.1;
+  import activedns;
+  import udo;
+
+  backend failover_a { .host = "ip:port"; }
+  backend failover_b { .host = "ip:port"; }
+
+  sub vcl_init {
+    new origin_group_a = activedns.dns_group("foo.com:80");
+    new origin_group_b = activedns.dns_group("bar.com:80");
+
+    new director_a = udo.director(random);
+    director_a.subscribe(origin_group_a.get_tag());
+
+    new director_b = udo.director(random);
+    director_b.subscribe(origin_group_b.get_tag());
+
+    new director_c = udo.director(random);
+    director_c.add_backend(failover_a);
+    director_c.add_backend(failover_b);
+
+    new director_root = udo.director(random);
+    director_root.add_backend(director_a.backend(), weight = 10, priority = 1);
+    director_root.add_backend(director_b.backend(), weight = 1, priority = 1);
+    director_root.add_backend(director_c.backend(), priority = 2);
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = director_root.backend();
+  }
+
+  sub vcl_backend_error {
+    return (retry);
+  }
+
+Here, ``director_a`` will receive 90% of traffic and ``director_b`` will receive
+10%. If neither ``director_a`` nor ``director_b`` return a successful response,
+``director_c`` is used as a failover.
+
+Client pinning
+--------------
+
+UDO can be used to pin requests from clients to the same backend. A recommended
+approach is to use [Crypto VMOD](https://docs.varnish-software.com/varnish-enterprise/vmods/crypto/#hash)
+to generate a hash based on client-specific data, e.g. client IP or session ID,
+then use ``udo.director`` to consistently route requests to the same backend
+based on the hash.
+
+The ``.set_hash()`` method is called from ``vcl_backend_fetch``
+to cause the UDO director to use the hash generated by ``crypto.hash``
+based on each client's IP address or session ID. This handles requests
+from the same client to consistently go to the same backend.
+
+**Example 1:** Using the client IP
+
+::
+
+  vcl 4.1;
+  import udo;
+  import crypto;
+
+  backend origin_a { .host = "ip:port"; }
+  backend origin_b { .host = "ip:port"; }
+
+  sub vcl_init {
+    new director_a = udo.director(hash);
+    director_a.add_backend(origin_a);
+    director_a.add_backend(origin_b);
+  }
+
+  sub vcl_backend_fetch {
+    director_a.set_hash(crypto.hash(sha256, client.ip));
+    set bereq.backend = director_a.backend();
+  }
+
+**Example 2:** Using the session ID
+
+::
+
+  vcl 4.1;
+  import udo;
+  import cookieplus;
+  import crypto;
+
+  backend origin_a { .host = "ip:port"; }
+  backend origin_b { .host = "ip:port"; }
+
+  sub vcl_init {
+    new director_a = udo.director();
+    director_a.add_backend(origin_a);
+    director_a.add_backend(origin_b);
+  }
+
+  sub vcl_backend_fetch {
+    # This will use the sess-id cookie to select backend if sess-id exists
+    # Else it will generate one using bereq.xid as a fallback
+    director_a.set_hash(crypto.hash(sha256, cookieplus.get("sess-id", bereq.xid)));
+    set bereq.backend = director_a.backend();
+  }
+
+  sub vcl_backend_response {
+    if (!cookieplus.get("sess-id")) {
+      # Set a new sess-id if none exists
+      cookieplus.setcookie_add("sess-id", bereq.xid);
+      cookieplus.setcookie_write();
+    }
+  }
+
+Kubernetes
+----------
+
+When operating in Kubernetes, or Kubernetes-like environments, backends may go
+away at any time and come back with a different IP address. By default,
+consistent hashing for dynamic backends in UDO directors is based on the socket
+address of each backend (IP + port). A different ``dns_group`` hash rule can be
+set to base the hash of each backend on the SRV record service name instead.
+
+::
+
+  vcl 4.1;
+  import activedns;
+  import udo;
+
+  backend default none;
+
+  sub vcl_init {
+    new origin_group_a = activedns.dns_group("example.com");
+    origin_group_a.set_hash_rule(service);
+
+    new director_a = udo.director(hash);
+    director_a.subscribe(origin_group_a.get_tag());
+  }
+
+Here, ``director_a`` is a ``hash`` type UDO director creating dynamic backends
+fom ``example.com``. When ``example.com`` returns any SRV records, the backends
+created will be based on the service name of each record instead of the socket
+address. This means that the hashing stays consistent in the event that one or
+more backends changes IP addresses.
+
+Architecture
+============
+
+This section covers different architectures that can be built with UDO
+directors.
+
+Single-tier
+-----------
+
+The basic architecture is a single tier of Varnish instances, where UDO
+directors are only used to route traffic to the origin. This director
+configuration will mostly deal with load balancing over the origin servers and
+failover strategy, in case the origin becomes unresponsive.
+
+When Varnish is deployed as a single tier, there's no pooling of cache capacity.
+Each Varnish server has to fetch the same objects from origin, leading to
+increased load for every node added to the single tier. Over time, the nodes
+will end up with a very similar set of objects in cache, so adding more nodes
+doesn't increase the total number of objects that can be cached.
+
+It's recommended to evaluate clustering when three or more Varnish servers are
+deployed in a single tier.
+
+Clustered
+---------
+
+A single tier of Varnish instances can be clustered to reduce traffic to origin.
+Each node in a cluster may route to another node on a cache MISS, through a
+process called self-routing. This collapses duplicate requests to the cluster
+into single requests to origin.
+
+The concept of self-routing can be explained like this: a given request can only
+be fetched from origin by a single node in the cluster, which we call the
+**primary** node. Each unique request has a different primary node, determined
+by the consistent hash of the request. When a request is sent to a node in the
+cluster that is not the primary node, the UDO director will self-route the
+request to the primary node.
+
+Clustering a single tier of Varnish instances can give a big cache hit-rate
+boost for small to medium size deployments. But as the cluster grows larger, the
+volume of intercluster traffic tends to increase and networking bottlenecks can
+become an issue. Also, scaling the cluster up involves adding new empty caches,
+which will increase traffic to origin until the new caches are warmed.
+
+To enable clustering, refer to the [Cluster documentation](../cluster/).
+
+It's recommended to evaluate multi-tier sharding when seven or more Varnish
+servers are deployed in a cluster.
+
+Multi-tier sharding
+-------------------
+
+This is a good approach for larger Varnish deployments, with two tiers being the
+most common setup. In a two-tier deployment, the first tier that client requests
+hit is called the **edge tier**, which then fetches from the **storage tier** on
+a cache MISS. Sharding between the edge and storage tier is achieved with a
+``hash`` type UDO director.
+
+The edge tier nodes are typically sized with enough memory to fit the "hot set"
+of objects and enough network bandwidth to handle incoming client traffic. The
+storage tier nodes typically have more memory and disk caching capacity. Since
+most client traffic should ideally be handled by the edge tier, fewer storage
+nodes are needed. A general rule of thumb is to deploy half as many storage
+nodes as edge nodes.
+
+The edge tier UDO director performs sharding towards the storage nodes with
+consistent hashing. A given request is always routed to the same storage node,
+which enables pooling of cache capacity on the storage tier. Adding more storage
+nodes means more objects can be cached in total.
+
+Optionally, the edge tier UDO director can be configured with a ``random``
+subtype, which will shard a given object over more than one node. This
+sacrifices some cache pool capacity by storing an object on multiple storage
+tier nodes, but increases resiliency when a storage node is taken out for
+maintenance or becomes unavailable. We call this **partial sharding**.
+
+When partial sharding is employed on the edge tier, the origin will start
+receiving duplicate requests from the storage nodes. To avoid this, clustering
+can be implemented on the storage tier, which collapses the duplicate requests
+back down to a single request to origin.
+
+FAQ
+====
+
+**Q:** Can ``std.healthy()`` be used to check the health of a UDO director?
+
+**A:** Yes, both in client and backend context.
+
+**Q:** Can ``utils.resolve_backend()`` resolve a backend from a UDO director?
+
+**A:** Yes, calling this will resolve a backend from the director, marking it as
+used in the process.
+
+**Q:** Can the same backend be added multiple times to a UDO director?
+
+**A:** Yes, but all backends in a UDO director must have a different hash, so
+the backend must be given a different ``hash`` argument each time it's added.
+
+**Q:** Can the same backend be retried multiple times during a backend fetch?
+
+**A:** By default, a UDO director will pick a different backend for each retry.
+The same backend can be retried multiple times by calling ``.reset(exhausted)``.
+
+**Q:** Can the director be used to set ``req.backend_hint``?
+
+**A:** Yes, using ``.backend()`` to set ``req.backend_hint`` in ``sub vcl_recv``
+works the same way as setting ``bereq.backend`` in ``sub vcl_backend_fetch``.
+
+**Q:** Can UDO directors create backends on the fly, like
+``goto.dns_backend()``?
+
+**A:** No, this isn't currently possible.
+
+**Q:** How are Slicer subrequests routed when using a ``hash`` type UDO
+director?
+
+**A:** Slicer subrequests are routed based on the top level request hash, so all
+subrequests are routed to the same backend for the same object.
+
+Tuning
+======
+
+This section gives general advice on tuning for UDO directors and backends. Most
+of the backend attributes mentioned in this section are also available as global
+cache parameters.
+
+Connections
+-----------
+
+The number of concurrent connections to a backend can be limited by setting the
+``.max_connections`` backend attribute. Setting a connection limit can prevent a
+slow backend from causing a backend fetch thread pileup.
+
+A task that attempts a fetch towards a backend with no more available
+connections will immediately go to ``sub vcl_backend_error`` unless backend
+connection queueing in enabled.
+
+Queueing can be enabled by setting the ``.wait_limit`` and ``.wait_timeout``
+backend attributes. The limit determines the maximum length of the queue and the
+timeout determines how long each fetch should wait. If the queue is full, or the
+timeout is reached, the fetch task immediately goes to ``sub
+vcl_backend_error``.
+
+It's recommended to set a lower total backend connection limit than the maximum
+number of threads in the thread pools. Connection queueing can be enabled to
+handle spikes in backend traffic without failing requests unnecessarily.
+
+Timeouts
+--------
+
+There are four relevant backend timeout attributes:
+
+* ``.connect_timeout`` - Time to wait for a connection to be opened or reused.
+* ``.first_byte_timeout`` - Time to wait for the backend to send the first byte.
+* ``.between_byte_timeout`` - Time to wait until the backend sends at least one
+  more byte.
+* ``.last_byte_timeout`` - Time to wait until the backend sends the complete
+  response.
+
+The timeouts have generous defaults and are typically reduced to fit the
+expected fetch times with some margin. When a fetch reaches a timeout, the fetch
+is aborted and goes to ``sub vcl_backend_error``.
+
+Lifetime
+--------
+
+Dynamic backends are immediately removed from the director when they're no
+longer present in the DNS results. As a backend may have ongoing transactions
+when it's removed from DNS, it's placed on a separate list to "cool off". The
+backend stays on this list for 60 seconds, by default, before being torn down.
+It's important that all backend transactions are complete by this time.
+
+The backend cool-off period can be increased by setting the ``backend_cooloff``
+cache parameter. This should be set to a value that is high enough that no
+ongoing transactions can outlive it. The highest theoretical transaction
+lifetime can be calculated as::
+
+  last_byte_timeout x max_retries
+
+If retries are not performed in the VCL, the ``backend_cooloff`` should simply
+be higher than ``last_byte_timeout``.
+
+Static backends last for the duration of the VCL, so the ``backend_cooloff``
+parameter isn't relevant if only using static backends.
+
+Probes
+------
+
+By default, probes set the ``.initial`` value to one less than ``.threshold``.
+This means that backends with probes start out as unhealthy and a probe request
+is immediately sent to the backend to determine whether or not it should be
+healthy.
+
+This is typically fine for static backends, as the initial probe will mark the
+backend healthy before the VCL handles any real traffic. But dynamic backends
+enter the director while it's routing traffic, and if all the backends in the
+director are changed at once, requests will start failing until the initial
+probes can complete.
+
+For dynamic backends, it's recommended to set the ``.initial`` probe attribute
+to the same value as ``.threshold``, which has the default value of 3.
+
+API
+===
+
+$Event vmod_event
+
+$Object director(ENUM {hash, fallback, random} type = hash)
+
+Create a new UDO director of ``type`` (default ``hash``).
+
+$Method VOID .set_type(ENUM {hash, fallback, random})
+$Restrict vcl_init client backend
+
+Changes the request routing policy of the director. The following types can be
+set:
+
+* ``hash``: (Default) Select a healthy and unused backend based on a consistent
+  hashing algorithm. The algorithm selects backends based on the request hash
+  from ``sub vcl_hash`` and the hash of each backend. The same request always
+  goes to the same backend.
+
+  The distribution of requests is even by default, but can be skewed with
+  backend weights. Adding a backend shifts a slice of the requests to the new
+  backend and removing the backend shifts the slice back.
+
+  The consistent hashing algorithm is based on the Highest Random Weight
+  (Rendezvous) algorithm.
+
+* ``random``: Select a random healthy and unused backend. The backend request
+  distribution is even by default, but can be skewed with backend weights.
+
+* ``fallback``: Select the first healthy and unused backend in the director.
+  Backends are selected by order of addition to the director. Backend weights
+  have no effect.
+
+The ``type`` can be set per request by calling this method from ``sub
+vcl_backend_fetch``. This overrides any ``type`` set in ``sub vcl_init`` for
+that particular backend fetch task. Calling this method from client context has
+no effect on the backend fetch task.
+
+$Method VOID .set_subtype(ENUM {hash, fallback, random} subtype, INT top)
+$Restrict vcl_init client backend
+
+Adds a subtype to the request routing policy of the director. This alters the
+routing by applying a different policy to a subset of the backends after the
+main ``type`` has been applied. When the director is prompted to pick a backend,
+the backends are first sorted by main ``type``, then the ``top`` healthy and
+unused backends are re-sorted by ``subtype``.
+
+The ``subtype`` can be set per-request by calling this method from ``sub
+vcl_backend_fetch``. This will override any ``subtype`` set in ``sub vcl_init``
+for that particular backend fetch task. Calling this method from client context
+has no effect on the backend fetch task.
+
+$Method VOID .set_hash(BLOB hash)
+$Restrict client backend
+
+Calling this method from ``sub vcl_backend_fetch`` will cause the UDO director
+to use the ``hash`` argument for consistent hashing instead of the one generated
+in ``sub vcl_hash``. This method is useful in two notable cases:
+
+* To perform consistent hashing based on a subset of the URL.
+* To pin clients to backends based on some identifier like ``client.ip``.
+
+The ``hash`` blob must be 32 bytes long.
+
+Calling this method from client context has no effect on the backend fetch task.
+
+$Method VOID .add_backend(BACKEND be, REAL weight = 1, [BLOB hash], INT priority = 1)
+$Restrict vcl_init
+
+Add a new backend to the director, with an optional ``weight``, ``hash``, and
+``priority``. This method can only be used in ``sub vcl_init`` and cannot be
+combined with ``.subscribe()``. If no ``hash`` argument is given, a hash of the
+backend name is used. All backends in the UDO director must have a unique hash.
+
+$Method BACKEND .backend()
+
+Returns this directors "virtual backend". This method can be used to nest this
+director in another director, to set ``req.backend_hint``, or to set
+``bereq.backend``. The virtual backend is resolved to a real backend after
+``vcl_backend_fetch``, and the resolved backend is available in
+``beresp.backend``.
+
+$Method STRING .dump(ENUM {list, json} fmt = list)
+$Restrict client backend
+
+Output some of the director's internal information.
+
+``json`` will produce a fairly complete (and large) string::
+
+  {
+    "hash": "5ezxEye7EHQ2GYVjrXr7bGWwZfqEQpM0",
+    "type": "hash",
+    "subtype": null,
+    "identity": "xyMIuY3qzaW3HRQHG8yNQZdiTgjUGUro",
+    "backends": [
+      {
+        "name": "s2",
+        "used": false,
+        "avoided": false,
+        "healthy": true,
+        "score": 1.975001,
+        "subscore": 0.000000,
+        "position": 1,
+        "weight": 1.000000,
+        "priority": 1,
+        "hash": "xyMIuY3qzaW3HRQHG8yNQZdiTgjUGUro"
+      },
+      (...)
+    ]
+  }
+
+While ``list`` is a simple comma-separated list::
+
+  s2, s1, s3, s4
+
+$Method VOID .exhaust_backend(BACKEND be)
+$Restrict client backend
+
+Mark ``be`` as "used" so that it won't be returned again while in the same VCL
+task.
+
+Calling this method from client context has no effect on the backend fetch task.
+
+$Method VOID .avoid_backend(BACKEND be)
+$Restrict client backend
+
+Mark ``be`` as "avoided" for this task. Avoided backends will only be used if
+there are no other healthy and unused backends in the director.
+
+Each backend in the director keeps track of how many times it has been avoided
+per task. If all backends in the director have been avoided, the director will
+select the least avoided backend according to regular selection rules.
+
+Calling this method from client context has no effect on the backend fetch task.
+
+$Method VOID .reset(ENUM {exhausted, avoided, health} reset, [BACKEND be])
+$Restrict client backend
+
+Reset cached attributes for the current task. If the optional ``be`` parameter
+is supplied, the reset only applies to that backend.
+
+* ``.reset(exhausted)`` will mark all backends as unused. This may be used to
+  pick the same backend multiple times.
+* ``.reset(avoided)`` will reset the priority of all backends to their initial
+  values.
+* ``.reset(health)`` will prompt the director to re-evaluate the health of all
+  backends. This may be used after a retry to discover any changes in probe
+  health status since the start of the task.
+
+$Method VOID .subscribe(STRING tag)
+$Restrict vcl_init
+
+Create dynamic backends from a vmod ActiveDNS ``dns_group``, or from a vmod
+Nodes ``config_group``.
+This method can only be used in ``sub vcl_init`` and cannot be combined
+with ``.add_backend()``.
+
+The name of each backend has the following format::
+
+  udo.DIRNAME.(sa[4,6]:IP:PORT)[.(sa6:IP:PORT)]
+
+Example backends for a director named ``director_a``::
+
+  udo.director_a.(sa4:1.1.1.1:443)
+  udo.director_a.(sa4:2.2.2.2:443).(sa6:::2:443)
+  udo.director_a.(sa6:::3:443)
+
+$Method VOID .set_identity([STRING string], [BLOB hash])
+$Restrict vcl_init
+
+Used for clustering.
+
+When the cluster is defined with static backends, this method can be used to set
+the identity of the director instead of relying on self-identification.
+
+The identity can be provided as either the name of the backend as a string or
+the hash of the backend a 32 byte hash.
+
+Can only be used in ``sub vcl_init``.
+
+$Method BOOL .is_identified()
+
+Used for clustering.
+
+Returns whether or not the director has successfully determined it's own
+identity. The identity can either be determined through self-identification with
+``.self_identify()``, or statically set with ``.set_identity()``.
+
+$Method STRING .get_identifier()
+$Restrict backend
+
+Used for clustering.
+
+Returns a random alphanumeric identifier string associated with a backend. When
+the director has successfully self-identified, this function returns an
+alphanumeric representation of this directors identity hash.
+
+$Method BOOL .self_identify(STRING identifier)
+$Restrict client backend
+
+Used for clustering.
+
+Takes an identifier string and attempts to self-identify the director, returns
+true if successful. The director keeps track of identifiers that have been
+retrieved with ``.get_identifier()``, so if the identifier passed to this method
+is recognized, this director must have sent a request to itself. The backend
+that the identifier is associated with becomes the identity of the director.
+
+$Method BOOL .self_is_next([INT lookahead])
+$Restrict backend
+
+Used for clustering.
+
+Returns true if this node is next in line for this request. The next in line for
+each request is determined by ordering the backends according to the director
+type (usually ``hash``), and checking whether the directors identity matches the
+next healthy and unused backend in the list.
+
+If ``lookahead`` is supplied, more than one backend is checked for an identity
+match. A lookahead value of two will match the director identity against the two
+next healthy and unused backends.
+
+AVAILABILITY
+============
+
+The ``udo`` VMOD is available in Varnish Enterprise version ``6.0.8r2`` and later.

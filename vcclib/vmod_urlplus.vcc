@@ -1,0 +1,340 @@
+$Module urlplus 3 "URL Plus (urlplus)"
+$License
+
+DESCRIPTION
+===========
+
+The ``urlplus`` vmod is a URL/query string normalization, parsing and manipulation VMOD. This VMOD allows you to get,
+add, delete, and keep URL segments and query parameters. You can also sort query parameters.
+``vmod-urlplus`` keeps an internal representation of the URL up until it is written out.
+
+EXAMPLES
+========
+
+Query Filtering
+---------------
+
+Keep only the ``page_id``.
+
+::
+
+  vcl 4.0;
+
+  import urlplus;
+
+  sub vcl_recv
+  {
+    //Keep page_id
+    urlplus.query_keep("page_id");
+
+    //Sort query string and write URL out to req.url
+    //Any query that is not kept is not written to req.url
+    urlplus.write();
+  }
+
+Remove Google Analytics
+-----------------------
+
+::
+
+  vcl 4.0;
+
+  import urlplus;
+
+  sub vcl_recv
+  {
+    //Remove all Google Analytics
+    urlplus.query_delete_regex("utm_");
+
+    //Sort query string and write URL out to req.url
+    urlplus.write();
+  }
+
+Remove ``random`` query parameter
+-------------------------------
+
+::
+
+  vcl 4.0;
+
+  import urlplus;
+
+  sub vcl_recv
+  {
+    urlplus.query_delete("random");
+
+    // Write URL out to req.url without sorting
+    urlplus.write(sort_query = false);
+  }
+
+Normalize, sort and write query string to ``req.url``
+---------------------------------------------------
+
+::
+
+  vcl 4.0;
+
+  import urlplus;
+
+  sub vcl_recv
+  {
+    // Write URL out to req.url
+    urlplus.write();
+  }
+
+File Extension Specific Logic
+-----------------------------
+
+Specify TTL by file type.
+
+::
+
+  vcl 4.0;
+
+  import urlplus;
+
+  sub vcl_backend_response
+  {
+    //Give files with these extensions a TTL of 1 day
+    if (urlplus.get_extension() ~ "gif|jpg|jpeg|bmp|png|tiff|tif|img") {
+        set beresp.ttl = 1d;
+    }
+  }
+
+API
+===
+
+$Function VOID parse(PRIV_TASK, STRING url)
+$Restrict client backend
+
+Parse URL and query string. Any internal state is reset.
+
+$Function VOID reset(PRIV_TASK)
+$Restrict client backend
+
+Reset the internal state.
+
+$Function VOID write(PRIV_TASK, BOOL sort_query = 1,
+    ENUM {NONE, KEY, KEY_VALUE} query_unique = "NONE",
+    ENUM {FROM_INPUT, TRUE, FALSE} leading_slash = "FROM_INPUT",
+    ENUM {FROM_INPUT, TRUE, FALSE} trailing_slash = "FROM_INPUT",
+    BOOL query_keep_equal_sign = 0)
+$Restrict client backend
+
+Write URL back out to be/req.url. ``sort_query`` indicates the query string
+should be sorted. ``sort_query`` defaults to ``TRUE``. ``query_unique`` indicates
+if the query string should be unique by either key or key and value. This is
+done  before sorting. The first occurrence is kept and each proceeding
+occurrence is removed. Defaults to  ``NONE``. ``leading_slash`` has three states.
+When set to ``TRUE``, a leading slash will be added to the URL. When set to
+``FALSE``, no leading slash will be added to the URL. When set to ``FROM_INPUT``
+a leading slash will be added or not depending on the way the original string
+was parsed. ``trailing_slash`` follows the same rules except the slash
+will be at  the end of the URL. ``query_keep_equal_sign`` indicates that a trailing
+equal sign should be kept when the query string value is empty.
+
+
+$Function STRING as_string(PRIV_TASK, BOOL sort_query = 1,
+    ENUM {NONE, KEY, KEY_VALUE} query_unique = "NONE",
+    ENUM {FROM_INPUT, TRUE, FALSE} leading_slash = "FROM_INPUT",
+    ENUM {FROM_INPUT, TRUE, FALSE} trailing_slash = "FROM_INPUT",
+    BOOL query_keep_equal_sign = 0)
+$Restrict client backend
+
+Return the combined URL and query as a string. ``sort_query`` indicates the query string
+should be sorted. ``sort_query`` defaults to ``TRUE``. ``query_unique`` indicates if the
+query string should be unique by either key or key and value. This is done before sorting.
+The first occurrence is kept and each proceeding occurrence is removed. Defaults to ``NONE``.
+``leading_slash`` has three states. When set to ``TRUE``, a leading slash will be added to the URL.
+When set to ``FALSE``, no leading slash will be added to the URL. When set to ``FROM_INPUT`` a
+leading slash will be added or not depending on the way the original string was parsed.
+``trailing_slash`` follows the same rules except the slash will be at the end of the URL.
+``query_keep_equal_sign`` indicates that a trailing equal sign should be kept when the query
+string value is empty.
+
+$Function STRING get_basename(PRIV_TASK)
+$Restrict client backend
+
+Given ``/foo/bar.baz`` return the location's basename (``bar.baz``). If no extension
+is present, return the last URL segment.
+
+$Function STRING get_filename(PRIV_TASK)
+$Restrict client backend
+
+Given ``/foo/bar.baz`` return the location's filename (``bar``). If no extension
+is present, return ``NULL``.
+
+$Function STRING get_extension(PRIV_TASK)
+$Restrict client backend
+
+Given ``/foo/bar.baz`` return the location's extension (``baz``). If no extension
+is present, return ``NULL``.
+
+$Function STRING get_dirname(PRIV_TASK)
+$Restrict client backend
+
+Return a string with everything but the last segment. If only one segment, return ``/``.
+Given ``/foo/bar/bar.baz`` return the location's directory (``/foo/bar``).
+
+$Function VOID tolower(PRIV_TASK, ENUM {ALL, URL, QUERY} convert = "ALL")
+$Restrict client backend
+
+Convert the URL to lowercase. ``part_to_lower`` indicates which part of the URL will be converted.
+If ``convert`` is set to ``URL`` only the URL will be converted. If set to ``QUERY`` only
+the query string will be converted. If ``convert`` is set to ``ALL`` both the URL and
+query string will be converted. ``convert`` defaults to ``ALL``.
+
+$Function VOID toupper(PRIV_TASK, ENUM {ALL, URL, QUERY} convert = "ALL")
+$Restrict client backend
+
+Convert the URL to uppercase. ``convert`` indicates which part of the URL will be converted.
+If ``convert`` is set to ``URL`` only the URL will be converted. If set to ``QUERY`` only
+the query string will be converted. If ``part_to_lower`` is set to ``ALL`` both the URL and
+query string will be converted. ``convert`` defaults to ``ALL``.
+
+$Function STRING query_get(PRIV_TASK, STRING name = "", STRING def = 0, INT position = -1)
+$Restrict client backend
+
+Return the value of query ``name``. If not found, ``def`` is returned(``NULL`` by default). Position
+when set, ignores name, and returns the value of the query at position (starting from zero). Otherwise
+returns def. Returns def when name is unset, and position is out of bounds. If both name and position
+are set, position will be returned.
+
+$Function STRING query_get_regex(PRIV_TASK, PRIV_CALL, STRING regex, STRING def = 0)
+$Restrict client backend
+
+Return the value of query that matches ``regex``. If not found, ``def`` is returned(``NULL`` by default).
+
+$Function VOID query_add(PRIV_TASK, STRING name, STRING value = "", BOOL keep = 1, INT position = -1)
+$Restrict client backend
+
+Add a query of ``query``, ``value`` with parameter ``keep``. Value is ``NULL`` by default. ``keep`` is
+1 by default. ``position`` is a base ``0`` integer. By default, ``position = -1`` which will add the URL
+segment to the end. Adding to ``position = 0`` will add to the front of the list. Adding to
+``position = 1`` will add to the second spot and so on.
+
+$Function VOID query_delete(PRIV_TASK, STRING name, BOOL delete_keep = 0)
+$Restrict client backend
+
+Delete all queries of ``name``. If ``delete_keep`` is set to ``TRUE``, kept queries
+will also be removed. ``delete_keep`` is ``FALSE`` by default.
+
+$Function VOID query_delete_regex(PRIV_TASK, PRIV_CALL, STRING regex, BOOL delete_keep = 0)
+$Restrict client backend
+
+Delete all queries matching ``regex``. If ``delete_keep`` is set values of ``name`` with
+keep set, will also be removed.
+
+$Function VOID query_keep(PRIV_TASK, STRING name)
+$Restrict client backend
+
+Set ``keep`` to ``TRUE`` for all queries of ``name``. This initiates ``keep_mode``.
+
+$Function VOID query_keep_regex(PRIV_TASK, PRIV_CALL, STRING regex)
+$Restrict client backend
+
+Set ``keep`` to ``TRUE`` for all queries with a ``name`` matching ``regex``.
+This initiates ``keep_mode``.
+
+$Function INT query_count(PRIV_TASK)
+$Restrict client backend
+
+Return the number of query pairs stored. If ``keep_mode`` is enabled, only
+kept query pairs will be counted.
+
+$Function STRING query_as_string(PRIV_TASK, BOOL sort_query = 1,
+    ENUM {NONE, KEY, KEY_VALUE} query_unique = "NONE",
+    BOOL query_keep_equal_sign = 0)
+$Restrict client backend
+
+Return a string of queries in the format ``name=value&name2``. ``sort_query``
+indicates the query string should be sorted. ``sort_query`` defaults to ``TRUE``.
+``query_unique`` indicates if the query string should be unique by either key
+or key and value. This is done before sorting. The first occurrence is kept
+and each proceeding occurrence is removed. Defaults to ``NONE``. If ``keep_mode``
+is enabled, only kept query pairs will be added to string. ``query_keep_equal_sign`` indicates that a
+trailing equal sign should be kept when the query string value is empty.
+
+$Function VOID query_set(PRIV_TASK, STRING name, STRING value = "", BOOL keep = 1, BOOL all = 0)
+$Restrict client backend
+
+Updates the value of the query 'name' with the value 'value'. If the query
+does not exist a new one with the provided name and value is added. Requesting
+all will result in the value of all matching queries being updated.
+
+$Function STRING url_get(PRIV_TASK, INT start_range = 0, INT end_range = -1,
+    ENUM {FROM_INPUT, TRUE, FALSE} leading_slash = "FROM_INPUT",
+    ENUM {FROM_INPUT, TRUE, FALSE}  trailing_slash = "FROM_INPUT")
+$Restrict client backend
+
+Return the URL as a string. This can be done by range. By default the
+``start_range`` and ``end_range`` are set to ``0`` and ``-1``. This is considered
+the entire URL. The range is ``0`` based. ``leading_slash`` has three states.
+When set to ``TRUE``, a leading slash will be added to the URL. When set to
+``FALSE``, no leading slash will be added to the URL. When set to ``FROM_INPUT``
+a leading slash will be added or not depending on the way the original
+string was parsed. ``trailing_slash`` follows the same rules except the slash
+will be at the end of the URL.
+
+$Function VOID url_add(PRIV_TASK, STRING name, BOOL keep = 1, INT position = -1)
+$Restrict client backend
+
+Add a URL segment with parameter ``keep``. ``position`` is a base ``0`` integer.
+By default, ``position = -1`` which will add the URL segment to the end.
+Adding to ``position = 0`` will add to the front of the list. Adding to
+``position = 1`` will add to the second spot and so on.
+
+$Function VOID url_delete(PRIV_TASK, STRING name, BOOL delete_keep = 0)
+$Restrict client backend
+
+Delete all URL segments of ``name``. If ``delete_keep`` is set kept URL segments
+will also be removed. ``delete_keep`` is ``0`` by default.
+
+$Function VOID url_delete_range(PRIV_TASK, INT start_range, INT end_range, BOOL delete_keep = 0)
+$Restrict client backend
+
+Delete all URL segments between the given ``start_range`` and ``end_range`` indices.
+``start_range`` and ``end_range`` are base ``0`` and inclusive. If ``delete_keep`` is set
+values of within range with keep set, will also be removed. ``delete_keep``
+is ``0`` by default. If ``end = -1`` it will be set to the number of URL segments.
+
+$Function VOID url_delete_regex(PRIV_TASK, PRIV_CALL, STRING regex, BOOL delete_keep = 0)
+$Restrict client backend
+
+Delete all URL segments matching ``regex``. If ``delete_keep`` kept URL segments
+will also be removed. ``delete_keep`` is ``0`` by default.
+
+$Function VOID url_keep(PRIV_TASK, STRING name)
+$Restrict client backend
+
+Set ``keep`` to ``TRUE`` for all URL segments of ``name``. This initiates ``keep_mode``.
+
+$Function VOID url_keep_regex(PRIV_TASK, PRIV_CALL, STRING regex)
+$Restrict client backend
+
+Set ``keep`` to ``TRUE`` for all URL segments with ``name`` matching ``regex``.
+This initiates ``keep_mode``.
+
+$Function INT url_count(PRIV_TASK)
+$Restrict client backend
+
+Return the number of URL segments stored. If ``keep_mode`` is enabled, only
+kept URL segments will be counted.
+
+$Function STRING url_as_string(PRIV_TASK,
+    ENUM {FROM_INPUT, TRUE, FALSE} leading_slash = "FROM_INPUT",
+    ENUM {FROM_INPUT, TRUE, FALSE} trailing_slash = "FROM_INPUT")
+$Restrict client backend
+
+Return the URL formatted as, ``some/test/url``. If ``keep_mode`` is enabled,
+only kept URL segments will be added to string. ``leading_slash`` has three
+states. When set to ``TRUE``, a leading slash will be added to the URL.
+When set to ``FALSE``, no leading slash will be added to the URL. When set to
+``FROM_INPUT`` a leading slash will be added or not depending on the way the
+original string was parsed.``trailing_slash`` follows the same rules except
+the slash will be at the end of the URL.
+
+AVAILABILITY
+============
+
+The ``urlplus`` VMOD is available in Varnish Enterprise version ``6.0.0r1`` and later.

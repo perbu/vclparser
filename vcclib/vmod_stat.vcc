@@ -1,0 +1,509 @@
+#-
+# Copyright (c) 2021 Varnish Software AS
+# Copyright (c) 2025 Varnish Software AS
+#
+# Author: Guillaume Quintard <guillaume@varnish-software.com>
+# Author: P. H. Johansen <hermunn@varnish-software.com>
+#
+$Module stat 3 "Stat (Prometheus)"
+$License
+
+DESCRIPTION
+===========
+
+The ``stat`` vmod provides access to Varnish counters via backends, to expose them through HTTP and
+cache, compress and manipulate the responses as any cached content.
+
+Please note the prometheus output of this vmod is still subject to change. It is expected that
+the API of this vmod will not be changed.
+
+In addition to the above, this VMOD contains a few *experimental* object interfaces which
+can be used to collect additional stats, through VCL. These are documented below the main sections.
+
+EXAMPLES
+=======
+
+Simple configuration
+--------------------
+
+Here's a VCL example to expose prometheus metrics, only showing uptime and hit
+counters:
+
+::
+
+  import stat;
+
+  sub vcl_recv {
+      if (req.url == "/metrics") {
+          return (pass);
+      }
+  }
+
+  sub vcl_backend_fetch {
+      if (bereq.url == "/metrics") {
+          set bereq.backend = stat.backend_prometheus("MAIN.uptime, *.g_bytes");
+      }
+  }
+
+With it, metrics can be pulled from the usual ``/metrics`` path:
+
+::
+
+  $ curl http://localhost:6081/metrics -v
+  # HELP varnish_uptime Child process uptime
+  # TYPE varnish_uptime counter
+  varnish_uptime{host="varnish1",section="MAIN"} 0
+
+  # HELP varnish_s0_g_bytes Bytes outstanding
+  # TYPE varnish_s0_g_bytes gauge
+  varnish_s0_g_bytes{host="varnish1",section="SMA"} 2941248
+
+  # HELP varnish_Transient_g_bytes Bytes outstanding
+  # TYPE varnish_Transient_g_bytes gauge
+  varnish_Transient_g_bytes{host="varnish1",section="SMA"} 2244
+
+
+More advanced configuration
+---------------------------
+
+Here's a VCL example to expose prometheus metrics, only showing uptime and hit
+counters. The client IP is matched against an ACL, the the content is gzipped
+to reduce network transfer and the object is cached for a second to reduce the
+load if there are many requests:
+
+::
+
+  import stat;
+  acl prometheus {
+      # IP address(es) of the clients to accept
+      "192.168.0.1"/32;
+  }
+  sub vcl_recv {
+      if (req.url == "/metrics") {
+          if (client.ip !~ prometheus) {
+              return(synth(403));
+          }
+      }
+  }
+  sub vcl_backend_fetch {
+      if (bereq.url == "/metrics") {
+          set bereq.backend = stat.backend_prometheus("MAIN.uptime, *.g_bytes");
+      }
+  }
+  sub vcl_backend_response {
+      if (bereq.url == "/metrics") {
+          set beresp.do_gzip = true;
+          set beresp.ttl = 1s;
+          set beresp.grace = 1s;
+          set beresp.http.cache-control = "max-age=1, must-revalidate";
+      }
+  }
+::
+
+API
+===
+
+Some functions accept a ``filters`` argument, which is a comma-separated
+``STRING`` to include or exclude certain counters. Each element is interpreted
+like a ``varnishstat -f`` argument, meaning words starting with ``^`` will exclude
+matching counters.
+
+$Event vmod_event
+
+$Function BACKEND backend_json(PRIV_TASK, STRING filters = 0, ENUM {SKIP, INCLUDE} experimental_observatory = SKIP)
+$Restrict backend
+
+Produce a JSON object containing the format ``version`` (``1``) as well a ``counters``
+object listing all the objects as ``varnishstat -j`` does.
+
+If the *experimental* option `experimental_observatory` is set to
+`INCLUDE`, there will also be a top level member `histograms`
+containing all the histograms currently in the *experimental*
+observatory sub system.
+
+The observability sub system is described further down.
+
+Can only be called from a backend context (such as ``sub vcl_backend_fetch``).
+
+::
+
+  {
+    "version": 1,
+    "counters": {
+      "MGT.uptime": {
+        "description": "Management process uptime",
+        "flag": "c",
+        "format": "d",
+        "value": 0
+      },
+      "MGT.child_start": {
+        "description": "Child process started",
+        "flag": "c",
+        "format": "i",
+        "value": 1
+      },
+      ...
+
+$Function STRING string_json(PRIV_TASK, STRING filter)
+$Restrict backend
+
+Returns a JSON collection of counters based on the provided filter(s).
+
+$Function BACKEND backend_prometheus(PRIV_TASK, STRING filters = 0, BOOL hostnames = 1, INT resolution = 64)
+$Restrict backend
+
+Output a prometheus-compatible list of counters. Can only be called from
+a backend context (such as ``sub vcl_backend_fetch``). The ``hostnames`` parameter denotes
+whether to include the hostname of the device in the prometheus output.
+
+The `resolution` parameter allows you to specify a maximum output resolution in
+bits for bitmap counters. Accepts integer from 1 to 64. The default is 64 which
+denotes the full bitmap resolution.
+
+::
+
+	$ curl http://localhost:6081/metrics -v
+	# HELP varnish_main_uptime Child process uptime (MAIN.uptime)
+	# TYPE varnish_main_uptime counter
+	varnish_main_uptime{host="varnish1"} 0
+
+	# HELP varnish_sma_g_bytes Bytes outstanding (SMA.s2.g_bytes)
+	# TYPE varnish_sma_g_bytes gauge
+	varnish_sma_g_bytes{id="s2",host="varnish1"} 2941248
+
+	# HELP varnish_sma_g_bytes Bytes outstanding (SMA.Transient.g_bytes)
+	# TYPE varnish_sma_g_bytes gauge
+	varnish_sma_g_bytes{id="Transient",host="varnish1"} 2244
+
+$Function INT get_value(STRING name)
+
+Returns the integer value of a given counter. A value of -1 signifies an error or
+a failure to find a match. If a value exceeds the integer maximum limit it will be
+clamped to the integer max limit.
+
+$Function VOID add_filter(PRIV_TASK, ENUM {vcl, accounting} filter)
+$Restrict backend
+
+Filter ``backend_prometheus`` output based on label filters. Multiple filters
+can be used by calling ``add_filter`` again. Can only be called from a backend context.
+
+* vcl
+  Filter counters based on current VCL name.
+
+* accounting
+  Filter counters based on current accounting namespace.
+
+$Function VOID remove_filters(PRIV_TASK)
+$Restrict backend
+
+Removes filters applied with ``add_filter()``. Can only be called from a backend context.
+
+EXPERIMENTAL STAT OBJECTS
+=========================
+
+The following VMOD objects can be used to create additional
+stats. Both the underlying core support, internally known as the
+*observatory sub system*, and the VMOD objects described here are
+*highly experimental*, and are expected to change in the future.
+
+In the observatory sub system, objects can accept data to maintain
+live summary information about the data. The objects share a concept
+of Exponentially Weighted Averages (EWAs) of the data which has been
+fed into a observatory object. Each EWA has weights corresponding to a
+specific *half time*, allowing a VCL writer to change behavior based
+on activity observed by VCL, and to compare averages with different
+half times.
+
+The set of available half times is currently 10 seconds, 60 seconds, 5
+minutes, 1 hour and 24 hours. This is subject to change until this
+notice is removed. See the documentation of `get_observatory_half_time`
+below for more information.
+
+For a half time which is long, for example 24 hours, samples taken
+during the last few minutes will have roughly the same weight, and
+thus contribute roughly equally to the "24 hour exponentially weighted
+average". On the other hand, if the half time is 10 seconds, the
+weight of a sample is twice the weight of a sample taken 10 seconds
+prior. This means that you can compare the two averages, and know
+something about recent events compared to long averages of events.
+
+Note that, for efficiency reasons, the average is calculated through
+*buckets*, which are 10 seconds long. The average is calculated from
+data including the last *completed* bucket, so up to 10 seconds of
+data is not included in the average, and the return value of
+``.get_ewa(i)``, for a given index ``i``, only changes once per every
+10 seconds.
+
+$Function DURATION get_observatory_half_time(INT i=0)
+$Restrict client backend
+
+This function returns the half time (see the separate section above,
+and the examples section) corresponding to the index ``i``. If ``i``
+is out of bounds (not in the range 0 to 4), -1 will be returned.
+
+When getting an exponentially weighted average from a method in one of
+the following objects, the parameter ``i`` selects a half time
+corresponding to different values of ``i`` in this function. In all
+cases, specifying an ``i`` which is out of bounds will result in a -1
+return value. Note that ``i = 0`` will always be valid, and always
+correspond to the lowest half time.
+
+$Object event_observatory([STRING name], ENUM { skip, create } counter, [STRING prometheus_labels])
+
+*This object interface is experimental. This means that it is subject
+to change until this notice has been removed.*
+
+Create a `observatory` object for events. This object is used to register
+interesting events, as defined by VCL. Varnish will keep an internal
+structure tracking these events, and make these statistics available
+as counters, if so instructed (through the `counter` argument, see
+below). Please note that, for now, due to the *experimental* state of
+the core observatory system, these counters are subject to change.
+
+The `name` identifies the underlying observatory of this type (event),
+and is shared with other VCLs referring to the same name and the same
+type. If `name` is ommitted, the VCL name of the object is used as the
+identifier.
+
+If `counter` is set to `create`, and there is not already an event
+observatory object in the observatory subsystem with the same name, a new
+counter will be created. If there already is an underlying event
+observatory object with the same name, `counter` is ignored.
+
+$Method VOID .register_event(INT n=1)
+$Restrict client backend
+
+Call this to register that the event happened once or several
+times. The parameter `n` specifies how many times the event happened,
+and must be non-negative (zero is allowed).
+
+$Method REAL .get_ewa(INT i=0)
+$Restrict client backend
+
+Get an exponentially weighted average of how many times the event
+happened per second "lately", with the half time specified by the
+index ``i``. See ``get_observatory_halftime`` above, for an explenation
+on how the index should be interpreted.
+
+If ``i`` is out of bounds, -1 is returned.
+
+$Object amount_observatory([STRING name], ENUM { skip, create } counter, [STRING prometheus_labels])
+
+*This object interface is experimental. This means that it is subject
+to change until this notice has been removed.*
+
+Create a ``observatory`` object for amounts. This object is used to
+register amounts, typically byte counts (but can be anything which has
+a positive integer type) through VCL. Varnish will keep an internal
+structure tracking these amounts, and make statistics available as
+counters. (For now, due to the state as *experimental*, these counters
+are subject to change).
+
+$Method VOID .register_amount(INT amount)
+$Restrict client backend
+
+Call this to register an amount which will be absorbed by the object.
+The parameter ``amount`` can contain any quantity which is a nonnegative integer.
+
+$Method REAL .get_ewa(INT i=0)
+$Restrict client backend
+
+Get an exponentially weighted average of amounts registered with the
+observatory objects. See ``get_observatory_halftime`` above, for an explenation
+on how the index should be interpreted.
+
+If ``i`` is out of bounds, -1 is returned.
+
+$Object duration_observatory([STRING name], [STRING prometheus_labels])
+
+*This object interface is experimental. This means that it is subject
+to change until this notice has been removed.*
+
+Create a ``observatory`` object for durations. This object is used to
+register durations, for example from CMCD or similar, but can be
+anything which has a ``duration`` type.
+
+Varnish will keep an internal structure tracking these
+durations. Currently, the structure is a histogram with buckets
+corresponding to fixed intervals. For now, getting to the data is
+possible only through the ``.backend_json()`` and
+``.backend_prometheus()`` functions in this VMOD. This is subject to
+change in the future.
+
+The optional parameter `prometheus_labels` should be a list of labels
+that will be added to prometheus stats in addition to the name (which
+will also be a label).
+
+::
+
+  vcl 4.1;
+  import stat;
+
+  sub vcl_init {
+	# In the following line, {" and "} starts and ends the string.
+	new d = duration_observatory(prometheus_labels = {"foo="bar""});
+	# The above will create the Prometheus labels {name="d",foo="bar"}
+	# in the Prometheus output. The value of `name` can be overridden.
+  }
+
+$Method VOID .register_duration(DURATION dur)
+$Restrict client backend
+
+Call this to register a duration with the objects. The parameter `dur`
+must be non-negative.
+
+$Object internal_observatory(STRING name)
+
+*This object interface is experimental. This means that it is subject
+to change until this notice has been removed.*
+
+Create an ``observatory`` object for the purpose of observing the
+varnish internal defined by ``name``. For now, ``name`` refers to an
+internal counter or gauge.
+
+The object is strictly *read only*, and only a limited set of
+names are valid.
+
+If ``name`` is not *valid*, the object will be created, but will
+report NULL as its type (see ``get_type()`` below). Furthermore, the
+object will return zero on all methods which return a number.
+
+In the future, an administrator of Varnish may be able to selectively
+disable some names with the purpose to hide the corresponding internal
+information from VCL. For this reason, in a shared environment, try to
+not rely on the availability of a counter.
+
+$Method STRING .get_type()
+
+Returns the type of the internal variable behind the object, either
+"counter" or "gauge", or NULL for objects where the parameter was
+invalid during object creation.
+
+The following code shows how to give up if a given ``name`` is invalid.
+
+::
+
+  vcl 4.1;
+  import stat;
+
+  sub vcl_init {
+	new threads_limited = stat.internal_observatory("MAIN.threads_limited");
+
+	if (!threads_limited.get_type()) {
+		# We have no way of getting the counter through the
+                # observatory object, so we just give up loading the VCL.
+		return (fail);
+	}
+  }
+
+$Method REAL .get_value()
+
+Return the raw value of the variable observed by the object.
+
+The following example illustrates how one can change behavior based on
+the number of concurrent threads running. The example also includes
+code for serving stale content when a backend returns an error, through
+VMOD `stale`.
+
+::
+
+  vcl 4.1;
+
+  import stale;
+  import stat;
+
+  sub vcl_init {
+	new n_threads = stat.internal_observatory("MAIN.threads");
+  }
+  sub vcl_miss {
+	# Denial of service protection: If we are close to the maximum
+	# configured threads, we stop fetching new content from the backend.
+	# Note that background fetches will continue
+	if (n_threads.get_value() > 0.8 * param.thread_pool_max * param.thread_pools) {
+		return (synth(429));
+	}
+  }
+  sub vcl_backend_fetch {
+	# Denial of service protection: If we are close to the maximum
+	# configured threads, we treat a *grace* and *keep* object with a 200
+	# status code as "fresh"/deliverable by reviving them for some seconds
+	# (with grace copied from the stale object).
+	if (n_threads.get_value() > 0.7 * param.thread_pool_max * param.thread_pools) {
+		if (stale.exists() && stale.status() == 200) {
+			stale.revive(10s, stale.get_grace());
+			return (abandon);
+		} else {
+			# Here one can consider strategies for not
+			# going to the backend. For example, it might
+			# be an idea to synthesize short lived 429
+			# responses for some requests while letting
+			# other requests go through.
+		}
+	}
+  }
+  sub vcl_backend_response {
+	# Standard stale-if-error logic.
+	if (beresp.status > 499 && stale.exists() && stale.status() == 200) {
+		stale.revive(10s, stale.get_grace());
+		return (abandon);
+	}
+  }
+  sub vcl_backend_error {
+	# Standard stale-if-error logic.
+	if (stale.exists() && stale.status() == 200) {
+		stale.revive(10s, stale.get_grace());
+		return (abandon);
+	}
+  }
+
+$Method REAL .get_ewa(INT i=0)
+$Restrict client backend
+
+For gauges, returns the exponentially weighted average of the value
+backwards in time.
+
+For counters, returns the exponentially weighted average change, per
+second.
+
+As with event, amount and duration, exponentially weighted averages
+(EWAs) are sampled every interval (10 seconds), so the return value
+of this function will only update every 10 seconds.
+
+Example where a particular URL reports the approximate goodput of Varnish:
+
+::
+
+  vcl 4.1;
+  import observatory;
+
+  sub vcl_init {
+	new resp_bodybytes = stat.internal_observatory("MAIN.s_resp_bodybytes");
+
+	if (!resp_bodybytes.get_type()) {
+		# We have no way of getting the counter through the
+                # observatory object, so we just give up.
+		return (fail);
+	}
+  }
+  sub vcl_recv {
+	if (req.url == "/speed/") {
+		return (synth(200, "SPEED"));
+	}
+  }
+  sub vcl_synth {
+	if (resp.status == 200 && resp.reason == "SPEED") {
+		# Note: It is natural to limit this information somehow, for
+		# example through an ACL, but this is out of scope of this
+		# example.
+		#
+		# A number is valid JSON, so the response is technically JSON.
+		synthetic("" + resp_bodybytes.get_ewa(2));
+                set resp.http.Content-Type = "application/json";
+		return (deliver);
+	}
+  }
+
+AVAILABILITY
+============
+
+The ``stat`` VMOD is available in Varnish Enterprise version ``6.0.8r2`` and later.

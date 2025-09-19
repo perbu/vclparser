@@ -1,0 +1,84 @@
+#
+# Copyright (c) 2016 Guillaume Quintard
+# Copyright (c) 2019 Varnish Software
+#
+# Author: Guillaume Quintard <guillaume.quintard@gmail.com>
+#
+# (vmodtool requires this format.)
+#
+
+$Module str 3 "Strings (str)"
+$License
+
+DESCRIPTION
+===========
+
+The ``string`` vmod implements various helper function to manipulate strings.
+
+API
+===
+
+$Function INT len(STRING S)
+
+Returns the number of ascii characters in S, or -1 if S is null.
+
+$Function BOOL startswith(STRING S1, STRING S2)
+
+Returns true if S1 starts with S2.
+
+$Function BOOL endswith(STRING S1, STRING S2)
+
+Returns true if S1 ends with S2.
+
+$Function BOOL contains(STRING S1, STRING S2)
+
+Returns true if S1 contains S2.
+
+$Function STRING substr(STRING S, INT N, INT OFFSET = 0)
+
+Returns a substring that is at most abs(N) characters long, from the character
+at the OFFSET position (negative OFFSET counts from the back of the string).
+If N is positive, the substring is extracted right of OFFSET, left otherwise.
+
+Example:
+
+- substr("0123456789abcdef", 2, 5) -> "56", 2 characters from the 5th one
+- substr("0123456789abcdef", 2, -5) -> "be", 2 characters from the 5th to last one
+- substr("0123456789abcdef", -2, 5) -> "45", 2 characters to the 5th one
+- substr("0123456789abcdef", -2, -5) -> "ab", 2 characters to the 5th to last one
+- substr("0123456789abcdef", 10, 20) -> "abcdef", truncated because the end of the
+  string was reached.
+
+If S in NULL, NULL is returned.
+
+$Function STRING reverse(STRING S)
+
+Reverse S.
+
+$Function STRING split(STRING S, INT n, STRING SEP = " \t")
+
+Split s and return the N-th token (index starts at 1). Characters in SEP are separators. A negative
+N indicate "from the end of the string". The value of "STRING SEP" can be multiple characters, the vmod will split the string
+at all of the given values.
+
+Example:
+
+- split("/item_1.mp4|/item_2.mp4|/item_3/mp4", 1, "|") -> "/item_1.mp4", first item, | as a separator.
+- split("/item_1.mp4|/item_2.mp4|/item_3/mp4", -1, "|@") -> "/item_3.mp4", last item, | or @ as a separator.
+- split("/item_1.mp4@/item_2.mp4@/item_3/mp4", 2, "@") -> "/item_2.mp4", second item, @ as a seperator.
+- split("/item_1.mp4|/item_2.mp4@/item_3/mp4", -1, "|@") -> "/item_3/mp4", last item,  @ or | as a separator.
+
+$Function BOOL token_intersect(STRING str1, STRING str2, [STRING separators])
+
+Checks if the set tokens in one string intersects the set of
+tokens in the other string. In other words, it returns true if
+there is a token which exists in both strings.
+
+If the separators argument is not supplied, the space and comma
+characters are the separators. Empty tokens are ignored in both
+strings.
+
+AVAILABILITY
+============
+
+The ``str`` VMOD is available in Varnish Enterprise version ``6.0.4r3`` and later.

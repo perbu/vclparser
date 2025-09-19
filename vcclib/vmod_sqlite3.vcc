@@ -1,0 +1,108 @@
+#
+# Copyright (c) 2014-2016, Federico G. Schwindt <fgsch@lodoss.net>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+# TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+# LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+# NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+$Module sqlite3 3 "SQLite3"
+$License
+
+DESCRIPTION
+===========
+
+[SQLite](https://www.sqlite.org/index.html) is a library allowing users to use
+in-memory or single-file relational databases. ``vmod_sqlite3`` integrates this
+library to use it from inside your VCL.
+
+EXAMPLE
+=======
+
+::
+
+  import sqlite3;
+
+  sub vcl_init {
+    # open the database
+    sqlite3.open("file:mysqlitedb.db?mode=ro", "\|;");
+  }
+
+  sub vcl_recv {
+    # generate a synthetic response for this particular URL
+    if (req.url == "/ask_db") {
+      return (synth(200));
+    }
+  }
+
+  sub vcl_deliver {
+    # fill the response body with the output of the query
+    if (req.url == "/ask_db") {
+      synthetic(sqlite3.exec("SELECT foo FROM bar"));
+      return(deliver);
+    }
+  }
+
+API
+===
+
+$Function VOID open(PRIV_VCL, STRING, STRING)
+
+Open the SQLite database specified by the 1st argument and set
+the field and row delimiters to be used in ``exec()`` to the 1st
+and 2nd character, respectively, of the 2nd argument.
+
+::
+
+  sqlite3.open("file:mysqlitedb.db?mode=ro", "\|;");
+
+$Function STRING exec(PRIV_VCL, STRING)
+
+Run an SQL statements and return any result rows coming out
+of their evaluation.  If an error occurs return the error text
+instead.
+
+::
+
+  set req.http.results = sqlite3.exec("SELECT foo FROM bar");
+
+$Function STRING escape(STRING)
+
+Escape the input string by doubling any single-quote (')
+character and return the result.
+
+::
+
+  set req.http.url = sqlite3.escape(req.url);
+
+$Function VOID close(PRIV_VCL)
+
+Close a previously opened SQLite database.
+
+::
+
+  sqlite3.close()
+
+AVAILABILITY
+============
+
+The ``sqlite3`` VMOD is available in Varnish Enterprise version ``6.0.6r3`` and later.

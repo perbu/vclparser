@@ -1,0 +1,121 @@
+$Module image 3 "Image"
+$License
+
+DESCRIPTION
+===========
+
+The ``image`` vmod provides a tool for image modification and optimization.
+
+EXAMPLE
+=======
+
+Convert to WebP
+---------------
+
+This example assumes that you want to convert all JPEG and PNG images
+to WebP. If this is not the case, see the comment in
+``vcl_backend_response`` below to adjust to your needs. The example
+also includes error handling, which makes it longer than most other
+examples.
+
+::
+
+	import image;
+	import headerplus;
+
+	sub vcl_recv {
+		if (req.http.Accept ~ "image/webp") {
+			set req.http.X-Varnish-Webp = "enabled";
+		} else {
+			unset req.http.X-Varnish-Webp;
+		}
+		unset req.http.X-Varnish-Webp-Result;
+	}
+
+	sub vcl_backend_response {
+		# The following "if" test controls which assets should be
+		# converted to WebP. If you want a different set than all
+		# JPEG and PNG images, you need to updates the contents
+		# of this "if" test accordingly.
+		if (beresp.http.Content-Type == "image/jpeg" ||
+			beresp.http.Content-Type == "image/png")
+		{
+			if (bereq.http.X-Varnish-Webp && bereq.retries == 0) {
+				image.webp();
+				set bereq.http.X-Varnish-Webp-Result = "active";
+			}
+			headerplus.init(beresp);
+			headerplus.attr_set("Vary", "X-Varnish-Webp");
+			headerplus.write();
+		}
+	}
+
+	sub vcl_backend_error {
+		if (bereq.retries == 0
+			&& bereq.http.X-Varnish-Webp-Result == "active") {
+			set bereq.http.X-Varnish-Webp-Result = "failed";
+			# Getting here is usually because conversion
+			# failed. On the next go, we will not try to
+			# convert, as bereq.retries will be 1
+			return (retry);
+		}
+	}
+
+The above uses Vary on a self-maintained header (``X-Varnish-Webp``)
+to facilitate serving both the original image and the webp version as
+different variants, and makes sure that Vary is updated for exactly
+the assets where we might attempt WebP conversion.
+
+In addition to this, the header ``X-Varnish-Webp-Result`` is used to
+keep track of what has happened. The header will make it easier to
+debug as you can see the header updates in the log, and even filter
+requests by this header value. The ``X-Varnish-Webp-Result`` can
+also be used by the backend to understand what Varnish is doing.
+
+Note that if we get ``bereq.http.X-Varnish-Webp-Result = "failed"``,
+then this means that the following has happened, in order:
+* Varnish has gotten a full set of backend response headers
+* VCL processing of the backend response headers has happened in ``sub vcl_backend_response`` where conversion to WebP was turned on.
+* The ``image`` VMOD turned off streaming (equivalent to ``set beresp.do_stream = false;`` in VCL), tried to fetch the entire response body and convert it.
+* An error occurred, either when fetching the body or trying to convert the image.
+* As a result of the error happening when streaming was disabled, ``sub vcl_backend_error`` was called.
+* In ``sub vcl_backend_error``, a ``retry`` of the backend fetch was initiated.
+
+In the scenario above, the second backend fetch will be happen, and
+if the fetch is successful, an object will be inserted. Subsequent
+fetches from clients accepting WebP will then get the original - no
+additional conversion will happen until the inserted objects has
+left the cache.
+
+API
+===
+
+$Event init_function
+
+$Function VOID webp([INT quality = 75], [INT resize_width = 0], [INT resize_height = 0], [BOOL aspect_lock = 0], [INT crop_x = 0], [INT crop_y = 0], [INT crop_width = 0], [INT crop_height = 0], [BOOL lossless = 0], [INT lossless_level = 6])
+$Restrict vcl_backend_response
+
+Convert an image to the WebP format and store it in cache. Optionally scale,
+resize, crop, or change the quality of conversion. Scaling is done by using only one
+of ``resize_width`` or ``resize_height``. ``quality`` and ``lossless`` are mutually
+exclusive options. The supported content types to convert are ``image/png`` and
+``image/jpeg``. When called this function disables streaming.
+It should not be re-enabled for proper functionality.
+
+Note: The area to crop is defined by X,Y coordinates from the top left corner and then
+the desired width and height.
+
+Note: When using this function to both crop and rescale an image, the crop will
+take place prior to rescaling.
+
+Note: ``quality`` is a number between 0 and 100, a lower number will result in a smaller size but lower quality.
+``mode`` is a number between 0 and 9, a lower number is faster but produces a larger file size.
+
+Note: ``aspect_lock`` will ensure that the resulting image obeys the aspect ratio of the original image.
+If the desired resize values do not obey this ratio then the correct dimensions will be calculated using the
+smallest of the two input values, with ``resize_width`` being prioritized if both values are identical.
+
+AVAILABILITY
+============
+
+The ``image`` VMOD is available in the ``varnish-plus-vmods-extra`` package.

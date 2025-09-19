@@ -16,6 +16,9 @@ const (
 	SymbolACL
 	SymbolProbe
 	SymbolSubroutine
+	SymbolModule
+	SymbolVMODFunction
+	SymbolVMODObject
 )
 
 func (sk SymbolKind) String() string {
@@ -32,6 +35,12 @@ func (sk SymbolKind) String() string {
 		return "Probe"
 	case SymbolSubroutine:
 		return "Subroutine"
+	case SymbolModule:
+		return "Module"
+	case SymbolVMODFunction:
+		return "VMOD Function"
+	case SymbolVMODObject:
+		return "VMOD Object"
 	default:
 		return "Unknown"
 	}
@@ -366,4 +375,45 @@ func (st *SymbolTable) ValidateAccess(symbolName, method string, accessType stri
 	}
 
 	return nil
+}
+
+// DefineModule adds a VMOD module to the symbol table
+func (st *SymbolTable) DefineModule(moduleName string) error {
+	return st.Define(&Symbol{
+		Name: moduleName,
+		Kind: SymbolModule,
+		Type: Module,
+	})
+}
+
+// DefineVMODFunction adds a VMOD function to the symbol table
+func (st *SymbolTable) DefineVMODFunction(moduleName, functionName string, returnType Type) error {
+	fullName := moduleName + "." + functionName
+	return st.Define(&Symbol{
+		Name: fullName,
+		Kind: SymbolVMODFunction,
+		Type: returnType,
+	})
+}
+
+// DefineVMODObject adds a VMOD object instance to the symbol table
+func (st *SymbolTable) DefineVMODObject(objectName, moduleName, objectType string) error {
+	return st.Define(&Symbol{
+		Name:  objectName,
+		Kind:  SymbolVMODObject,
+		Type:  Object,
+		Scope: st.currentScope.Name,
+	})
+}
+
+// LookupVMODFunction looks up a VMOD function by module and function name
+func (st *SymbolTable) LookupVMODFunction(moduleName, functionName string) *Symbol {
+	fullName := moduleName + "." + functionName
+	return st.Lookup(fullName)
+}
+
+// IsModuleImported checks if a VMOD module has been imported
+func (st *SymbolTable) IsModuleImported(moduleName string) bool {
+	symbol := st.Lookup(moduleName)
+	return symbol != nil && symbol.Kind == SymbolModule
 }

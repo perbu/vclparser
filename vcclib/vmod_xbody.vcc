@@ -1,0 +1,336 @@
+$Module xbody 3 "Body Access & Transformation (xbody)"
+$License
+
+DESCRIPTION
+===========
+
+The ``xbody`` vmod provides access to request and response bodies.
+
+On the response side, ``xbody`` is a streaming regular expression engine which allows
+Varnish to manipulate, capture, hash, and log body text. ``xbody`` supports full PCRE regex expressions,
+capture groups, and backreferences.
+
+``xbody`` supports two important modes: ``regsub`` and ``capture``.
+
+``regsub`` performs a regular expression substitution. Any number of ``regsub`` substitutions
+can be done on a response body.
+
+``capture`` finds a pattern and then put its substitution, or value, into a JSON object
+which can then be queried out using VCL or included directly in an Edgestash template.
+Any number of ``capture`` calls can be done on a response body.
+
+When ``regsub`` and ``capture`` are combined, Varnish can convert a dynamic and personalized
+response into a JSON object and Edgestash template, allowing for uncacheable content
+to be cached and accelerated. Please see [Edgestash](https://docs.varnish-software.com/varnish-enterprise/vmods/edgestash/) for
+more information on JSON based templating.
+
+**Note:** Because ``xbody`` is a streaming regex parser, embedded use of anchors (``^`` and ``$``) is not supported.
+Anchors can only be used as the first and last characters of your regex expression.
+
+For assistance in creating PCRE compatible regular expressions, please use [regex101.com](https://regex101.com/).
+
+Click [here](https://docs.varnish-software.com/varnish-enterprise/vmods/bodyaccess/) for legacy ``vmod_bodyaccess``.
+
+EXAMPLES
+========
+
+Example regsub and capture
+--------------------------
+
+Input (backend): ``This is a test!``
+
+::
+
+  import std;
+  import xbody;
+
+  sub vcl_backend_response
+  {
+    xbody.regsub("test", "new string");
+    xbody.regsub("\sis", " isn't");
+    xbody.regsub("string", "cat");
+    xbody.capture("name", "new (\w+)", "\1");
+  }
+
+  sub vcl_deliver
+  {
+    std.log("Name: " + xbody.get("name"));
+    std.log("Capture JSON: " + xbody.get_all());
+  }
+
+Output (cache): ``This isn't a new cat!``
+
+Captures (``xbody.get_all()``):
+
+::
+
+  {
+    "name": "cat"
+  }
+
+Change All Domain References
+----------------------------
+
+::
+
+  import xbody;
+
+  sub vcl_backend_response
+  {
+    xbody.regsub("www.example.com", "test.example.com");
+    xbody.regsub("admin@example.com", "dev@test.example.com");
+  }
+
+Javascript CSP Nonce
+--------------------
+
+::
+
+  import crypto;
+  import edgestash;
+  import xbody;
+
+  sub vcl_backend_response{
+    if (beresp.http.Content-Type ~ "html") {
+      xbody.regsub("<script>", "<script nonce={{nonce}}>");
+      edgestash.parse_response();
+    }
+  }
+
+  sub vcl_deliver {
+    if (edgestash.is_edgestash()) {
+      set req.http.X-nonce = crypto.hex_encode(crypto.urandom(16));
+      set resp.http.Content-Security-Policy = "script-src 'nonce-" + req.http.X-nonce + "'";
+      edgestash.add_json({"
+      {
+        "nonce":""} + req.http.X-nonce + {""
+        }
+      "});
+      edgestash.execute();
+    }
+  }
+
+JSONP
+-----
+
+Convert a JSON response into JSONP using a ``callback`` query parameter.
+
+::
+
+  import urlplus;
+  import xbody;
+
+  sub vcl_backend_response {
+    # Insert the JSONP callback
+    if (urlplus.query_get("callback") && beresp.http.Content-Type ~ "json") {
+      xbody.regsub("^", urlplus.query_get("callback") + "(");
+      xbody.regsub("$", ");");
+      set beresp.http.Content-Type = regsub(beresp.http.Content-Type, "json", "javascript");
+    }
+  }
+
+
+Personalization Caching
+-----------------------
+
+Cache PHP pages with personalized content.
+Personalized content is wrapped with an ``edgestash-name`` attribute.
+These attributes will be templated and delivered per session.
+
+PHP:
+
+::
+
+  <span edgestash-name="greeting">
+  Hello [name]!
+  </span>
+
+  <span edgestash-name="number-items">
+  5
+  </span>
+
+  Content ...
+
+VCL:
+
+::
+
+  import cookieplus;
+  import edgestash;
+  import xbody;
+  import ykey;
+
+  sub vcl_recv
+  {
+    # Purge session data
+    if (req.method == "POST") {
+      # Broadcaster can be used to send this purge to a cluster
+      ykey.purge(cookieplus.get("PHPSESSID"));
+    }
+
+    if (req.method != "GET" && req.method != "HEAD") {
+      return (pass);
+    }
+
+    return(hash);
+  }
+
+  sub vcl_hash
+  {
+    # Add the session to xbody data
+    if (req.http.host ~ "^xbody\.") {
+      hash_data(cookieplus.get("PHPSESSID", "guest"));
+    }
+  }
+
+  sub vcl_pass
+  {
+    # When you purge, you may be forced to pass
+    if (req.http.host ~ "^xbody\.") {
+      return (restart);
+    }
+  }
+
+  sub vcl_backend_fetch
+  {
+    # Remove xbody host marker
+    unset bereq.http.xbody;
+    if (bereq.http.Host ~ "^xbody\.") {
+      set bereq.http.Host = regsub(bereq.http.Host, "^xbody\.", "");
+      set bereq.http.xbody = "true";
+    }
+  }
+
+  sub vcl_backend_response
+  {
+    if (beresp.http.Content-Type ~ "text") {
+      if(bereq.http.xbody) {
+        # Extract xbody data, add a ykey session key
+        xbody.capture("\2", {"(<[^>]*edgestash-name="?([^"\s]+)"?[^>]+>)([^>]*)<"}, "\3", "g");
+        ykey.add_key(cookieplus.get("PHPSESSID", "guest"));
+        set beresp.ttl = 1d;
+      } else {
+        # Edgestash template
+        xbody.regsub({"(<[^>]*edgestash-name="?([^"\s]+)"?[^>]+>)([^>]*)<"}, "\1{{\2}}<");
+        edgestash.parse_response();
+      }
+    }
+  }
+
+  sub vcl_deliver
+  {
+    if (edgestash.is_edgestash()) {
+      # Use the homepage as the xbody data source
+      edgestash.add_json_url("/", json_host="xbody." + req.http.host, xbody=true);
+      edgestash.execute();
+    }
+  }
+
+API
+===
+
+$Function VOID regsub(PRIV_TASK, STRING pattern, STRING substitution, STRING mode = "g", INT max = 0)
+$Restrict vcl_backend_response
+
+Perform a regex substitution on the response body.
+
+$Function VOID capture(PRIV_TASK, STRING name, STRING pattern, STRING value, STRING mode = "", INT max = 0)
+$Restrict vcl_backend_response
+
+Perform a regex capture on the response body. If ``pattern`` is found, ``value`` is set as the value of ``name``.
+Use ``xbody.get()`` to read the value in ``sub vcl_deliver``.
+When used, streaming is disabled as to allow the captured value to be safely read in ``sub vcl_deliver``.
+
+$Function VOID hash_body(PRIV_TASK, ENUM {md5,sha1,sha224,sha256,sha384,sha512} algorithm, STRING name = "", BOOL do_stream = 0)
+$Restrict vcl_backend_response
+
+Generate the hash of the response body and store it under the label `name`. It can then be retrieved in `vcl_deliver` with `xbody.get_hash()`
+using the same `name`::
+
+  import xbody;
+  import crypto;
+  
+  sub vcl_backend_response {
+          xbody.hash_body(md5, "1");
+          xbody.hash_body(sha1, "2");
+  }
+  
+  sub vcl_deliver {
+          set resp.http.md5 = crypto.hex_encode(xbody.get_hash("1"));
+          set resp.http.sha1 = crypto.hex_encode(xbody.get_hash("2"));
+  }
+
+$Function BLOB get_hash(PRIV_TASK, STRING name = "")
+$Restrict vcl_deliver
+
+Get the hash generated with ``hash_body``. `name` must match the value you used when `xbody.hash_body()` was called.
+
+
+This function can be useful for example to generate an Etag if the backend didn't provide one::
+
+  import blob;
+  import xbody;
+
+  sub vcl_backend_response {
+    # no etag, ask Varnish to hash the body as it receives it
+    if (!beresp.http.etag) {
+      xbody.hash_body(sha1);
+    }
+  }
+
+  sub vcl_deliver {
+    # set the ETag header to the hash we computed during fetching
+    # surrounding with double-quote to follow the HTTP specification
+    if (!resp.http.etag) {
+      set resp.http.etag = {"""} + blob.encode(BASE64, DEFAULT, xbody.get_hash()) + {"""};
+    }
+  }
+
+$Function VOID log_body(PRIV_TASK, BYTES max = 4096)
+$Restrict vcl_backend_response
+
+Log the response body to the VSL (varnishlog). The ``Body`` VSL tag is used for this operation.
+The body logging can span multiple tag lines, this is determined by the maximum VSL record length.
+
+$Function STRING get(PRIV_TASK, STRING value, STRING default = 0)
+$Restrict vcl_deliver vcl_synth
+
+Get a capture value by ``name``. Can only be used in ``sub vcl_deliver``. Can be used in ``sub vcl_synth`` in combination with ``xbody.synth()``.
+
+$Function STRING get_all(PRIV_TASK)
+$Restrict vcl_deliver vcl_synth
+
+Get all capture values as a JSON object string. Can only be used in ``sub vcl_deliver``.
+Can be used in ``sub vcl_synth`` in combination with ``xbody.synth()``.
+
+$Function VOID synth(PRIV_TASK)
+$Restrict vcl_deliver
+
+Allow captured JSON data to be accessible in ``sub vcl_synth``.
+
+$Function VOID set(PRIV_TASK, STRING json)
+$Restrict vcl_backend_response
+
+Set capture values. When used, ``regex`` and ``capture`` operations are skipped.
+This is used to replicate xbody operations via VHA.
+
+$Function STRING get_req_body()
+$Restrict vcl_recv
+
+Get the contents of the request body.
+Must call ``std.cache_req_body()`` prior to this call.
+
+$Function BLOB get_req_body_hash(ENUM {md5,sha1,sha224,sha256,sha384,sha512} algorithm)
+$Restrict vcl_recv
+
+Generate and return the hash of the request body.
+
+$Function VOID reset(PRIV_TASK)
+$Restrict client backend
+
+Reset the internal state.
+
+AVAILABILITY
+============
+
+The ``xbody`` VMOD is available in Varnish Enterprise version ``6.0.1r1`` and later.

@@ -1,0 +1,68 @@
+$Module prng 3 "Pseudo Random Number Generator"
+$License
+$ABI strict
+
+DESCRIPTION
+===========
+
+The ``prng`` (Pseudo Random Number Generator) VMOD provides a
+mechanism to generate synthetic responses made of pseudo-random bytes.
+
+The functions ``prng.fast_random_backend()`` and
+``prng.zeros_backend()`` both return backend objects which can be
+assigned to the ``bereq.backend`` variable, and the result is that a
+synthetic response is generated in place of fetching a response from
+an external source.
+
+For now, these functions simply take a size as an argument, and the
+result is a backend which returns that exact number of bytes of either
+pseudo random or "null" bytes. In the future, there might be other
+algorithms for creating pseudo random bytes.
+
+Note that, if the size is very large, trying to cache the object will
+cause other objects to be evicted and potentially even crash
+Varnish. For this reason you should not cache large fetches and also
+enable the *transit buffer*.
+
+If a randomized size is needed, use ``utils.fast_random_int()`` to
+select the size, for example like this:
+
+``` vcl
+	set bereq.backend = prng.fast_random_backend(100 + utils.fast_random_int(100));
+```
+
+The example above will make the size be in the range from 100 to 199
+(inclusive).
+
+API
+===
+
+$Event vmod_event
+
+$Function BACKEND fast_random_backend(INT size)
+
+Returns a backend which will synthesize ``size`` psudo random bytes in
+a response.
+
+A cryptographically weak pseudo random generator is used to generate
+the bytes. Currently it is using the same algorithm as
+``utils.fast_random()``, but this can be changed without notice at any
+time. Do not, under any circumstances, use this as a source of
+randomness for security applications.
+
+The ``size`` parameter must be non-negative. If ``size`` is zero,
+then an empty response with a status code of 200 is produced.
+
+$Function BACKEND zeros_backend(INT size)
+
+Returns a backend which will synthesize ``size`` "null" bytes in a
+response.
+
+The ``size`` parameter must be non-negative. If ``size`` is zero,
+then an empty response with a status code of 200 is produced.
+
+AVAILABILITY
+============
+
+The first version of this VMOD was made available in Varnish
+Enterprise 6.0.12r7

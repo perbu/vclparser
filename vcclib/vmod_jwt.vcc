@@ -1,0 +1,796 @@
+$Module jwt 3 "JWT"
+$License
+
+DESCRIPTION
+===========
+
+The ``jwt`` vmod allows for the manipulation, creation, and verification of JWT and JWS tokens.
+
+EXAMPLES
+========
+
+Verifying HS256
+---------------
+
+The following example verifies a token signed with the ``HS256`` algorithm
+that is in the ``Authorization`` header.
+
+::
+
+  vcl 4.1;
+
+  import jwt;
+
+  backend default none;
+
+  sub vcl_init {
+    new jwt_reader = jwt.reader();
+  }
+
+  sub vcl_recv {
+    if (!jwt_reader.parse(req.http.Authorization)) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+
+    if (!jwt_reader.set_key("secret")) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+
+    if (!jwt_reader.verify("HS256")) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+
+    # JWT token was valid
+  }
+
+Creating HS256
+--------------
+
+The following example generates a token signed with the ``HS256`` algorithm.
+
+::
+
+  vcl 4.1;
+
+  import jwt;
+
+  backend default none;
+
+  sub vcl_init {
+    new jwt_writer = jwt.writer();
+  }
+
+  sub vcl_recv {
+    jwt_writer.set_sub(req.method + " " + req.http.host + req.url);
+    jwt_writer.set_alg("HS256");
+
+    # Shortlived token that allows 30 seconds clock skew.
+    jwt_writer.set_nbf(now - 30s);
+    jwt_writer.set_exp(now + 30s);
+    jwt_writer.set_iss(server.identity);
+    set req.http.jwt = jwt_writer.generate("secret");
+    if (jwt_writer.error()) {
+      # Something went wrong generating the new token.
+    }
+  }
+
+Modifying
+---------
+
+The following example takes an existing token, verifies it, extends its
+expiration to 6 hours from the current time, then sets the new token
+on the request ``Authorization`` header.
+
+::
+
+  vcl 4.1;
+
+  import jwt;
+
+  backend default none;
+
+  sub vcl_init {
+    new jwt_reader = jwt.reader();
+    new jwt_writer = jwt.writer();
+  }
+
+  sub vcl_recv {
+    if (!jwt_reader.parse(req.http.Authorization)) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+
+    if (!jwt_reader.set_key("secret")) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+
+    if (!jwt_reader.verify("HS256")) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+
+    # JWT token was valid, extend the lifetime.
+    jwt_writer.from_string(jwt_reader.to_string());
+    jwt_writer.set_exp(now + 6h);
+    if (jwt_writer.error()) {
+      # Something went wrong extending the expiration date.
+    }
+
+    set req.http.Authorization = jwt_writer.generate("secret");
+    if (jwt_writer.error()) {
+      # Something went wrong generating the new token.
+    }
+  }
+
+Using RSA Key Pair
+------------------
+
+The following example uses an RSA 512-bit public/private key pair and
+the ``RS256`` algorithm. It generates a token signed with the private
+key, then verifies it with the public key.
+
+::
+
+  vcl 4.1;
+
+  import jwt;
+
+  backend default none;
+
+  sub vcl_init {
+    new jwt_reader = jwt.reader();
+    new jwt_writer = jwt.writer();
+  }
+
+  sub vcl_recv {
+    # set the JWT header ``alg`` field
+    jwt_writer.set_alg("RS256");
+    # set the JWT payload ``sub`` and ``iss`` claims
+    jwt_writer.set_sub(req.method + " " + req.http.host + req.url);
+    jwt_writer.set_iss(server.identity);
+
+    # Generate the JWT token. Note how the key is wrapped.
+    set req.http.jwt = jwt_writer.generate({"-----BEGIN PRIVATE KEY-----
+  MIIBUwIBADANBgkqhkiG9w0BAQEFAASCAT0wggE5AgEAAkEAmQgArH6JVVRDuJEE
+  yXeiMAPXYyP7O4R/lFTxDisbUCIXbjMQnhH7ImeLBjw+g5OzNXb2olkzXBy9l2sZ
+  ECc/LQIDAQABAkBtkutYl6oiLRnod/4je8Pn+XgqBsOHVFI9layc5oTCFOs1qiJi
+  oJr7RCejqNOp1dXDN5aLFLcrEQJohxMPxosBAiEA0K8gGm2EnkNbTw2SnWoiTbz3
+  bR1/gR1AiQYbkdsIPs0CIQC7uo+CFW73qdcuWEKtwJaSV0+j3WgMTfAcCCHNoc5B
+  4QIgUI66EtmiL0ILNnoj1faJpX7D+PBBL0NujTa5X9Ww2iUCIBzYX7CnRnO7nxq5
+  6RT1oK0/yTbukExDtX85KKiGEkFBAiAri8SzhNNOGBtNXhqC94Cp/Aj9J5mN2kTA
+  ANUlyKgK8w==
+  -----END PRIVATE KEY-----"});
+
+    # always check if there was a generate error
+    if (jwt_writer.error()) {
+      return (synth(401, "Failed to generate token"));
+    }
+
+    # token successfully generated, now verify it.
+    if (!jwt_reader.parse(req.http.jwt)) {
+      return (synth(401, "Failed to parse the token"));
+    }
+
+    if (!jwt_reader.set_key({"-----BEGIN PUBLIC KEY-----
+  MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAJkIAKx+iVVUQ7iRBMl3ojAD12Mj+zuE
+  f5RU8Q4rG1AiF24zEJ4R+yJniwY8PoOTszV29qJZM1wcvZdrGRAnPy0CAwEAAQ==
+  -----END PUBLIC KEY-----"})) {
+      return (synth(401, "Invalid RSA public key"));
+    }
+
+    if (!jwt_reader.verify("RS256")) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+
+    # JWT token is valid
+  }
+
+Using RSA JWK
+-------------
+
+The following example uses an RSA 512-bit public/private key pair and
+the ``RS256`` algorithm. It generates a token signed with the private
+key, then verifies it with the public key as a JWK.
+
+::
+
+  vcl 4.1;
+
+  import jwt;
+
+  backend default none;
+
+  sub vcl_init {
+    new jwt_reader = jwt.reader();
+    new jwt_writer = jwt.writer();
+  }
+
+  sub vcl_recv {
+    # set the JWT header ``alg`` field
+    jwt_writer.set_alg("RS256");
+    # set the JWT payload ``sub`` and ``iss`` claims
+    jwt_writer.set_sub(req.method + " " + req.http.host + req.url);
+    jwt_writer.set_iss(server.identity);
+
+    # Generate the JWT token. Note how the key is wrapped.
+    set req.http.jwt = jwt_writer.generate({"-----BEGIN PRIVATE KEY-----
+  MIIBUwIBADANBgkqhkiG9w0BAQEFAASCAT0wggE5AgEAAkEAmQgArH6JVVRDuJEE
+  yXeiMAPXYyP7O4R/lFTxDisbUCIXbjMQnhH7ImeLBjw+g5OzNXb2olkzXBy9l2sZ
+  ECc/LQIDAQABAkBtkutYl6oiLRnod/4je8Pn+XgqBsOHVFI9layc5oTCFOs1qiJi
+  oJr7RCejqNOp1dXDN5aLFLcrEQJohxMPxosBAiEA0K8gGm2EnkNbTw2SnWoiTbz3
+  bR1/gR1AiQYbkdsIPs0CIQC7uo+CFW73qdcuWEKtwJaSV0+j3WgMTfAcCCHNoc5B
+  4QIgUI66EtmiL0ILNnoj1faJpX7D+PBBL0NujTa5X9Ww2iUCIBzYX7CnRnO7nxq5
+  6RT1oK0/yTbukExDtX85KKiGEkFBAiAri8SzhNNOGBtNXhqC94Cp/Aj9J5mN2kTA
+  ANUlyKgK8w==
+  -----END PRIVATE KEY-----"});
+
+    # always check if there was a generate error
+    if (jwt_writer.error()) {
+      return (synth(401, "Failed to generate token"));
+    }
+
+    # token successfully generated, now verify it.
+    if (!jwt_reader.parse(req.http.jwt)) {
+      return (synth(401, "Failed to parse the token"));
+    }
+
+    if (!jwt_reader.set_jwk({"
+        {
+          "keys": [
+            {
+              "alg": "RS256",
+              "kty": "RSA",
+              "e": "AQAB",
+              "n": "mQgArH6JVVRDuJEEyXeiMAPXYyP7O4R_lFTxDisbUCIXbjMQnhH7ImeLBjw-g5OzNXb2olkzXBy9l2sZECc_LQ"
+            }
+          ]
+        }"})) {
+      return (synth(401, "Invalid JWK"));
+    }
+
+    if (!jwt_reader.verify("RS256")) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+
+    # JWT token is valid
+  }
+
+JWT Custom Claims
+-----------------
+
+The following example shows how to access custom claims within the payload.
+Assuming a payload with the following custom claims, the example shows the
+various get methods.
+
+::
+
+  {
+    #.....normal claims here.....
+
+    "claim_str": "foo",
+    "claim_bool": true,
+    "claim_num": 123456.7890,
+    "claim_obj1": {
+      "str": "bar",
+      "bool": true,
+      "num": 987654.321
+    },
+    "claim_arr1": ["foo0", "foo1", "foo2"]
+  }
+
+  vcl 4.1;
+
+  import jwt;
+
+  backend default none;
+
+  sub vcl_init {
+    new jwt_reader = jwt.reader();
+  }
+
+  sub vcl_recv {
+    if (!jwt_reader.parse(req.http.Authorization)) {
+      return (synth(401, "Invalid Authorization Token"));
+    }
+    # JWT token is valid
+
+    if (jwt_reader.get_claim_string("claim_str", "bar") == "foo") {
+    } 
+
+    if (jwt_reader.get_claim_bool("claim_bool") == true) {
+    }
+
+    if (jwt_reader.get_claim_number("claim_num", -1) > 0.0) {
+    }
+
+    if (jwt_reader.get_claim_integer("claim_num") == 123457) {
+    }
+
+    # object fields can be accessed with dotted notation
+    set req.http.X-Obj1-Str = jwt_reader.get_claim_string("claim_obj1.str", "baz");
+    set req.http.X-Obj1-Bool = jwt_reader.get_claim_bool("claim_obj1.bool", false);
+    set req.http.X-Obj1-Num = jwt_reader.get_claim_number("claim_obj1.num", 123.678);
+    set req.http.X-Obj1-Int = jwt_reader.get_claim_integer("claim_obj1.num", 999);
+
+    # array elements can be accessed with index notation
+    set req.http.X-Arr1-0 = jwt_reader.get_claim_string("claim_arr1[0]", "bar0");
+    set req.http.X-Arr1-2 = jwt_reader.get_claim_string("claim_arr1[2]", "bar2");
+
+    # an entire object can be retrieved (in JSON format).
+    # gives:  {"str":"bar","bool":true,"num":987654.321}
+    set req.http.X-Obj1-As-Str = jwt_reader.get_claim("claim_obj1");
+
+    # an entire array can be retrieved (in JSON format).
+    # gives:  ["foo0","foo1","foo2"]
+    set req.http.X-Arr1-As-Str = jwt_reader.get_claim("claim_arr1");
+  }
+
+API
+===
+
+Encoded Keys
+------------
+
+The JWT methods that have a ``key`` parameter can accept an HMAC, RSA, or
+ECDSA key. Care must be taken when using HMAC keys (secrets) that are
+binary data. Such binary secrets can contain embedded null (``\0``) bytes
+and MUST NOT be passed as simple ASCII strings. Passing HMAC binary secrets
+as simple strings can cause a truncated secret to be used to generate a
+token or signature, making it insecure. Likewise, a binary secret can cause
+a truncated secret to be used when verifying a token or signature. It is
+strongly suggested that HMAC binary secrets be encoded before passing as a
+key. These JWT methods have an optional ``encoding`` parameter to indicate
+how the ``key`` is encoded. If the ``encoding`` is anything other than
+``ascii`` (default), the ``key`` will be decoded to its binary form before
+generating or verifying the token or signature. Note that the ``encoding``
+parameter is ignored for RSA and ECDSA keys.
+
+Valid ``encoding`` values:
+
+- ascii: the ``key`` is a simple ASCII string and no decoding is required. Default.
+- base64url: the ``key`` is a base64url encoded string.
+
+$Object reader()
+
+Creates a JWT Reader Object. must be called in ``sub vcl_init``.
+
+$Method BOOL .parse(STRING token)
+
+Parse a JWT/JWS token into the reader and return whether it was able to be
+parsed successfully. You should always check the return of this method before
+calling any of the methods below.
+
+$Method BOOL .from_string(STRING token)
+
+Parse a JWT/JWS token into the reader and return whether it was able to be
+parsed successfully. Primarily an alias to keep convention with the
+``reader``/``writer`` ``to`` and ``from`` methods. You should always
+check the return of this method before calling any of the other reader methods.
+
+$Method STRING .get_alg()
+
+Get the ``alg`` parameter parsed from the JWT header (e.g. ``HS256``)
+or return NULL if it does not exist.
+
+$Method STRING .get_typ()
+
+Get the ``typ`` parameter parsed from the JWT header (e.g. ``JWT``)
+or return NULL if it does not exist.
+
+$Method BOOL .get_b64()
+
+Get the ``b64`` parameter parsed from the JWT header (e.g. ``TRUE``)
+or return 0 if it does not exist.
+
+$Method STRING .get_kid()
+
+Get the ``kid`` parameter parsed from the JWT header or return NULL if it
+does not exist. The value of the ``kid`` is application-specific.
+
+$Method BOOL .is_jwt()
+
+Tell whether the token is a JWT or a JWS. A JWT token will either have the
+``typ`` header parameter equal to ``JWT`` or have a payload that is base64url
+encoded JSON, if both of these requirements aren't met it is a JWS and this
+method will return ``false``.
+
+$Method STRING .get_sub(STRING default = 0)
+
+Get the ``sub`` claim parsed from the JWT payload or return ``default``
+if it does not exist.
+
+$Method STRING .get_iss(STRING default = 0)
+
+Get the ``iss`` claim parsed from the JWT payload or return ``default``
+if it does not exist.
+
+$Method STRING .get_jti(STRING default = 0)
+
+Get the ``jti`` claim parsed from the JWT payload or return ``default``
+if it does not exist.
+
+$Method TIME .get_exp()
+
+Get the ``exp`` claim parsed from the JWT payload. You must call
+``reader.has_exp()`` before calling this function to make sure you have
+an ``exp`` to get.
+
+$Method BOOL .has_exp()
+
+Check whether the JWT payload has an ``exp`` claim. This must be called
+before ``reader.get_exp()`` to make sure you have an ``exp`` to return.
+
+$Method TIME .get_nbf()
+
+Get the ``nbf`` claim parsed from the JWT payload. You must call
+``reader.has_nbf()`` before calling this function to make sure you have
+an ``nbf`` to get.
+
+$Method BOOL .has_nbf()
+
+Check whether the JWT payload has an ``nbf`` claim. This must be called
+before ``reader.get_nbf()`` to make sure you have an ``nbf`` to return.
+
+$Method TIME .get_iat()
+
+Get the ``iat`` claim parsed from the JWT payload. You must call
+``reader.has_iat()`` before calling this function to make sure you have
+an ``iat`` to get.
+
+$Method BOOL .has_iat()
+
+Check whether the JWT payload has an ``iat`` claim. This must be called
+before ``reader.get_iat()`` to make sure you have an ``iat`` to return.
+
+$Method STRING .get_header()
+
+Get the JWT header as a JSON string.
+
+$Method STRING .get_header_encoded()
+
+Get the JWT header as a JSON string that is base64url encoded.
+
+$Method STRING .get_payload()
+
+Get the JWT payload as a JSON string.
+
+$Method STRING .get_payload_encoded()
+
+Get the JWT payload as a JSON string that is base64url encoded.
+
+$Method STRING .get_signature()
+
+Get the base64url encoded signature of the JWT token.
+
+$Method STRING .get_claim_string(STRING claim, STRING def = 0)
+
+Get the string value of the ``claim`` from the JWT payload. If the claim
+does not exist, the payload did not parse, or the claim is not a string
+type, the ``def`` value is returned.
+
+$Method BOOL .get_claim_bool(STRING claim, BOOL def = 0)
+
+Get the boolean value of the ``claim`` from the JWT payload. Returns 1 for
+``true`` and 0 for ``false``. If the claim does not exist, the payload did
+not parse, or the claim is not a boolean type, the ``def`` value is returned.
+
+$Method REAL .get_claim_number(STRING claim, REAL def = 0.0)
+
+Get the number value of the ``claim`` from the JWT payload. If the claim
+does not exist, the payload did not parse, or the claim is not a number
+type, the ``def`` value is returned.
+
+$Method INT .get_claim_integer(STRING claim, INT def = 0)
+
+Get the integer value of the ``claim`` from the JWT payload. If the claim
+does not exist, the payload did not parse, or the claim is not a number
+type, the ``def`` value is returned. This is a convenience wrapper for
+``.get_claim_number``, rounding the claim number to the nearest integer.
+
+$Method STRING .get_claim(STRING claim, STRING def = 0)
+
+Get the value of the ``claim`` from the JWT payload. If the claim does
+not exist or the payload did not parse, the ``def`` value is returned.
+This is a general purpose get method that is not type specific. It is
+useful, for example, to get object or array claims as a string.
+
+$Method STRING .to_string()
+
+Get the JWT token as a string. The string will have the expected JWT token
+format: ``header.payload.signature``. The header, payload, and signature
+are each base64url encoded. This token string can, for example, be passed
+to a ``jwt_writer.from_string()`` method.
+
+$Method BOOL .set_key(STRING key, ENUM {ascii, base64url} encoding = ascii)
+
+Set the HMAC secret, RSA public key, or ECDSA public key to use to verify the
+token or signature. The RSA and ECDSA keys must be in PEM format without
+newlines.
+
+The optional ``encoding`` parameter indicates whether the ``key`` is encoded
+with one of the defined methods. See :ref:`Encoded Keys`.
+
+$Method INT .set_jwk(STRING jwk)
+
+Set the HMAC, RSA, or ECDSA public key(s) for the token via a JWK. The ``jwk``
+can be a single ``key`` or an array of ``keys``.
+
+An array of keys can include a mix of HMAC, RSA, and ECDSA keys, including
+multiple keys of the same type. For example, an array with both current and
+previous RSA keys can be useful for key rotation.
+
+Each key must have a ``kty`` and/or ``alg`` field. The supported ``kty``
+values are ``oct``, ``RSA``, and ``EC``. The supported ``alg`` values are
+``HS256``, ``HS384``, ``HS512``, ``RS256``, ``RS384``, ``RS512``, ``ES256``,
+``ES384``, and ``ES512``. Also, the key must have fields specific to an
+HMAC, RSA, or ECDSA key. The key can have an optional ``kid`` field to be
+used for key selection during verification (see ``reader.verify()``). All
+other fields in the key are ignored.
+
+A valid HMAC key has these fields:
+
+- ``kty`` (if present) is ``oct``.
+- ``alg`` (if present) is ``HS256``, ``HS384``, or ``HS512``.
+- ``k`` is required (base64url encoded secret).
+
+A valid RSA key has these fields:
+
+- ``kty`` (if present) is ``RSA``.
+- ``alg`` (if present) is ``RS256``, ``RS384``, or ``RS512``.
+- ``n`` and ``e`` are required.
+
+A valid ECDSA key has these fields:
+
+- ``kty`` (if present) is ``EC``.
+- ``alg`` (if present) is ``ES256``, ``ES384``, or ``ES512``.
+- ``crv`` must be ``P-256``, ``P-384``, or ``P-521``.
+- ``x`` and ``y`` are required.
+
+This returns a count of valid keys.
+
+$Method BOOL .verify(STRING expected_alg, ENUM {none, optional, required} check_kid = none, BOOL check_exp = 1, BOOL check_nbf = 1)
+
+Verify the JWT/JWS token. This method supports verifying the signature with
+algorithms ``none``, ``HS256``, ``HS384``, ``HS512``, ``RS256``, ``RS384``,
+``RS512``, ``ES256``, ``ES384``, and ``ES512``. The ``exp`` and ``nbf``
+payload parameters are also checked when this method is called if they
+are present (see the ``check_exp`` and ``check_nbf`` parameters).
+
+You must call ``reader.set_key()`` or ``reader.set_jwk()``, before calling
+this function, to provide the public key(s) or secret(s) used for
+verification.
+
+If ``expected_alg`` does not match the algorithm of the passed in token
+verification will fail. DO NOT USE ``get_alg()`` to populate this argument as
+this will allow an attacker to forge tokens by claiming the algorithm of the
+token is ``none``, which does not require signature verification. The possible
+values for this argument are ``none``, ``HS256``, ``HS384``, ``HS512``,
+``RS256``, ``RS384``, ``RS512``, ``ES256``, ``ES384``, and ``ES512``.
+
+The optional ``check_kid`` parameter can be used with JWKs to indicate whether
+the ``kid`` field should be used for JWK selection. The ``request kid`` comes
+from the JWS/JWT header field or by calling ``.set_kid()``, and is compared
+against the JWK ``kid`` field. The ``kid`` are case-sensitive strings and
+compared accordingly. A JWK with a matching ``kid`` must also have the expected
+algorithm. If more than one JWK has the same ``kid``, each is tried until a
+successful verifification result. The ``check_kid`` parameter is ignored when
+verifying with a public key string (instead of JWKs).
+
+Valid ``check_kid`` values:
+
+- ``none``: ignore the ``kid`` fields and do JWK selection using algorithm matching. Default.
+- ``optional``: if there is a ``request kid`` and a JWK has a ``kid`` field, compare them.  Otherwise, do JWK selection using algorithm matching.
+- ``required``: there must be a ``request kid`` and a JWK must have a matching ``kid`` field.  If no matching ``kid`` is found in the JWKs, ``.verify()`` fails.
+
+If ``check_exp`` is ``1`` (default), the ``exp`` claim, if present, is validated
+against the current time. Passing ``0`` causes the ``exp`` check to be skipped.
+
+If ``check_nbf`` is ``1`` (default), the ``nbf`` claim, if present, is validated
+against the current time. Passing ``0`` causes the ``nbf`` check to be skipped.
+
+This returns ``true`` if the ``expected_alg`` matches the token's
+algorithm, the signature algorithm is one of the supported ones listed above,
+the signature is valid, and the ``exp`` and ``nbf`` claims are valid if they are
+present. If any of the aforementioned conditions are not met, the return value
+will be ``false``.
+
+$Method BOOL .verify_raw(STRING alg, STRING data, STRING signature)
+
+Verify the ``signature`` of the ``data``. This method supports verifying
+with a public key or with JWKs. A public key can be provided with
+``.set_key()``. JWKs can be provided with ``.set_jwk()``. This method
+is useful when the ``alg``, ``data``, or ``signature`` do not come from
+the traditional JWT/JWS header, payload, or token.
+
+The possible values for ``alg`` are ``none``, ``HS256``, ``HS384``, ``HS512``,
+``RS256``, ``RS384``, ``RS512``, ``ES256``, ``ES384``, and ``ES512``.
+
+The ``data`` can be any arbitrary string and it is used as is.
+
+The ``signature`` is a base64url encoded signature.
+
+This returns ``true`` if the ``alg`` is one of the supported ones listed
+above and the ``signature`` is valid. If any of the aforementioned
+conditions are not met, the return value will be ``false``.
+
+$Object writer()
+
+Creates a JWT Writer Object. must be called in ``sub vcl_init``.
+
+$Method VOID .parse(STRING token)
+
+Parse the JWT/JWS header and payload from the token into the writer. You
+should always check for a parsing error with ``writer.error()`` before
+calling any other writer methods.
+
+The ``token`` should be in the JWT/JWS token format:
+``header.payload.signature``. The header, payload, and signature are each
+base64url encoded. The signature is ignored.
+
+$Method VOID .from_string(STRING token)
+
+Parse the JWT/JWS header and payload from the token into the writer. You
+should always check for a parsing error with ``writer.error()`` before
+calling any other writer methods. Primarily an alias of ``writer.parse()``
+to keep convention with the ``reader``/``writer`` ``to`` and ``from``
+methods. Can be used with the ``reader.to_string()`` method.
+
+$Method VOID .set_header(STRING header)
+
+Set the JWT/JWS header in the writer from the JSON header string.
+
+$Method VOID .set_payload(STRING payload)
+
+Set the JWT/JWS payload in the writer from the JSON payload string.
+
+$Method VOID .set_header_encoded(STRING header)
+
+Set the JWT/JWS header in the writer from the base64url encoded JSON
+header string.
+
+$Method VOID .set_payload_encoded(STRING payload)
+
+Set the JWT/JWS payload in the writer from the base64url encoded JSON
+payload string.
+
+$Method VOID .set_alg(STRING alg)
+
+Set the signature algorithm ``alg`` parameter of the token header. This
+method supports values of ``none``, ``HS256``, ``HS384``, ``HS512``,
+``RS256``, ``RS384``, ``RS512``, ``ES256``, ``ES384``, or ``ES512``.
+
+$Method VOID .set_typ(STRING typ)
+
+Set the ``typ`` parameter of the token header.
+
+$Method VOID .set_b64(BOOL is_b64)
+
+Set the ``b64`` parameter of the token header.
+
+$Method VOID .set_kid(STRING kid)
+
+Set the ``kid`` parameter of the token header. The value of the
+``kid`` is application-specific.
+
+$Method VOID .set_sub(STRING sub)
+
+Set the ``sub`` claim of the token payload.
+
+$Method VOID .set_iss(STRING iss)
+
+Set the ``iss`` claim of the token payload.
+
+$Method VOID .set_jti(STRING jti)
+
+Set the ``jti`` claim of the token payload.
+
+$Method VOID .set_exp(TIME time)
+
+Set the ``exp`` claim of the token payload.
+
+$Method VOID .set_nbf(TIME time)
+
+Set the ``nbf`` claim of the token payload.
+
+$Method VOID .set_iat(TIME time)
+
+Set the ``iat`` claim of the token payload.
+
+$Method VOID .set_duration(DURATION duration)
+
+Set the ``exp`` claim of the token payload to current time plus
+``duration``, so that ``exp`` is in the future.
+
+$Method VOID .delete_sub()
+
+Delete the ``sub`` claim from the token payload.
+
+$Method VOID .delete_iss()
+
+Delete the ``iss`` claim from the token payload.
+
+$Method VOID .delete_jti()
+
+Delete the ``jti`` claim from the token payload.
+
+$Method VOID .delete_exp()
+
+Delete the ``exp`` claim from the token payload.
+
+$Method VOID .delete_nbf()
+
+Delete the ``nbf`` claim from the token payload.
+
+$Method VOID .delete_iat()
+
+Delete the ``iat`` claim from the token payload.
+
+$Method STRING .generate(STRING key, ENUM {ascii, base64url} encoding = ascii)
+
+Generate the full JWT/JWS token. This method supports creating with the
+signature algorithms ``none``, ``HS256``, ``HS384``, ``HS512``, ``RS256``,
+``RS384``, ``RS512``, ``ES256``, ``ES384``, and ``ES512``. The algorithm
+must be set with the ``.parse()``, ``.from_string()``, or ``.set_alg()``
+method.
+
+The ``key`` can be an HMAC secret, RSA private key, or ECDSA private key. The
+RSA and ECDSA keys must be in PEM format without newlines.
+
+The optional ``encoding`` parameter indicates whether the ``key`` is encoded
+with one of the defined methods. See :ref:`Encoded Keys`.
+
+This returns the token as a string in the typical JWT token format:
+``header.payload.signature``. The header, payload, and signature are each
+base64url encoded.
+
+$Method STRING .to_string(STRING key, ENUM {ascii, base64url} encoding = ascii)
+
+Generate the full JWT/JWS token. This method supports creating with the
+signature algorithms ``none``, ``HS256``, ``HS384``, ``HS512``, ``RS256``,
+``RS384``, ``RS512``, ``ES256``, ``ES384``, and ``ES512``. The algorithm
+must be set with the ``.parse()``, ``.from_string()``, or ``.set_alg()``
+method. Primarily an alias for ``.generate()`` to keep convention with the
+``reader``/``writer``, ``to`` and ``from`` methods.
+
+The ``key`` can be an HMAC secret, RSA private key, or ECDSA private key. The
+RSA and ECDSA keys must be in PEM format without newlines.
+
+The optional ``encoding`` parameter indicates whether the ``key`` is encoded
+with one of the defined methods. See :ref:`Encoded Keys`.
+
+This returns the token as a string in the typical JWT token format:
+``header.payload.signature``. The header, payload, and signature are each
+base64url encoded.
+
+$Method STRING .generate_raw(STRING alg, STRING data, STRING key, ENUM {ascii, base64url} encoding = ascii)
+
+Generate a signature for the ``data`` with the ``alg`` and private ``key``.
+This method is useful when the ``alg`` or ``data`` do not come from the
+traditional JWT/JWS header or payload.
+
+The possible values for ``alg`` are ``none``, ``HS256``, ``HS384``, ``HS512``,
+``RS256``, ``RS384``, ``RS512``, ``ES256``, ``ES384``, and ``ES512``.
+
+The ``data`` can be any arbitrary string and it is used as-is. This data is
+treated as an ASCII string. Do not pass binary data, as there is the risk it
+could contain embedded null (``\0``) bytes, resulting in truncated data being
+used to generate the signature.
+
+The ``key`` can be an HMAC secret, RSA private key, or ECDSA private key. The
+RSA and ECDSA keys must be in PEM format without newlines.
+
+The optional ``encoding`` parameter indicates whether the ``key`` is encoded
+with one of the defined methods. See :ref:`Encoded Keys`.
+
+This returns the signature as a base64url encoded string.
+
+$Method VOID .reset()
+
+Reset all data on the writer including the ``error`` flag.
+
+$Method BOOL .error()
+
+Did any of the method calls above result in an error
+
+AVAILABILITY
+============
+
+The ``jwt`` VMOD is available in Varnish Enterprise version ``6.0.6r2`` and later.

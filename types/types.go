@@ -43,6 +43,9 @@ var (
 	Probe    = &BasicType{Name: "PROBE"}
 	Header   = &BasicType{Name: "HEADER"}
 	Void     = &BasicType{Name: "VOID"}
+	Module   = &BasicType{Name: "MODULE"}
+	Object   = &BasicType{Name: "OBJECT"}
+	Bytes    = &BasicType{Name: "BYTES"}
 )
 
 // HeaderType represents header variables

@@ -1,0 +1,49 @@
+$Module asn 3 "Varnish ASN Module"
+$License
+
+DESCRIPTION
+===========
+
+This Varnish module exports functions to look up
+Autonomous System Numbers (ASN) from https://iptoasn.com/ tsv database.
+
+.. vcl-start
+
+Example::
+
+	vcl 4.1;
+	import asn;
+
+	backend be none;
+
+	sub vcl_init {
+		new objasn = asn.init("ip2asn-combined.tsv");
+	}
+
+	sub vcl_recv {
+		set req.http.asn = objasn.asn(client.ip);
+		set req.http.company = objasn.asn(
+		    std.ip(req.http.X-forwarded-for, "0.0.0.0"));
+	}
+
+.. vcl-end
+
+
+$Object init(STRING)
+Create an ASN object and load a TSV file.
+
+$Method STRING .asn(IP)
+Lookup ASN from IP
+
+$Method STRING .company(IP)
+Lookup company from IP
+
+$Method STRING .country(IP)
+Lookup country of ASN from IP
+
+
+SEE ALSO
+========
+
+vcl\(7),
+varnishd\(1)

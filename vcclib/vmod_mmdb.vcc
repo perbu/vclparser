@@ -1,0 +1,156 @@
+# auto_docs = false
+#
+# Copyright (c) 2018-2024, Varnish Enterprise SA
+# All rights reserved.
+
+$Module mmdb 3 "Varnish Enterprise GeoIP2 .mmdb files lookup"
+$License
+
+DESCRIPTION
+===========
+
+This vmod leverages `libmaxminddb` to find data associated to an IP and
+requires a database containing said information. While the `libmaxminddb`
+linux packages usually don't include a database, you can easily find some on
+the internet (https://maxmind.com/ offers some for free, notably).
+
+EXAMPLE
+=======
+
+::
+
+    vcl 4.0;
+
+    import mmdb;
+
+    backend default { .host = "192.0.2.11"; .port = "8080"; }
+
+    # create a database object
+    sub vcl_init {
+        new geodb = mmdb.init("/path/to/db");
+    }
+
+    sub vcl_recv {
+        # retrieve the name of the request's origin
+        set req.http.Country-Name = geodb.country_name(client.ip);
+
+        # if the country doesn't come from Germany or Belgium, deny access
+        if (req.http.Country-Name != "Germany" ||
+            req.http.Country-Name != "Belgium") {
+            return (synth(403, "Sorry, only available in Germany and Belgium"));
+        }
+
+        # for logging purposes, log the geoname_id field of the country
+        set req.http.geoname_id = geodb.lookup(client.ip, "country/geoname_id");
+    }
+
+API
+===
+
+$Event stash_event
+$Object NULL_OK init(STRING file, ENUM {direct, import} mode = "direct")
+
+Create a new database object to search into, using the mmdb database located
+at `file`. By default, the database is loaded directly from the file, which
+leaves it vulnerable to undefined behavior when `file` is modified. Changing
+the `mode` argument to `import` results in a copy made in Varnish's working
+directory (by default under `/var/lib/varnish`) to shield it from unwanted
+updates, for example when a new version of the database is deployed.
+
+With the `direct` access `mode`, loading the same database twice results in
+opening the database twice. When the same database is imported twice, it is
+both copied and opened just once. Depending on mmdb usage and database sizes,
+importing can offer a better trade off in addition to resilience against
+concurrent modifications.
+
+Importing databases requires space to store them in the working directory.
+In particular, for a large database that may be slightly updated before being
+reloaded by a new VCL, this will require enough space to store two copies
+until the VCL that imported the old version is effectively discarded.
+
+$Method STRING .lookup(IP ip, STRING path, STRING fallback = 0)
+
+Look for `ip` in the database object.
+
+If `ip` is found, and there's data associated with it corresponding to
+`path`, a string representing that data will be returned. Otherwise, the
+`fallback` string is returned (NULL if not specified).
+
+`path` will depend both on the specific item you are looking for, but also
+on the particular database you are using as they don't all contain the same
+kind of information. For example https://dev.maxmind.com/geoip/geoip2/geolite2/
+offers three different kinds: City, Countries and ASN.
+
+Here's a table with the common paths for various items:
+
+=============== ==================================
+data            path
+=============== ==================================
+country code    ``country/iso_code``
+country name    ``country/names/en``
+region code     ``subdivisions/0/iso_code``
+longitude       ``location/longitude``
+latitude        ``location/latitude``
+city name       ``city/names/en``
+AS Number       ``autonomous_system_number``
+AS Organization ``autonomous_system_organization``
+=============== ==================================
+
+$Method STRING .country_name(IP ip, STRING fallback = 0)
+
+This is an alias to call `.lookup()` with ``country/iso_code`` as path.
+
+$Method STRING .country_code(IP ip, STRING fallback = 0)
+
+This is an alias to call `.lookup()` with ``country/names/en`` as path.
+
+Understanding the path parameter
+================================
+
+`mmdb` databases link IP addresses and CIDR blocks to JSON-like objects,
+allowing to store diverse information without modifying the database schema.
+In practice, this means that you can retrieve almost any information in
+the database if you know its "path".
+
+A very valuable tool to explore an `mmdb` file is `mmdblookup`::
+
+    $ mmdblookup -f GeoLite2-Country.mmdb -i 8.8.8.8
+
+      {
+        "country":
+          {
+            "geoname_id":
+              6252001 <uint32>
+            "iso_code":
+              "US" <utf8_string>
+            "names":
+              {
+                "de":
+                  "USA" <utf8_string>
+                "en":
+                  "United States" <utf8_string>
+                "es":
+                  "Estados Unidos" <utf8_string>
+                "fr":
+                  "États-Unis" <utf8_string>
+                "ja":
+                  "アメリカ合衆国" <utf8_string>
+                "pt-BR":
+                  "Estados Unidos" <utf8_string>
+                "ru":
+                  "США" <utf8_string>
+                "zh-CN":
+                  "美国" <utf8_string>
+              }
+          }
+        "registered_country":
+          {
+            "geoname_id":
+              6252001 <uint32>
+            "iso_code":
+              "US" <utf8_string>
+          }
+      }
+
+In this example, the path corresponding to the Russian name of the country
+would be `country/names/ru` and would return `США`.

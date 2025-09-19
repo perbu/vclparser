@@ -1,0 +1,79 @@
+#
+# Copyright (c) 2016 Guillaume Quintard
+#
+# Author: Guillaume Quintard <guillaume.quintard@gmail.com>
+#
+# (vmodtool requires this format.)
+#
+
+$Module accept 3 "Accept"
+$License
+
+DESCRIPTION
+===========
+
+The ``accept`` VMOD sanitizes
+[content negotiations headers](https://tools.ietf.org/html/rfc7231#section-5.3),
+most notably, `Accept-Language`. As backends can deliver different
+objects for the same URL based on these headers, it can be necessary to normalize
+them to avoid object duplication.
+
+The VMOD follows RFC 7231; it evaluates a list of possible candidates and
+returns a match to the user's header, if any, according to the quality
+(the ``q`` parameter) specified by the client for each choice.
+
+Note: Varnish already handles the ``Accept-Encoding`` header, so you shouldn't
+do it in VCL.
+
+EXAMPLE
+=======
+
+::
+
+  import accept;
+
+  sub vcl_init {
+    # our server can only return html, json, and its default, plain text
+    new format = accept.rule("text/plain");
+    format.add("text/html");
+    format.add("application/json");
+
+    # also, the content is available in english (the default)
+    # as well as french
+    new lang = accept.rule("en");
+    lang.add("fr");
+  }
+
+  sub vcl_recv {
+    # only leave one choice for each header
+    set req.http.accept = format.filter(req.http.accept);
+    set req.http.accept-language = lang.filter(req.http.accept-language);
+  }
+
+API
+===
+
+$Object rule(STRING string)
+
+This creates a new rule object using ``string`` as a fallback in case no match is
+found.
+
+$Method VOID .add(STRING string)
+
+This is a method of the rule object and adds ``string`` to the list of
+acceptable candidates.
+
+$Method VOID .remove(STRING string)
+
+This method removes ``string`` from the list of candidates.
+
+$Method STRING .filter(STRING string)
+
+This processes ``string`` and compares it with the list of candidates. The one with the
+highest quality is returned or, failing that, the fallback string specified at
+the rule object creation is used.
+
+AVAILABILITY
+============
+
+The ``accept`` VMOD is available in Varnish Enterprise version ``6.0.1r1`` and later.

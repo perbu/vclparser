@@ -1,0 +1,214 @@
+$Module digest 3 "Digest"
+$License
+
+DESCRIPTION
+===========
+
+The ``digest`` vmod allows for computing HMAC, message digests and working with
+base64.
+
+All HMAC- and hash-functionality is provided by libmhash, while base64 is
+implemented locally.
+
+If the key is NULL for hmac-functions, the function will fail and return
+NULL itself, and do no hmac-computation at all. This should be used as an
+indication of some greater flaw in your software/VCL. (I.e.: Your key
+should be under your control, not user-supplied without verification).
+
+The `base64url_nopad_decode()` and `base64url_decode()` functions do not
+differ much. The exception is that nopad_decode() does not know about
+padding at all, and might get confused if the input actually is padded.
+
+
+hmac_(hash)
+-----------
+
+All the various hmac-functions work the same, but use a different hash mechanism.
+Hex-encoded prepended with 0x.
+
+For example::
+
+  set resp.http.x-data-sig = digest.hmac_sha256("secretkey",resp.http.x-data);
+
+base64, base64url, base64url_nopad
+----------------------------------
+
+Returns the base64-encoded version of the input-string. The
+base64url-variant uses base64 url-encoding (+/ replaced by -_) and
+the base64url_nopad does the same, but avoids adding padding. The
+latter is more commonly used, though an (allowed) exception to the RFC4648.
+
+For example::
+
+  set resp.http.x-data-sig =
+    digest.base64({"content with
+    newline in it"});
+
+base64_hex, base64url_hex, base64url_nopad_hex
+-----------------------------------------------
+
+Returns the base64-encoded version of the hex encoded input-string. The
+input-string can start with an optional 0x. Input is hex-decoded into binary
+and the encoding is identical to base64, base64url, and base64url_nopad.
+
+For example::
+
+  set resp.http.x-data-sig =
+    digest.base64_hex("0xdd26bfddf122c1055d4c");
+
+hash_(algorithm)
+----------------
+
+Computes the digest/hash of the supplied, using the specified hash
+algorithm. If in doubt as to which to pick, use SHA256. For
+detailed discussions, see The Internet.
+
+For example::
+  set resp.http.x-data-md5 = digest.hash_md5(resp.http.x-data);
+
+base64_decode, base64url_decode, base64url_nopad_decode
+-------------------------------------------------------
+
+Decodes the bas64 and base64url-encoded strings. All functions
+treat padding the same, meaning base64url_decode and
+base64url_nopad_decode are identical, but available for consistency
+and practicality.
+
+For example::
+
+  synthetic(digest.base64_decode(req.http.x-parrot));
+
+EXAMPLE
+=======
+
+Example VCL
+
+::
+
+  backend foo { ... };
+
+  import digest;
+
+  sub vcl_recv {
+    if (digest.hmac_sha256("key",req.http.x-data) != req.http.x-data-sig)
+    {
+      return (synth(401, "Naughty user!"));
+    }
+  }
+
+API
+===
+
+$Event init_function
+$Function STRING hmac_sha256(STRING, STRING)
+$Function STRING hmac_sha1(STRING, STRING)
+$Function STRING hmac_md5(STRING, STRING)
+$Function STRING base64(STRING)
+$Function STRING base64_hex(STRING)
+$Function STRING base64_decode(STRING)
+$Function STRING base64url(STRING)
+$Function STRING base64url_hex(STRING)
+$Function STRING base64url_decode(STRING)
+$Function STRING base64url_nopad(STRING)
+$Function STRING base64url_nopad_hex(STRING)
+$Function STRING base64url_nopad_decode(STRING)
+$Function STRING hash_sha1(STRING)
+$Function STRING hash_sha224(STRING)
+$Function STRING hash_sha256(STRING)
+$Function STRING hash_sha384(STRING)
+$Function STRING hash_sha512(STRING)
+$Function STRING hash_md5(STRING)
+
+$Function STRING hash_ripemd160(STRING)
+
+Only available on platforms with openssl newer than 3.0.7 or libmash
+
+$Function STRING hash_gost(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_md2(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_md4(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_crc32(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_crc32b(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_adler32(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_haval128(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_haval160(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_haval192(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_haval224(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_haval256(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_ripemd128(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_ripemd256(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_ripemd320(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_tiger(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_tiger128(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_tiger160(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_snefru128(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_snefru256(STRING)
+
+Only available on platforms with libmash
+
+$Function STRING hash_whirlpool(STRING)
+
+REFERENCES
+==========
+
+* libmhash
+* varnishd(1)
+* vcl(7)
+
+AVAILABILITY
+============
+
+The ``digest`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

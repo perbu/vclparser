@@ -1,0 +1,92 @@
+$Module mse4 3 "MSE4 control (mse4)"
+$ABI strict
+$License
+
+
+DESCRIPTION
+===========
+
+The ``mse4`` vmod enables controlling certain aspects of how ``Varnish``
+and ``MSE4`` handles objects through ``VCL``, as well as querying ``MSE4``
+specific information about the objects.
+
+The ``mse4`` vmod can only be loaded if the ``Varnish`` instance is
+configured to use ``MSE4``. If the ``Varnish`` instance is not configured
+to ``MSE4``, the VMOD will cause the VCL initialization to fail.
+
+In advanced configurations this vmod will be used to assign a category to
+objects as they are inserted into the cache. Please see
+:ref:`mse4-categories(7)` for more information about categories and how to
+configure them.
+
+
+
+API
+===
+
+
+$Function BOOL set_category(STRING category)
+$Restrict backend
+
+Set the content category to use when creating new objects. The
+``category`` specified needs to be a leaf node defined in the
+``categories`` section of the ``MSE4`` configuration file.
+
+It is only valid to call this function from VCL backend context. Calling
+it from any other VCL functions will cause a transaction failure.
+
+The return value is true if a category is successfully associated with the
+current fetch.
+
+
+
+$Function VOID set_storage(ENUM {EPHEMERAL, PERSISTED} storage)
+$Restrict backend
+
+Set the preferred storage mode for newly created objects.
+
+`EPHEMERAL` directs Varnish to create objects that are only kept in
+memory. The objects will be lost if the Varnish daemon is restarted.
+
+`PERSISTED` directs Varnish to create objects that are persisted to disk
+if possible. This allows the memory held by the object to be reclaimed
+when necessary, and then later read the data back from disk when
+needed. When a persisted object can not be created (for example if the
+selected category does not have any stores configured), an ephemeral
+object is created.
+
+The default storage mode is `PERSISTED`.
+
+
+
+$Function STRING get_location(ENUM {STORE, BOOK} type)
+$Restrict vcl_hit vcl_deliver
+
+Returns the identifier of the ``MSE4`` store or book the current object is
+being held in.  Can only be called from vcl_hit and vcl_deliver. If the
+object is an ephemeral object (not persisted), or if the system is not
+configured to use MSE4, the function returns ``NULL``.
+
+
+$Function BOOL is_mse4()
+
+This function returns true if the Varnish server is configured to use the
+MSE version 4 stevedore. This can be useful in order to construct
+alternate VCL instructions depending on the storage configuration of the
+Varnish server instance.
+
+
+REFERENCES
+==========
+
+* :ref:`mse4(7)`
+* :ref:`mse4-categories(7)`
+* :ref:`varnishd(1)`
+
+
+
+AVAILABILITY
+============
+
+The ``mse4`` VMOD is available in ``Varnish Enterprise`` version ``6.0.13r2``
+and later.

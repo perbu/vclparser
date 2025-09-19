@@ -1,0 +1,96 @@
+$Module session 3 "Session"
+$License
+
+DESCRIPTION
+===========
+
+The ``session`` vmod is a small VMOD that lets manipulate session local variables. For now only
+the idle timeout can be accessed.
+
+EXAMPLES
+========
+
+Basic Usage
+-----------
+
+::
+
+  vcl 4.0;
+  import std;
+  import session;
+
+  sub vcl_recv {
+    session.set_timeout_idle(30s);
+  }
+
+
+Setting the session timeout
+---------------------------
+
+To set the connection timeout, use ``session.set_timeout_idle()``.
+The timeout will be set for the current session only, and will silently fail if
+the session is not available in the current VCL sub.
+
+::
+
+  sub vcl_recv {
+    if(...) {
+      session.set_timeout_idle(300s);
+    }
+  }
+
+Reading the session timeout
+---------------------------
+
+To get the connection timeout use ``session.get_timeout_idle()``.
+If no session is available in the VCL sub, or if the timeout for this session has
+not been set in VCL, the default timeout will be returned.
+
+::
+
+  sub vcl_deliver {
+    set resp.http.x-timeout-idle = session.get_timeout_idle();
+  }
+
+Checking if the session timeout is set
+--------------------------------------
+
+If you want to know if the session timeout is set, use ``session.is_timeout_set()``.
+
+This function returns true if the idle timeout has been set for the session.
+The return value is always false if called from a VCL sub where the session is not available.
+
+::
+
+  sub vcl_deliver {
+    set resp.http.x-is-session-timeout-set = session.is_timeout_set();
+  }
+
+API
+===
+
+$Function VOID set_timeout_idle(DURATION timeout)
+$Restrict client
+
+Set the session idle timeout. The timeout will be set for the
+current session only, and will silently fail if the session is
+not available in the current VCL sub.
+
+$Function DURATION get_timeout_idle()
+$Restrict client
+
+Get the session idle timeout. If no session is available in
+the VCL sub, or if the timeout for this session has not been
+set in VCL, the default timeout will be returned.
+
+$Function BOOL is_timeout_set()
+$Restrict client
+
+This function returns true if the idle timeout has been set for
+this session. Always false if called from a VCL sub where the
+session is not available.
+
+AVAILABILITY
+============
+
+The ``session`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

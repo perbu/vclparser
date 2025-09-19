@@ -1,0 +1,84 @@
+#
+# Copyright Varnish Software (c) 2020.
+#
+# (vmodtool requires this format.)
+#
+
+$Module aclplus 3 "ACL (aclplus)"
+$License
+
+DESCRIPTION
+===========
+
+The ``aclplus`` vmod allows you to match IP addresses against ACLs similar to VCL ACLs.
+The key difference is that your ACLs don't need to be bound to the active VCL
+and can be stored as strings in a separate VMOD such as ``vmod-kvstore`` or even backend responses.
+
+Currently, IPv4 and IPv6 addresses and subnets are supported, and entries can be
+prefixed with an exclamation mark (!) for a negative match, like so: ``!10.0.0.1``.
+
+SYNTAX
+======
+
+ACLs are represented by a single-line CSV string:
+
+``127.0.0.1, !192.168.0.1, 192.168.0.0/16, ::1, !::2, fe00::1/16``
+
+The client IP will be matched against all ACLs, and if a match is found and no
+negation is encountered then access will be granted. If any matching negations
+are found then access will always be denied. Granted here meaning the ``match()`` API function returning true.
+
+EXAMPLE
+=======
+
+Assuming a CSV file containing a domain name in the first column, followed by IP
+addresses complying to the syntax described above:
+
+::
+
+  vcl 4.0;
+
+  import aclplus;
+  import kvstore;
+
+  sub vcl_init {
+    new purgers = kvstore.init();
+    purgers.init_file("/some/path/data.csv", ",");
+    new regions = kvstore.init();
+    region.init_file("/some/path/data.csv", ",");
+    new region_cnf = kvstore.init();
+    region_cnf.init_file("/some/path/data.csv", ",");
+  }
+
+  sub vcl_recv {
+    if (req.method == "PURGE") {
+      if (aclplus.match(client.ip, purgers.get(req.http.host, "error"))) {
+        return (purge);
+      }
+      return (synth(405));
+    }
+    set req.http.region_cnf = region_cnf.get(aclplus.find(client.ip,
+		    regions.get(req.http.host, "error")));
+    if (req.http.region_cnf == "cluster2-EMEA") {
+	/*Do stuff*/
+    }
+
+  }
+
+API
+===
+
+$Function BOOL match(IP, STRING)
+
+Returns true if the supplied IP address matches the text-representation of an
+ACL. Works with both IPv4 and IPv6.
+
+$Function STRING find(IP, STRING)
+
+Similar to match(), but instead of returning true/false, returns the rule
+that was matched from the supplied ACL list, returns NULL on no match.
+
+AVAILABILITY
+============
+
+The `aclplus` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

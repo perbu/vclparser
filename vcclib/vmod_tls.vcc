@@ -1,0 +1,138 @@
+$Module tls 3 "TLS"
+$ABI strict
+$License
+
+DESCRIPTION
+===========
+
+The ``tls`` vmod lets you query details relating to a TLS connection.
+
+If called from one of the client VCL subroutines (e.g. ``sub vcl_recv`` or
+``sub vcl_deliver``), it will provide details about the client TLS
+connection.
+
+If called from ``sub vcl_backend_response``, vmod-tls will show details
+from the currently established TLS backend connection.
+
+Note that the client-side functionality relies on using Varnish's
+native TLS implementation. If you are currently terminating TLS in a
+separate process (for example using Hitch), you should instead use the
+PROXY VMOD which offers similar functionality.
+
+EXAMPLES
+========
+
+Client connection
+-----------------
+
+The following example will report which TLS version and which cipher
+is used for the client connection.
+
+::
+
+  import tls;
+
+  sub vcl_deliver {
+    if (tls.is_tls()) {
+      # Report cipher and TLS version as a response header
+      set resp.http.tls-version = tls.version();
+      set resp.http.tls-cipher = tls.cipher();
+
+      # Alternatively, we can log it
+      std.log("tls-version: " + tls.version());
+      std.log("tls-cipher: " + tls.cipher());
+    }
+  }
+
+Backend connection
+------------------
+
+The following example will report information about the backend
+connection. This is only available from ``sub vcl_backend_response``.
+
+::
+
+  import tls;
+
+  sub vcl_backend_response {
+    if (tls.is_tls()) {
+      # Report cipher and TLS version as a backend response header
+      set beresp.http.be-tls-version = tls.version();
+      set beresp.http.be-tls-cipher = tls.cipher();
+
+      # Also log:
+      std.log("backend-tls-version: " + tls.version());
+      std.log("backend-tls-cipher: " + tls.cipher());
+    }
+  }
+
+API
+===
+
+$Function BOOL is_tls()
+$Restrict client vcl_backend_response vcl_pipe vcl_connect
+
+Indicates whether the peer is connected over an SSL/TLS connection.
+
+$Function STRING version()
+$Restrict client vcl_backend_response vcl_pipe vcl_connect
+
+Returns the TLS version in use for this connection. E.g. "TLSv1.2".
+
+$Function STRING ja3()
+
+Returns the ja3 fingerprint for this connection if the ``tls_ja3`` parameter
+has been enabled.
+MD5 fingerprint can be calculated using ``digest.hash_md5(tls.ja3());``
+
+$Function STRING cipher()
+$Restrict client vcl_backend_response vcl_pipe vcl_connect
+
+Returns the cipher that was chosen during the TLS handshake.
+
+$Function STRING authority()
+$Restrict client vcl_backend_response vcl_pipe vcl_connect
+
+Returns the hostname presented for Server Name Indication (SNI).
+
+$Function STRING alpn()
+$Restrict client vcl_backend_response vcl_pipe vcl_connect
+
+Returns the result of the Application Layer Protocol
+Negotiation (ALPN). This will contain one of "http/1.1",
+"h2" or NULL if no ALPN happened.
+
+Varnish does not currently do ALPN with its backends, so if
+used in vcl_backend_response this will always return NULL.
+
+$Function STRING cert_sign()
+$Restrict client vcl_backend_response vcl_pipe vcl_connect
+
+Certificate signature algorithm. E.g. "SHA256".
+
+$Function STRING cert_key()
+$Restrict client vcl_backend_response vcl_pipe vcl_connect
+
+The algorithm used to generate the certificate. E.g. "RSA2048".
+
+$Function BOOL client_verified()
+$Restrict client
+
+Returns True if client provided a certificate and the certificate
+verification succeded.
+
+$Function STRING client_cert()
+$Restrict client vcl_backend_response vcl_pipe vcl_connect
+
+If the client provided a certificate, this will return the subject
+name of that certificate. Otherwise returns NULL if no client
+certificate was provided.
+
+This function may also be used in vcl_backend_response where it will
+return the subject name of the client certificate for the current
+backend connection, if any.
+
+AVAILABILITY
+============
+
+The ``tls`` VMOD is available in Varnish Enterprise version ``6.0.6r5`` and later.

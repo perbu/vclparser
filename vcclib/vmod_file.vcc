@@ -1,0 +1,219 @@
+#
+# Copyright (c) 2015-2018 Varnish Software AS
+# All rights reserved.
+#
+# Author: Martin Blix Grydeland <martin@varnish-software.com>
+# Author: Steven Wojcik <swojcik@varnish-software.com>
+#
+
+$Module file 3 "File"
+$License
+
+DESCRIPTION
+===========
+
+The ``file`` vmod allows for Varnish to act as a file server as well as a means to
+interact with the file system from VCL.
+
+The backend allows the serving of static files through Varnish. The backend
+request URL is appended to the vmod's root directory
+to form a file path. If the file path resolves to a regular file and is
+readable to the Varnish child process, it is used as the source for
+this backend fetch operation. Files served this way are treated in the same manner
+as if they were fetched from a real backend, and so will be cached in memory
+according to the current configuration. TTL, grace, and keep works just like it would normally as well.
+
+The following headers are added based on the resolved files
+attributes: ``Last-Modified``, ``Content-type``, and ``Content-Length``.
+
+If the file could not be read for any reason (e.g. not found, access
+restrictions or resolved outside of the root directory of the vmod),
+an appropriate error response is synthesized.
+
+This VMOD includes a standard set of file operations and an ACL.
+All ``file`` objects must allow at least one path in the ACL. To use executable
+files, a mode of ``x``, ``varnishd`` must be started with ``-p allow_exec=true``.
+
+EXAMPLES
+========
+
+Serve a local file system:
+
+::
+
+  import file;
+
+  sub vcl_init {
+    new root = file.init("/var/www/html/");
+  }
+
+  sub vcl_backend_fetch {
+    # Set the file system as the backend
+    set bereq.backend = root.backend();
+  }
+
+Return the uptime of the server:
+
+::
+
+  import file;
+
+  sub vcl_init {
+    new fs = file.init();
+    fs.allow("/usr/bin/uptime", "x");
+  }
+
+  sub vcl_recv {
+    if (req.method == "UPTIME") {
+      return (synth(200, "UPTIME"));
+    }
+  }
+
+  sub vcl_synth {
+    if (resp.reason == "UPTIME") {
+      synthetic(fs.exec("/usr/bin/uptime"));
+      if (fs.exec_get_errorcode() != 0) {
+        set resp.status = 404;
+      }
+      return (deliver);
+    }
+  }
+
+API
+===
+
+$Function STRING arg(STRING str)
+
+Allow a string literal to be used with STRANDS so it can be read in ``.exec()`` arguments.
+
+$Function STRANDS split_args(STRING str)
+
+Turn a string into a STRANDS object to be read in ``.exec()`` arguments. The string is broken
+up in two ways, by whitespace or matching quotes. Quotes will be deliminated by a
+matching quote followed by any whitespace character or the end of the string.
+Both single and double quotes are supported. This can be used to pass in multiple
+arguments to ``.exec()``.
+
+$Object init(STRING rootdir = 0, STRING mimedb = "/etc/mime.types", BOOL disable_symlinks = 0)
+
+Creates a file system root. The ``rootdir`` is the base of the file system hierarchy.
+
+The root directory, when set, will be prepended to each path used in the functions bellow (except for ``.exec()``).
+Otherwise each path will be considered absolute or relative,
+depending on a leading slash.
+
+$Method BACKEND .backend()
+
+Return a backend reference to this root for use during fetch.
+
+$Method VOID .allow(STRING path, STRING mode = "r")
+$Restrict vcl_init
+
+Allow ``path`` to be accessed from functions that access files through ``mode``.
+At least one path must be added to allow for the object to work correctly.
+The mode can be any combination of read (``r``), write (``w``), or execute (``x``).
+
+$Method VOID .deny(STRING path, STRING mode = "rwx")
+$Restrict vcl_init
+
+Deny ``path`` access from functions that access files through ``mode``.
+The mode can be any combination of read (``r``), write (``w``), or execute (``x``)
+
+$Method STRING .read(STRING file, STRING def = 0)
+
+Read ``file`` and return it as a string. If ``file`` does not exist or does not pass the ACL, ``def`` is returned.
+
+$Method BLOB .read_blob(STRING file, STRING def = 0)
+
+Read ``file`` and return it in a blob. If ``file`` does not exist or does not pass the ACL, ``def`` is returned.
+``def`` refers to contents of the blob to return if there was an error reading the file.
+
+$Method VOID .read_into_synth(STRING file, STRING def = 0)
+$Restrict vcl_synth vcl_backend_error
+
+Return a file as a synthetic response body. Only accessible through ``sub vcl_synth``
+and ``sub vcl_backend_error``. If ``file`` does not exist or does not pass the ACL, ``def`` is returned.
+
+$Method INT .append(STRING file, STRING str, BOOL create_path = 0, INT dir_mask = 755, BOOL lock = 1)
+
+Append a string, ``str``, to a file, ``file``. If ``create_path = true`` and a directory above the
+file does not exist, it will be created with permission ``dir_perm``. Must Pass ACL. If ``lock`` is true
+the file will be appended under a lock.
+
+$Method INT .write(STRING file, STRING str, BOOL create_path = 0, INT dir_mask = 755)
+
+Write to a file, ``file``, consisting of ``str``. If ``create_path = true`` and a directory above the
+file does not exist, it will be created with permission ``dir_perm``. Must Pass ACL. The file is
+first written to a temporary file by appending a random string to the end of the file path
+(``/rootdir/file[.random_string]``). Next, the file is renamed back to the original path.
+If there are multiple concurrent writers, the last write wins.
+
+$Method INT .write_blob(STRING file, BLOB blb, BOOL create_path = 0, INT dir_mask = 755)
+
+Write to a file, ``file``, with the contents of ``blb``. If ``create_path = true`` and a directory above the
+file does not exist, it will be created with permission ``dir_perm``. Must Pass ACL. The file is
+first written to a temporary file by appending a random string to the end of the file path
+(``/rootdir/file[.random_string]``). Next, the file is renamed back to the original path.
+If there are multiple concurrent writers, the last write wins.
+
+$Method INT .write_req_body(STRING file, BOOL create_path = 0, INT dir_mask = 755)
+$Restrict vcl_recv
+
+Write the request to a file, ``file_path``, the request body. If ``create_path = true`` and a directory above the
+file does not exist, it will be created with permission ``dir_perm``. This can only can be called in ``sub vcl_recv``.
+``std.cache_req_body()`` must be called before using this. The file is first written to a temporary file by
+appending a random string to the end of the file path (``/rootdir/file[.random_string]``).
+Next, the file is renamed back to the original path.  If there are multiple concurrent writers, the last write wins.
+
+$Method BOOL .delete(STRING path, BOOL recursive = 0)
+
+Delete a ``path``. If a directory is to be deleted, ``recursive`` must be set to ``true``. ``path`` must pass the ACL.
+
+$Method STRING .exec(PRIV_TASK, STRING path,  STRANDS arguments = 0,
+  STRING checksum = 0, DURATION timeout = 60, BOOL output_stdout = 1,
+  BOOL output_stderr = 1, STRING def = 0)
+
+Run a binary or script and return the output as a string. Must pass the ACL. Scripts must have
+execute permission and contain a first line of:
+
+::
+
+  #! interpreter [optional-arg]
+
+Executing a program directly from Varnish should be avoided for servers running moderate or heavy workloads.
+
+$Method INT .exec_get_errorcode(PRIV_TASK)
+
+Get the response code from the previous ``.exec()`` call.
+This value is ``-1`` until the binary or script is called in ``.exec()`` and produces a response code.
+
+$Method BOOL .exists(STRING path, STRING mode = "r", ENUM {FILE, DIR, BOTH} type = "FILE")
+
+Check if the ``path`` exists. The mode can be any combination of read (``r``), write (``w``), or execute (``x``)
+
+$Method TIME .lastaccess(STRING path, ENUM {FILE, DIR, BOTH} type = "FILE")
+
+Return the time (Unix time) that the ``path`` was last accessed. This time is updated when the
+following system functions are called: ``execve(2)``, ``mknod(2)``, ``pipe(2)``, ``utime(2)``, and ``read(2)``
+(of more than zero bytes). This function does not work when a file system is mounted with ``noatime``, as is
+currently the recommended configuration for MSE volumes.
+
+$Method TIME .lastmodified(STRING path, ENUM {FILE, DIR, BOTH} type = "FILE")
+
+Return the time (Unix time) that the ``path`` was last modified. This time is updated when the
+following system functions are called: ``mknod(2)``, ``truncate(2)``, ``utime(2)``, and ``write(2)`` (of more
+than zero bytes).
+
+$Method TIME .laststatus(STRING path, ENUM {FILE, DIR, BOTH} type = "FILE")
+
+Return the time (Unix time) that ``path`` last had a status change. This time is updated by
+writing or setting inode information (i.e., owner, group, link count, mode, etc.).
+
+$Method BYTES .size(STRING path, ENUM {FILE, DIR, BOTH} type = "FILE")
+
+Return the size of the ``path`` in bytes. Can be limited to only files, only directories, or both files and directories
+
+AVAILABILITY
+============
+
+The ``file`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

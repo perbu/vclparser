@@ -1,0 +1,87 @@
+#
+# Copyright (c) 2016 Varnish Software
+#
+# Author: Dag Haavi Finstad <daghf@varnish-software.com>
+# Author: Martin Blix Grydeland <martin@varnish-software.com>
+#
+
+$Module leastconn 3 "Least connections director (leastconn)"
+$License
+
+DESCRIPTION
+===========
+
+The ``leastconn`` vmod implements a least connections director for Varnish. The
+director will direct traffic to the backend with the least number of
+active connections.
+
+Each backend has an associated weight. A backend with e.g. weight 10
+will balance at twice the number of connection as a backend with
+weight 5.
+
+An optional linear ramp up time can be specified for the director. If
+set, the weight of each backend is linearly increased in the time
+frame until it reaches the set weight. This allows for backends that
+have e.g. recently become healthy again to be eased into the
+workload. Without a ramp up time, the newly inserted backend would get
+all the load until it has its share, which can have detrimental
+effects on some applications.
+
+Only actual backends can be added, ie. it is not stackable. If another
+director is added as a backend, it will be ignored.
+
+EXAMPLE
+=======
+
+::
+
+  vcl 4.0;
+  import leastconn;
+
+  backend backend1 {
+    .host = "192.168.0.10";
+    .port = "80";
+  }
+
+  backend backend2 {
+    .host = "192.168.0.11";
+    .port = "80";
+  }
+
+  sub vcl_init {
+    new dir = leastconn.leastconn();
+    dir.rampup(1m);
+    dir.add_backend(backend1, 3);
+    dir.add_backend(backend2, 8);
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = dir.backend();
+  }
+
+API
+===
+
+$Object leastconn()
+
+Creates a new leastconn director and returns the object.
+
+$Method VOID .add_backend(BACKEND, REAL)
+
+Add a backend to the director. First argument is the backend to add,
+the second is its associated weight.
+
+$Method BACKEND .backend()
+
+Returns a backend to use for the fetch processing.
+
+$Method VOID .rampup(DURATION)
+
+Sets the ramp up duration to use whenever a backend changes its status
+to healthy. The default is zero rampup.
+
+AVAILABILITY
+============
+
+The ``leastconn`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.
+

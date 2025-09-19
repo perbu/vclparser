@@ -1,0 +1,18 @@
+# auto_docs = false
+#
+# Copyright Varnish Software (c) 2024-2025.
+#
+# Author: Guillaume Quintard
+#
+
+$Module otel 3 "Otel VMOD"
+$ABI strict
+$Addon
+
+Internal VMOD to support ``otel.vcl``, do not use directly.
+The API of this VMOD is subject to change at any time without notice.
+
+$Function VOID log(STRING)
+$Function VOID route(STRING)
+$Function STRING generate([STRING traceparent], [BOOL sample])
+$Function BOOL validate(STRING traceparent)

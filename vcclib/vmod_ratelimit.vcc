@@ -1,0 +1,394 @@
+$Module ratelimit 3 "Rate limit"
+$Addon
+$Prefix rtlimt
+
+DESCRIPTION
+===========
+
+The `ratelimit` VMOD provides a mechanism for limiting how many events
+of a specific type can happen per second at the scale of one or multiple
+Varnish instances.
+
+The VMOD functions either locally or globally using the NATS
+protocol. This manual only contains information on the VCL APIs
+provided by the VMOD and some basic example.
+
+In a local setting, this VMOD can be used to limit requests of a given
+type, but it can also be used to limit other types of resource usage
+in VCL.
+
+ACCOUNTS & COLLECTIONS
+======================
+
+The central concept in VMOD `ratelimit` is an *account*. It can be
+thought as a reservoir with a maximum capacity which is filled at a
+constant rate until full.
+
+The main rate limiting mechanism is the `.spend()` method which substracts
+by a given amount (1 by default) the reservoir if possible or if forced
+to do so. If the reservoir is empty and the `.spend()` is not forced then
+the `.spend()` will return `false` allowing VCL to react, otherwise `true`
+is returned. The ability to force spending means that the balance of the
+account can be below zero (overdrawn), meaning more time will be necessary
+for it to become positive again as it still will fill at a constant rate.
+
+Accounts which are connected to a ratelimit network, have a *local* reservoir
+which has a refill rate smaller or equal to the global rate. The mechanism
+behind this is described in the RATE LIMITING NETWORK section.
+
+The reservoir size is a quantity that can be delivered and its maximum is
+always configured as a duration at the allocated rate, this duration is called
+the maximum credit duration. For example a rate of 100 tokens per second with a
+maximum credit duration of 2s means the maximum capacity of the reservoir is
+of 200 tokens to serve `.spend()` operations. An account refills at the given
+rate until it is full and having credit allows more operations to succeed than
+the configured rate until empty. This can be used to be permissive and handle
+bursts, allowing a lot of `.spend()` operations in a short amount of time
+and still maintain a limited average over time.
+
+In most circumstances, more than one account is needed, for example if
+rate limiting the number of requests per second from each user from a list
+of users is desired. Each user can be identified by IP address, token or
+any other string.
+
+All accounts are handled by the `collection` VMOD object. The collections
+are defined during load (in `vcl_init`). Furthermore, collections can be
+connected to corresponding collections on other Varnish servers, allowing
+them to report usage to their peers and to react to usage from the peers.
+
+While the rate to apply can be set precisely account by account, collections
+are supposed to group together accounts which have similar behaviors, in
+general identified by a notion of the same nature. As an example, if some
+rate limit rules are applied per client IP address and some rules are applied
+per accessed backend, it is a good idea to use separate collections.
+
+DYNAMIC AND STATIC ACCOUNTS
+===========================
+
+When a `collection` VMOD object is created, the result is actually a
+*handle* to a shared collection of accounts together with some
+settings and potentially a list of *active* accounts. This means that
+collections are shared between all VCLs (including accounts they contain)
+and rates a preserved during reloads.
+
+When a collection is created it has configuration parameters for itself
+and default parameters for any future account created within it.
+Accounts can be created by explicitly calling the `.account()` collection
+API method which can optionally supersede the defaults of the collection.
+Accounts can also be created simply the first time the `.spend()` method
+is used referencing them and allowing account creation.
+
+It is often useful to allow automatic discarding of idle accounts, allowing
+the system to forget an account existed once it is fully idle thus allowing
+to reduce the memory footprint. This is only done from *dynamic* accounts,
+a *static* account will have the lifetime of the collection it was created
+in. A collection can have both *static* and *dynamic* accounts.
+
+When using the `.account()` method for account creation from `vcl_init`
+the created account will be marked as *static*. Any other method of account
+creation will result with the account being marked as *dynamic*.
+
+RATE LIMITING NETWORK
+=====================
+
+Connecting several instances together in a rate limiting network is achieved by
+calling `set_nats_server()`. If the connection is successful, all communication
+will happen over this NATS network, and it will remain active until the VMOD is
+unloaded. It's possible to change the connection at runtime by reloading the VCL
+with a different input to `set_nats_server()`. This will apply to all active
+collections. This means that a configuration with labels, where the VCLs
+specifies different servers in the different VCLs, the order of loading will
+affect the final result. It is good practice to use only one NATs network for
+this VMOD, and only change it in special circumstances.
+
+When an account is within a collection over a rate limiting network it is
+possible for the maximum rate of the account to be configured differently
+between the different instances seeing activity for such an account. In
+such a case, the effective maximum rate distributed across all instances
+is the minimum of the configured rates of all the instances and can change
+dynamically if instances leave or change their configuration. This means
+that an increase of allotted rate is only effective once all nodes have
+received the new configuration value while a decrease in rate is imposed
+as soon as a new node is introduced with a lower limit.
+
+The maximum credit duration is not shared between nodes and only impacts how
+local traffic is served.
+
+As it is possible for communication with other remote nodes to fail and
+it may not be desirable to either prevent any `.spend()` to succeed or
+to allow all nodes to serve the full configured maximum rate it is possible
+to set a rate multiplier which is used when disconnected, for example setting
+this to 0.5 means that when fully disconnected from NATS only 50% of the
+maximum rate can be allowed locally for all accounts in the collection.
+
+RATE LIMIT SHARING AND LEASES
+=============================
+
+To apply rate limiting, this VMOD does not share consumption between the nodes
+but establishes rate leases. A rate lease given to a node allows this node to
+serve the given rate without any need for communication with other nodes.
+
+Initially, each node has no lease and local requirements will make the node
+automatically ask, acquire and release leases as needed, to avoid latency it
+is always assumed leases will be granted when it is known that there is some
+of the global rate that is not leased. This can introduce cases when more
+requests than the rate limit are allowed to go through temporarily.
+A lease is not a grant for the total rate but for a portion of the global
+rate, the sum of the leased rate for all nodes in the cluster can grow up
+to the maximum configured rate.
+
+There are a number of mechanism which will smooth rate negotiations and will
+err toward being slightly more permissive. This algorithm aims at ensuring
+good average behaviour and response time at scale with minimal inter-node
+communication per account which is decorrelated to the rate of `.spend()`
+operations.
+
+Among the optimisations is a mechanism where nodes are able to give back to
+the cluster part of the unused rate it has claimed. This is mirrored by another
+optimisation allowing a node that has not yet seen any local activity on an
+account that has its full rate in remote leases to temporarily allow some
+fixed credit assuming other nodes will release and make space for it. Of course
+other nodes may be fully using the rate that was leased and not be able to
+release anything back.
+
+When the node is not part of a rate limit network, the node effectively grants
+leases to itself up to the configured limit.
+
+ROUNDING ERRORS
+===============
+
+Note that even though the `rate` is used as an input when creating an
+account, the internal structure stores *micro tokens per seconds* and
+considers extremely low rates to be not worth communicating over, it
+is therefore recommended to avoid rates below 0.001 (1 per 1000s).
+
+It is also possible for rate representations to be truncated down depending
+on double precision number conversions for low rates, for example a rate of
+0.1 tokens per second may be represented as 999999 micro-tokens per second.
+
+If very low rates are necessary it is possible to overcome this limitation
+by configuring a higher rate but also increase the amount when calling the
+`.spend()` command without any additional cost. A rate of 100 tokens per
+second with all spend operations taking 1000 tokens is identical as a rate
+of 0.1 tokens per second and spend amount of 1.
+
+EXAMPLES
+========
+
+The following example shows how to perform rate limiting with one
+single account account:
+
+	import ratelimit;
+
+	sub vcl_init {
+		# Any account will default to a maximum rate of 100
+		# requests per second with a reservoir of 200 (2s duration)
+		new rlimit = ratelimit.collection("col", 100, 2s);
+	}
+
+	sub vcl_miss {
+		if (!rlimit.spend("account")) {
+			return (synth(429));
+		}
+	}
+
+	sub vcl_synth {
+		if (resp.status == 429) {
+			# For 429 Too Many Requests, no body is needed
+			return (deliver);
+		}
+	}
+
+The following example shows how you can rate limit backend requests
+based on the client's IP, and give different rate limits on different
+IP addresses based on an access control list::
+
+	import ratelimit;
+
+	acl are_you_local {
+		"127.0.0.0/8";
+	}
+
+	sub vcl_init {
+		# Any account will default to a maximum rate of 50
+		# requests per second with a reservoir of 500 (10s duration)
+		new ip_limit = ratelimit.collection("bereq-limiter", 50, 10s);
+	}
+
+	# Note: This rate limiting can be moved to sub
+	# vcl_backend_fetch, but then the IP of the client
+	# needs to be smuggled in a header to the backend, and
+	# that is a hassle.
+	sub vcl_miss {
+		if (client.ip ~ are_you_local) {
+			# local IPs get more rate and a bigger reservoir
+			ip_limit.account(client.ip, 100, 20s);
+		}
+
+		if (!ip_limit.spend(client.ip)) {
+			return (synth(429));
+		}
+	}
+
+	sub vcl_synth {
+		if (resp.status == 429) {
+			# For 429 Too Many Requests, no body is needed
+			return (deliver);
+		}
+	}
+
+API
+===
+
+$Event vmod_event
+
+$Function VOID set_nats_server(STRING nats_server)
+$Restrict vcl_init
+
+Connect to a NATS server to have all collections enter a global rate limiting
+network. If the connection establishment fails, an error message is logged and
+VCL initialization continues.
+
+Collections will always use the connection established by the latest call to
+this function. If the VCL is reloaded with a different `nats_server`` all
+collections are seamlessly migrated to the new connection. If connection
+establishment fails, collections will continue to use the existing connection.
+
+$Object collection(STRING id, REAL default_rate, DURATION default_max_credit = 10,
+        [INT buckets], [INT assumed_nodes], [REAL disconnected_multiplier])
+
+Creates a handle to a collection of accounts with the given ID. If no
+collection with the given ID exists, one will be created.
+
+All account created within the collection that do not have an explicitly
+set maximum rate or maximum credit duration will inherit the collection
+`default_rate` and `default_max_credit` values.
+
+When nodes start up they are blind to the number of existing participants in
+the network (if configured) until the communication gives knowledge of
+all nodes. This view may also become untrusted after a collapse of
+communication shows that NATS messages may have been missed. The parameter
+`assumed_nodes` is used as a fallback value for the number of nodes an account
+is active on and it is useful to provide a reasonable estimate of the value of
+it. Once connected to a rate limit network and information was exchanged
+between nodes the `assumed_nodes` value is ignored.
+
+As it is possible for communication with other remote nodes to fail and
+it may not be desirable to either prevent any `.spend()` to succeed or
+to allow all nodes to serve the full configured maximum rate it is possible
+to set a `disconnected_multiplier` value which is used to reduce the maximum
+rate that can be served locally when disconnected. For example setting a
+multiplier of 0.5 means that when fully disconnected from NATS only 50% of
+the maximum rate can be allowed locally for all accounts in the collection.
+This has no impact when used without NATS and it is invalid to set a value
+below 0 or above 1. The `disconnected_multiplier` has no impact if no NATS
+server is configured.
+
+The `buckets` setting aim at optimizing lookup of accounts in the collection,
+each bucket has its own synchronization scheme, configuring this to a high
+value is recommended if the number of accounts in the collection is very high.
+
+$Method VOID .account(STRING key, [REAL rate], [DURATION max_credit],
+        ENUM {ignore, update} on_conflict = update)
+
+Make sure an account exists with a given key, rate and credit. It is optional
+to call this as the `.spend()` call is able to create the account. However,
+`.account()` can create an account with a different rate than the collection's
+default while `.spend()` cannot.
+
+If the account does not exist, it is created with the given limits or the
+limits of the collection.
+
+If the account already exists and `on_conflict` is set to `update` then the
+account configuration is changed to the new settings. This can be used to
+revert the account to the defaults of the collection by omitting the
+`rate` and `max_credit` values.
+
+If the account already exists and `on_conflict` is set to `ignore` then the
+account is left unmodified.
+
+If this creates an account from `vcl_init` the account is marked as *static*
+and its lifetime becomes the lifetime of the collection. If this creates an
+account from any other place of the VCL the account is marked as *dynamic*
+and its lifetime is automated. Once fully idle, *dynamic* accounts will be
+discarded asynchronously.
+
+$Method BOOL .spend(STRING key, REAL amount = 1, BOOL force = 0,
+        ENUM {fail, limit, create} on_non_exist = create)
+
+Spends a certain `amount` from the account with key `key`. If `key` references
+an account which does not exists, if is created if `on_non_exist` is set to
+`create`, `false` is returned if `on_non_exist` is set to `limit` and a VCL
+failure is triggered if `on_non_exist` is set to `fail`.
+
+Accounts do not necessarily limit a number of requests, it is possible to use
+`amount` to track other quantities where all operations do not have the same
+cost. It is for example possible to limit in throughput (bytes per second)
+by using a number of bytes in `amount`.
+
+If a valid account is either present or created and `amount` is exactly 0,
+the `true` is returned without attempting to spend in the account allowing
+to probe the existence of an account.
+
+$Method REAL .get_max_rate(STRING key, REAL non_exist_rate = 0.0,
+        ENUM {local, shared} scope = shared)
+
+Get the current maximum rate which is configured for the account either
+globally or locally. Each node configures a local value by either setting
+collection defaults or using `.account()` to set the rate. The shared rate
+for a given account is set as the minimum of the configured rates on all
+nodes that see spending operations on the account.
+In effect the shared maximum rate only changes upon communication and it may
+take a few seconds to change once a new value is set. Nodes that do not have
+any activity on the account may take their own default configuration setting
+into account while other nodes will not (as they did not receive the local
+value).
+
+If `key` references an account which does not exists, `non_exist_rate` is
+returned.
+
+$Method VOID .accounts_from_file(STRING filename, ENUM {ignore, update} on_conflict = update)
+
+Opens the file `filename` and reads it line by line.
+Line beginning with a hash (#) character are considered comments and skipped.
+Lines that are empty or only contain spaces or tabulations are skipped.
+
+Each line must contain one to three tokens, separated by spaces or tabulations.
+The first token is an account key, the second optional token is an account
+rate and the third optional token is the max credit. Not providing the rate or
+maximum credit will make the account default on the collection settings.
+
+This will invoke `.account()` for each line found this way and the same rules
+apply as described in its description and the semantics of `on_conflict` is
+applied the same way.
+
+Any invalid line will result in a failure which may have partially changed the
+account definitions. There is an internal limit to the maximum allowed line size.
+Inability to read the indicated file will result in a failure.
+
+$Method VOID .accounts_from_string(STRING s, ENUM {ignore, update} on_conflict = update)
+
+Add accounts described in the string `s`, as if the string was the contents of
+a file loaded with `.accounts_from_file().`. See details above.
+
+For example, this will create three static accounts::
+
+	import ratelimit;
+
+	sub vcl_init {
+		new col = ratelimit.collection("col", 50, 2.0);
+		col.accounts_from_string({"
+	# uses defaults from collection
+	Alice
+	# uses custom rate but default credit duration
+	Bob     75
+	# uses custom rate and custom credit duration
+	Charlie     100     3.0
+		"});
+	}
+
+AVAILABILITY
+============
+
+The ``ratelimit`` VMOD is available in Varnish Enterprise version ``6.0.14r6``
+and later as a feature add-on.

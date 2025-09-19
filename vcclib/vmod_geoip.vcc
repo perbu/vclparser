@@ -1,0 +1,57 @@
+# auto_docs = false
+$Module geoip 3 "Geolocate IP addresses"
+$License
+
+DESCRIPTION
+===========
+
+This Varnish module exports functions to look up GeoIP country codes.
+Requires GeoIP library (on Debian install libgeoip-dev)
+
+Inspired by https://vrobert.fr/2010/07/another-way-to-link-varnish-and-maxmind-geoip/
+
+.. vcl-start
+
+Example::
+
+    vcl 4.0;
+    import geoip;
+
+    backend default { .host = "192.0.2.11"; .port = "8080"; }
+
+    sub vcl_recv {
+            # This sets req.http.X-Country-Code to the country code
+            # associated with the client IP address.
+            set req.http.X-Country-Code = geoip.country_code(client.ip);
+            set req.http.X-Country-Name = geoip.country_name(client.ip);
+            # These can be used by the backend server to make country-specific
+            # versions. Remember to add X-Country-Code/Name to beresp.http.Vary.
+
+            # Or, if you wish, you can do geofencing:
+            if (req.http.X-Country-Name != "Germany") {
+                return (synth(403, "Sorry, only available in Germany"));
+            }
+    }
+
+.. vcl-end
+
+$Event vmod_event
+
+$Function STRING country_code(PRIV_VCL, STRING)
+
+Look up two-letter country codes.
+
+$Function STRING country_name(PRIV_VCL, STRING)
+
+Look up (english) country names.
+
+
+KNOWN ISSUES
+============
+
+Certain versions of the GeoIP library will fail if the GeoIP database
+file is updated by overwriting the old file directly.
+
+This could impact varnish stability, and it is therefore recommended
+to download the update as a new file, and then ``mv`` the new file
+onto the old active database.

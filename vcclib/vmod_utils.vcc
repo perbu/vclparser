@@ -1,0 +1,299 @@
+$Module utils 3 "Utils"
+$ABI strict
+$License
+
+DESCRIPTION
+===========
+
+The ``utils`` vmod is a VMOD for useful functions that don't require their own VMOD.
+
+API
+===
+
+$Function STRING newline()
+
+Return a string consisting of a newline escape sequence, ``\n``.
+
+$Function STRING time_format(STRING format, BOOL local_time = 0, [TIME time])
+
+Format the time according to ``format``. This is an interface for ``strftime``.
+
+$Function VOID fast_304()
+$Restrict vcl_backend_response
+
+Perform a fast 304 insert. This revalidates the stale objects instead of performing the HTTP standard's complicated rules (see https://httpwg.org/specs/rfc7232.html#status.304 and https://httpwg.org/specs/rfc7234.html#freshening.responses) for calculating new headers.
+When ``fast_304()`` is not used, the standard requires Varnish to create a new object with new headers, where most use cases are better off with simply revalidating the existing objects.
+
+A ``fast_304`` will conduct a simple book update, whereas a normal 304 will perform a full copy of the object payload. For big objects, this represents a potentially very significant reduction in IO cost and it is strongly recommended to use ``fast_304`` when using MSE.
+
+$Function BOOL is_fast_304()
+$Restrict vcl_backend_response vcl_vha_internal
+
+Was a fast 304 performed.
+
+$Function BOOL was_max_conn()
+$Restrict vcl_backend_error
+
+This function can only be called in ``sub vcl_backend_error``. Returns ``true`` if the reason that we are in ``sub vcl_backend_error`` is, in fact, that the selected backend's maximum connections was reached when a new connection was requested.
+
+$Function STRING vcl_name()
+
+The name of the current VCL.
+
+$Object dyn_probe([STRING url], [STRING request], [BOOL tcponly], [INT expected_response], [DURATION timeout], [DURATION interval], [INT initial], [INT window], [INT threshold], [BOOL expect_close])
+
+Create a dynamic probe in ``vcl_init``. The advantage of creating a probe this
+way is that any of the probe attributes can be determined at VCL load time, for
+example from environment variables. If not set, the attributes have the same
+default values as regular probes, and are subject to the same restrictions.
+
+The configured probe can be retrieved with ``.probe()``, and can optionally be
+further customized at request time with ``.probe_custom``.
+
+$Method PROBE .probe()
+
+Get the probe specified during the creation of the object.
+
+Example::
+
+  import utils;
+  import goto;
+
+  sub vcl_init {
+    # Get the probe URL from an environment variable
+    new dyn_probe = utils.dyn_probe(std.getenv("PROBE_URL"));
+
+    # Create a dynamic backend with the above probe
+    new goto_dir = goto.dns_director("foo.example.com", probe = dyn_probe.probe());
+  }
+
+$Method PROBE .probe_custom(STRING url, [STRING header1], [STRING header2], [STRING header3], [STRING header4], [STRING header5], [STRING header6], [STRING header7], [STRING header8], [STRING header9], [STRING header10])
+
+Create or reuse a custom probe. The probe will inherit the attributes set at the
+creation of this object, with the exception of the ``url``, ``request``, and
+``tcponly``. The probe request will instead be generated based on the arguments
+given to this method.
+
+The memory allocated to custom probes will be held for the lifetime of the VCL
+they are created in, and is only released once the VCL is discarded. The
+dyn_probe object has an internal cache to reuse custom probe definitions, so
+calling this method multiple times with the same arguments will not consume
+extra memory. Each unique custom probe definition will consume about 120 bytes
+plus the length of the generated request string.
+
+Example::
+
+  import utils;
+  import goto;
+
+  sub vcl_init {
+    # Create a dynamic probe
+    new dyn_probe = utils.dyn_probe("/health");
+  }
+
+  sub vcl_backend_fetch {
+    # Create a custom probe with the same Host header as the backend fetch
+    set bereq.backend = goto.dns_backend(bereq.http.Host, probe = dyn_probe.probe_custom("/health", "Host: " + bereq.http.Host, "Connection: close"));
+  }
+
+$Function INT mod(INT a, INT b)
+
+Return the result of ``a mod b``, or triggers an error if ``b`` is 0. Be
+aware that if ``a`` or ``b`` is negative, the output may be negative.
+
+$Function REAL fast_random(REAL lo, REAL hi)
+
+Returns a pseudo random real number between *lo* and
+*hi*. This is a drop-in replacement for std.random(), but with
+a much higher focus on speed. Like std.random(), this should
+not be used for cryptographical applications.
+
+::
+
+  set beresp.http.random-number = utils.fast_random(1, 100);
+
+$Function INT fast_random_int(INT m)
+
+When *m* is a positive number, returns a quasi random integer
+between 0 and m-1 (inclusive). If *m* is zero or negative, a
+random INT is returned, which can be either positive or negative.
+
+::
+
+  set beresp.http.random-int = 1 + utils.fast_random_int(3);
+
+After the above, the header random-int will be "1", "2" or "3".
+
+$Function VOID vcp_vfp_reset()
+$Restrict backend
+
+Clear out any configured VDP VFPs
+
+$Function INT bitwise_and(INT a, INT b)
+
+Performs bitwise ``and`` operation.
+
+$Function INT bitwise_or(INT a, INT b)
+
+Performs bitwise ``or`` operation.
+
+$Function INT bitwise_xor(INT a, INT b)
+
+Performs bitwise ``xor`` operation.
+
+$Function STRING bytes2string(BYTES b, ENUM {B, KB, MB, GB, TB} unit = "B")
+
+Converts the bytes *b* to string. *unit* determines the unit the converted string should be.
+
+::
+
+  set req.http.size = utils.bytes2string(10000KB, GB);
+
+$Function BACKEND resolve_backend([BACKEND be])
+$Restrict backend vcl_pipe vcl_connect
+
+Resolve the effective backend from ``bereq.backend``, or the supplied
+argument ``be`` if present. Only directors can resolve to a different
+backend, and only from a backend subroutine.
+
+$Function INT backend_misses()
+$Restrict backend
+
+How many times an uncacheable object has been looked up within the ttl.
+Can only be called in backend subroutines.
+
+Insert an object on the second miss. This reduces expensive cache churn on long tail content.
+
+::
+
+  import utils;
+
+  sub vcl_backend_response {
+    if (!utils.waitinglist() && utils.backend_misses() == 0) {
+      set beresp.uncacheable = true;
+      set beresp.ttl = 24h;
+    }
+  }
+
+$Function BOOL waitinglist()
+$Restrict backend
+
+Return true if there are clients on this object's waitinglist.
+
+$Function VOID hash_ignore_vary(BOOL flag=1)
+$Restrict client
+
+Set the flag to disable vary header checks during lookup. When the
+flag is omitted, variants are ignored. Proceed with caution, ignoring
+vary headers could lead to inconsistent deliveries and depending on
+how they are used by the origin server, security vulnerabilities.
+When in doubt, don't use it.
+
+	**DEPRECATED**: use the ``req.hash_ignore_vary`` flag directly.
+
+$Function VOID base64_encode(ENUM {STD, URL} alphabet = STD, BOOL pad = 1,
+    BYTES buffer_size = 32768)
+$Restrict vcl_backend_response
+
+$Function INT cpu_id()
+
+Returns the current CPU id. For older operating systems not running
+on an x86_64 CPU where the C lib does not provide ``getcpu``, this function will return 0.
+
+$Function INT numa_node_id()
+
+Returns the current NUMA node id. If NUMA is not present, it will always return zero.
+For older operating systems not running on an x86_64 CPU where the C lib does not
+provide ``getcpu``, this function will return 0.
+
+$Function BOOL force_fresh(BOOL flag=1)
+$Restrict backend
+
+Force the subsequent backend fetch to happen on a fresh connection,
+not on a reused backend connection. This function can only be called
+from a backend context (ie. ``sub vcl_backend_*``), for example from ``sub vcl_backend_fetch``.
+
+Setting the flag to 0 turns off the flag, which allows you to take back the
+previous decision about forcing a fresh connection on the next retry.
+
+$Function VOID set_pipe_timeout(DURATION timeout)
+
+Set the pipe idle timeout. The timeout will be set for the
+current session only, and will silently fail if the session is
+not available in the current VCL sub.
+This function can be used for CONNECT requests too.
+
+$Function VOID apply_cache_headers()
+$Restrict vcl_backend_response vcl_backend_error
+
+Parse the backend response headers and set ``beresp.ttl``,
+``beresp.grace`` and ``beresp.keep`` according to them. Must be called
+from ``vcl_backend_response``.
+
+``beresp.ttl`` will be set to a value from one of the following HTTP
+header fields, listed here in order of preference:
+
+- Cache-Control: s-maxage
+- Cache-Control: max-age
+- Expires
+
+If neither of the above HTTP header fields are present, the
+``default_ttl`` configuration applies.
+
+``beresp.grace`` will have its value configured from ``Cache-Control:
+stale-while-revalidate``. If that is not present the ``default_grace``
+configuration will be applied.
+
+``beresp.keep`` will have its ``default_keep`` configuration assigned.
+
+If the response has a nonzero ``Age`` header, the object insertion
+timestamp will be adjusted accordingly. The consequence of this is
+that a configured TTL will effectively be shortened by that same
+amount.
+
+$Function INT hex2integer(STRING hex, INT fallback)
+
+Converts the hexadecimal number *hex* to an integer. The hexadecimal number must
+start with ``0x`` and is case insensitive. If conversion fails, *fallback* will
+be returned.
+
+::
+
+  set req.http.integer = utils.hex2integer("0x6089F", 0);
+  set req.http.integer = utils.hex2integer("0x3bf8a9", 0);
+
+$Function STRING lookup_file(STRING file)
+
+Searches for ``file`` in the ``vcl_path`` used at VCL load time and returns its
+absolute path.
+
+$Function VOID http_range_support(BOOL flag)
+$Restrict client
+
+Overrides the parameter `http_range_support` on a per-request basis.
+
+$Function IP backend_ip(BACKEND be, [BOOL prefer_ipv6], [IP fallback])
+
+Returns the IP address of a backend. For dual-address backends (backends with
+both an IPv4 address and an IPv6 address), the ``prefer_ipv6`` option can be
+used to select which address to return. If the ``prefer_ipv6`` option is not
+set, the global ``prefer_ipv6`` cache parameter is used instead. If the backend
+has neither an IPv4 nor an IPv6 address, ``fallback`` is returned instead.
+
+$Function BYTES estimated_content_length()
+$Restrict vcl_deliver
+
+Returns the expected Content-Length, calculated by taking into account
+a client Range header if present.
+
+This will not work if the client response is delivered using chunked
+transfer encoding. For these cases, the function will return a value
+of -1.
+
+If VCL tampers with req.http.Range after calling this function, the
+recorded result will be wrong.
+
+AVAILABILITY
+============
+
+The ``utils`` VMOD is available in Varnish Enterprise version ``6.0.3r7`` and later.

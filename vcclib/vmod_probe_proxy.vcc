@@ -1,0 +1,270 @@
+# Alias: probe-proxy
+$Module probe_proxy 3 "Probe Proxy"
+$License
+
+DESCRIPTION
+===========
+
+The ``probe proxy`` VCL allows users to redirect probes to a new location or enables
+probes to first pass through VCL. This gives probes all of the flexibility
+that VCL provides including routing, caching and collapsing.
+
+There are two main modes of operations. The first is an override of a
+singular backend. This mode redirects a probe from the original backend
+to a different backend. All of the facilities of a probe work as a
+traditional probe would. The second option is a global override that will
+have all probes go through Varnish first then go to the original backend
+or a secondary backend. Using a global override gives the probe
+request access to the full set of VCL features.
+
+Global Override
+---------------
+
+This is a VCL API that is enabled when a VCL includes ``probe-proxy.vcl``.
+Each probe request will first be routed through Varnish and then to the
+original backend or to a gateway backend.  By default, probes are cached
+according to the URL of the request and the Backend. Each request has a
+set of headers to describe the probe and backend it is attached to.
+Additional VCL to manage probes can be added to ``sub vcl_recv`` and ``sub vcl_deliver``
+with the ``call_recv`` and ``call_deliver`` options. Optionally a security token
+can be added with the ``set_token()`` function. When used each request will
+check if it has the token. This mode requires a listening address that isn't TLS or a proxy.
+
+To use Global Override you must include the ``probe-proxy.vcl``, this must be
+included above other VCL includes such as VHA. To edit other settings see below.
+
+::
+
+  include "probe-proxy.vcl";
+
+Additional Headers
+------------------
+
+Each request gets a set of request headers describing the probe and backend that it is attached to.
+
+* ``VPP-probe-proxy`` - ``true`` when the request is from the Global Override state.
+* ``VPP-token`` - When ``set_token()`` is called, it contains the security token to check.
+* ``VPP-backend-name`` - The name of the backend the probe is attached to.
+* ``VPP-timeout`` - The ``.timeout`` set in the probe's definition. Used for the connect timeout and first byte timeout of the request.
+* ``VPP-interval`` - The ``.interval`` set in the probe's definition. Used to set the TTL of the request.
+* ``VPP-exp_status`` - The ``.exp_status`` set in the probe's definition.
+* ``VPP-window`` - The ``.window`` set in the probe's definition.
+* ``VPP-threshold`` - The ``.threshold`` set in the probe's definition.
+* ``VPP-initial`` - The ``.initial`` set in the probe's definition.
+
+Settings
+--------
+
+All settings are optional and can only be applied in ``sub vcl_init``.
+
+``probe_proxy.set_token(STRING token)``
+
+Add a security token to validate a probe request.
+
+``probe_proxy_gateway.add_backend(BACKEND be)``
+
+Send all probe requests to backend ``be``. If this backend is not available
+the request will then go to the original backend.
+
+``probe_proxy_opts.set("per_host", "false");``
+
+coalesce probe requests per host header instead of per backend. This enables
+a per director probe instead of the default per backend probe.
+
+``probe_proxy_opts.set("call_recv", "false");``
+
+Use additional VCL in ``sub vcl_recv``. The set of headers defined above are
+available for information about the request. This VCL must be in a
+``.is_probe()`` conditional statement. Must return ``hash`` afterwards.
+See ``Add VCL to probes`` for example of how this VCL should look.
+
+``probe_proxy_opts.set("call_deliver", "false");``
+
+Use additional VCL in ``sub vcl_deliver``. The set of headers defined above are
+available for information about the request. This VCL must be in a ``.is_probe()``
+conditional statement. Must return ``deliver`` afterwards. See ``Add VCL to probes``
+for example of how this VCL should look.
+
+``probe_proxy_opts.set("call_backend_response", "false");``
+
+Use additional VCL in ``sub vcl_backend_response``. The set of headers defined above are
+available for information about the request. This VCL must be in a ``.is_probe()``
+conditional statement. Must return ``deliver`` afterwards. See ``Add VCL to probes``
+for example of how this VCL should look.
+
+``probe_proxy_opts.set("retries", "0");``
+
+How many times should the request retry the gateway before falling
+back to the original backend.
+
+EXAMPLES
+========
+
+Send a probe to a different location
+------------------------------------
+
+This sends ``health_check`` to ``new_probe_location`` instead of ``default``
+for ``default``'s health check.
+
+::
+
+  backend default {
+    .host = "host";
+    .port = "80";
+  }
+  backend new_probe_location {
+    .host = "host2";
+    .port = "82";
+  }
+  probe health_check {
+    .url = "/1";
+  }
+
+  import probe_proxy;
+
+  sub vcl_init {
+    probe_proxy.override(default,
+      health_check,
+      new_probe_location);
+  }
+
+Add VCL to probes
+-----------------
+
+Global and per backend VCL can be used for probe requests.
+
+::
+
+  probe health_check {
+    .url = "/";
+  }
+  backend host1 {
+    .host = "host1";
+    .port = "80";
+    .probe = health_check;
+  }
+  backend host2 {
+    .host = "host2";
+    .port = "80";
+    .probe = health_check;
+  }
+
+  include "probe-proxy.vcl";
+
+  sub vcl_init {
+    probe_proxy_opts.set("call_recv", "true");
+    probe_proxy_opts.set("call_deliver", "true");
+    probe_proxy_opts.set("call_backend_response", "true");
+  }
+
+  sub vcl_recv {
+    if (probe_proxy.is_probe()) {
+      set req.http.user-agent = "Varnish Probe";
+      # Only add an header to probes for host2
+      if (req.http.VPP-backend-name == "host2") {
+        set req.http.Authorization = "basic base64string";
+      }
+      return (hash);
+    }
+  }
+
+  sub vcl_deliver {
+    if (probe_proxy.is_probe()) {
+    # Consider this range of response codes valid
+      if (resp.status > 200 && resp.status < 300) {
+        set resp.status = 200;
+      }
+      return (deliver);
+    }
+  }
+
+  sub vcl_backend_response {
+    if (probe_proxy.is_probe()) {
+    # Tolerate 404 from host2
+      if (beresp.backend.name == "host2" && beresp.status == 404) {
+        set beresp.status = 200;
+      }
+      return (deliver);
+    }
+  }
+
+Coalescing probe requests
+-------------------------
+
+When a director creates dynamic backends the amount of probe requests to a
+service will increase by the number of backends created.
+This feature will coalesce a probe request to a director.
+
+::
+
+  import goto;
+
+  include "probe-proxy.vcl";
+
+  probe health_check {
+    .url = "/";
+  }
+
+  sub vcl_init {
+    probe_proxy_opts.set("per_host", "true");
+    new dyn_dir = goto.dns_director("dynamic_host",
+    probe = health_check);
+  }
+
+API
+===
+
+$Function VOID override(BACKEND be, PROBE p, BACKEND new_location)
+$Restrict vcl_init
+
+Override the destination of a probe. ``be`` will use ``new_location`` as it's probe destination.
+Can only be called in ``sub vcl_init``.
+
+$Function VOID global_override(PRIV_VCL, BACKEND be)
+$Restrict vcl_init
+
+Override the probe location of all backends to backend ``be``.
+
+$Function VOID set_token(PRIV_VCL, STRING token)
+$Restrict vcl_init
+
+Add a token header to the global override header set.
+
+$Function BOOL is_probe()
+$Restrict client backend
+
+Check if a request is from a global override.
+
+$Function BACKEND backend([STRING name])
+$Restrict client backend
+
+Return a backend from a given name. Default name is from VPP-backend-name header.
+
+$Function BACKEND self([STRING name])
+
+Generate a backend from the first valid listening address of Varnish.
+
+$Function VOID skip_health_check()
+$Restrict vcl_backend_fetch
+
+Enable bo flag to skip health check on a backend request.
+
+$Function VOID force_fresh()
+$Restrict vcl_backend_fetch
+
+Enable bo flag to force a fresh connection for a backend request.
+
+$Function DURATION timeout()
+$Restrict client backend
+
+Convert the VPP-timeout header to duration. If not defined return default timeout of 2.
+
+$Function DURATION interval()
+$Restrict client backend
+
+Convert the VPP-interval header to duration. If not defined return default timeout of 5.
+
+AVAILABILITY
+============
+
+The ``probe_proxy`` VMOD is available in Varnish Enterprise version ``6.0.8r2`` and later.

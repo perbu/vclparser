@@ -1,0 +1,267 @@
+# auto_docs = false
+# Copyright (c) 2010-2015 Varnish Software AS
+# All rights reserved.
+#
+# Author: Poul-Henning Kamp <phk@FreeBSD.org>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL AUTHOR OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+#
+
+$Module debug 3 "Development, test and debug"
+$ABI strict
+$Prefix xyzzy
+$Synopsis auto
+
+DESCRIPTION
+===========
+
+This vmod is used to develop, test and debug the various aspects
+of VMOD handling in Varnish.
+
+$Event event_function
+
+$Function STRING author(ENUM { phk, des, kristian, mithrandir } person="phk", ENUM { phk, slink, geoff } someone='phk')
+
+Test function for ENUM arguments
+
+$Function VOID test_priv_call(PRIV_CALL)
+
+Test function for call private pointers
+
+$Function VOID test_priv_vcl(PRIV_VCL)
+
+Test function for VCL private pointers
+
+$Function STRING test_priv_task(PRIV_TASK, STRING s="")
+
+Test function for TASK private pointers
+
+$Function STRING test_priv_top(PRIV_TOP, STRING)
+
+Test function for TOP private pointers
+
+$Object obj(STRING string="default", ENUM { one, two, three } number=one)
+
+Test object
+
+NOTE: .enum before .foo as part of test r01332.vtc
+$Method VOID .enum(ENUM { phk, des, kristian, mithrandir, martin })
+
+Testing that enums work as part of object and that the parser isn't
+(too) buggy.
+
+$Method STRING .string()
+
+getter for string
+
+$Method STRING .number()
+
+getter for number
+
+$Method STRING .foo(STRING why)
+
+Foo indeed.
+
+$Method TIME .date()
+
+You never know when you need a date.
+
+$Method VOID .test_priv_call(PRIV_CALL)
+
+Test method for call private pointers
+
+Objects share the PRIV_* state with other objects and methods from the
+same vmod - IOW the PRIV_* state is per vmod, not per object.
+
+$Method VOID .test_priv_vcl(PRIV_VCL)
+
+Test method for VCL private pointers
+
+Objects share the PRIV_* state with other objects and methods from the
+same vmod - IOW the PRIV_* state is per vmod, not per object.
+
+$Method STRING .test_priv_task(PRIV_TASK, STRING s="")
+
+Test method for TASK private pointers
+
+Objects share the PRIV_* state with other objects and methods from the
+same vmod - IOW the PRIV_* state is per vmod, not per object.
+
+$Method STRING .test_priv_top(PRIV_TOP, STRING)
+
+$Function VOID rot52(HTTP hdr)
+
+Encrypt the HTTP header with quad-ROT13 encryption,
+(this is approx 33% better than triple-DES).
+
+$Function STRING argtest(STRING one, REAL two =2, STRING three= "3", STRING comma=",", INT four = 4, [ STRING opt])
+
+$Function INT vre_limit()
+
+$Function VOID register_obj_events(PRIV_VCL)
+
+Register the vmod to receive expiry callbacks
+
+$Function VOID fail()
+
+Function to fail vcl code.  (See also: RFC748)
+
+$Function BOOL fail2()
+
+Function to fail vcl code. Always returns true.
+
+$Object dyn(STRING addr, STRING port, PROBE probe=0)
+
+Dynamically create a single-backend director, addr and port must not be empty.
+
+$Method BACKEND .backend()
+
+Return the dynamic backend.
+
+$Method VOID .refresh(STRING addr, STRING port, PROBE probe=0)
+
+Dynamically refresh & (always!) replace the backend by a new one.
+
+$Object dyn_uds(STRING path)
+
+Dynamically create a single-backend director listening at a Unix
+domain socket, path must not be empty.
+
+$Method BACKEND .backend()
+
+Return the dynamic UDS backend.
+
+$Method VOID .refresh(STRING path)
+
+Dynamically refresh & (always!) replace the backend by a new UDS backend.
+
+$Function VOID vcl_release_delay(DURATION)
+
+Hold a reference to the VCL when it goes cold for the given delay.
+
+$Function BOOL match_acl(ACL acl, IP ip)
+
+Perform an IP match against a named ACL.
+
+$Function VOID test_probe(PROBE probe, PROBE same = 0)
+
+Only here to make sure probe definitions are passed properly.
+
+$Function VOID vsc_new()
+
+Add a vsc
+
+$Function VOID vsc_count(INT val = 1)
+
+Update counter
+
+$Function VOID vsc_destroy()
+
+Remove a vsc
+
+$Object concat(STRANDS)
+
+Create an object that returns the string formed by concatenating the
+given strings.
+
+$Method STRING .get()
+
+Return the string formed from the concatenation in the constructor.
+
+$Function STRING concatenate(STRANDS)
+
+Return the string formed by concatenating the given strings.
+(Uses VRT_StrandsWS().)
+
+$Function STRING collect(STRANDS)
+
+Return the string formed by concatenating the given strings.
+(Uses VRT_CollectStrands().)
+
+$Function VOID sethdr(HEADER, STRANDS)
+
+Set the given header with the concatenation of the given strings.
+
+$Object NULL_OK obj_opt(PRIV_CALL, PRIV_VCL, PRIV_TASK, [STRING s], [BOOL b])
+
+Test object constructor with all the fancy stuff.
+
+$Method STRING .meth_opt(PRIV_CALL, PRIV_VCL, PRIV_TASK, [STRING s], [BOOL b])
+
+Test object method with all the fancy stuff.
+
+$Function STRANDS return_strands(STRANDS strand)
+
+$Function VOID store_ip(PRIV_TASK, IP)
+
+Store an IP address to be later found by ``debug.get_ip()`` in the same
+transaction.
+
+$Function IP get_ip(PRIV_TASK)
+
+Get the IP address previously stored by ``debug.store_ip()`` in the same
+transaction.
+
+$Function STRING priv_task_with_option(PRIV_TASK priv, [STRING opt])
+
+A function mixing a named PRIV_TASK with optional parameters.
+
+$Function VOID vfp_count(ENUM {BACKEND, DECODE, TEXT, ENCODE, STORAGE} pos)
+
+Print the number of bytes
+
+$Function VOID vfp_print(STRING s)
+
+Print the text
+
+$Function INT vfp_size()
+
+The number of VFPs
+
+$Function VOID fill_synth(INT n, STRING s)
+$Restrict vcl_synth vcl_backend_error
+
+Fill synthetic by adding the string 's' 'n' times.
+
+$Function STRING resolve_range(STRING addr, [STRING def_port], [STRING fail_port])
+
+Resolve addr and return the result. If addr has a port range, all successfully
+resolved sockets are retuned in a comma delimited string. If fail_port is
+specified, the resolution callback will fail for that port, and the reason will
+be appended to the return value.
+
+$Function INT dynamic_vsc(STRING name, STRING comment)
+
+Create a VSC counter that would show up in varnishstat as DEBUG.name, and
+have `comment` as a description. Returns 1 if the creation is successfull,
+or 0 otherwise.
+
+$Function VOID next_observatory_tick()
+
+Force the *experimental* observability subsystem to go to the next
+tick "soon". This is purely for debugging an experimental feature, so
+using it outside a debugging context is strongly discouraged.
+
+AVAILABILITY
+============
+
+The ``debug`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

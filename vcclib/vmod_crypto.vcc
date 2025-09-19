@@ -1,0 +1,241 @@
+# Alias: total-encryption
+$Module crypto 3 "Total Encryption (crypto)"
+$License
+
+DESCRIPTION
+===========
+
+Varnish Total Encryption provides cache encryption and a VCL based crypto API.
+Varnish Total Encryption uses an innovative dual key encryption algorithm with
+one key securely stored in the Linux kernel and the other key generated from the
+client request. No keys are ever stored in Varnish or in cache and every object
+has its own unique key.
+
+Further information can be found here: [Varnish Total Encryption](https://info.varnish-software.com/blog/introducing-varnish-total-encryption).
+
+EXAMPLES
+========
+
+Basic Example
+-------------
+
+Generate a cookie based random ID string (UUID).
+
+::
+
+  import crypto;
+  import cookieplus;
+
+  sub vcl_deliver
+  {
+    # ID format: 5a580f83ff659c9554b91e06c90ae7f1
+    if (!cookieplus.get("id")) {
+      cookieplus.setcookie_add("id", crypto.hex_encode(crypto.urandom()));
+      cookieplus.setcookie_write();
+    }
+
+    # ID format: 06d1ee05-ad8d-0e22-563f-8f9bd5b59bec
+    if (!cookieplus.get("id2")) {
+      cookieplus.setcookie_add("id2", crypto.uuid_v4());
+      cookieplus.setcookie_write();
+    }
+  }
+
+Memory Encryption
+-----------------
+
+Encrypting ``malloc``, ``file``, and ``mse`` (non-persistence) using a randomly generated master key.
+
+::
+
+  include "total-encryption/random_key.vcl";
+
+
+Disk Encryption
+---------------
+
+Encrypting ``mse`` with persistence enabled using a local secret key.
+
+First, generate a new secret key:
+
+::
+
+  $ cat /dev/urandom | head -c 1024 > /etc/varnish/disk_secret
+  $ sudo chmod 600 /etc/varnish/disk_secret
+  $ sudo chown root: /etc/varnish/disk_secret
+
+Add the key to the ``varnishd`` systemd unit configuration.
+This allows the ``disk_secret`` to be securely read via the ``varnishd`` jail configuration:
+
+::
+
+  ExecStart=/usr/sbin/varnishd ... -E /etc/varnish/disk_secret
+
+For more information on how to do this, please see our [systemd reference](https://docs.varnish-software.com/tutorials/configuring-systemd-services/#editing-unit-configuration-via-systemctl-edit).
+
+Use the secret key to encrypt cache:
+
+::
+
+  include "total-encryption/secret_key.vcl";
+
+Header Encryption
+-----------------
+
+When using one of the above Total Encryption includes, you can optionally encrypt headers
+with the following VCL:
+
+::
+
+  sub vcl_backend_response {
+    # Encrypt beresp.http.Content-Type
+    set beresp.http.Content-Type = crypto.hex_encode(crypto.aes_encrypt(beresp.http.Content-Type));
+  }
+
+  sub vcl_deliver {
+    # Decrypt resp.http.Content-Type
+    if (resp.http.Content-Type != "") {
+      set resp.http.Content-Type = crypto.aes_decrypt(crypto.hex_decode(resp.http.Content-Type));
+    }
+  }
+
+Skipping Encryption
+-------------------
+
+Use ``crypto.aes_skip_response()`` to skip encryption or decryption in
+``sub vcl_backend_response`` or ``sub vcl_deliver``.
+
+::
+
+  sub vcl_backend_response {
+    if (beresp.http.Content-Type ~ "video") {
+      crypto.aes_skip_response();
+    }
+  }
+
+Alternate Encryption Cipher
+---------------------------
+
+By default Varnish Total Encryption uses Cipher Block Chaining (CBC) AES encryption.
+On some systems, Propagating Cipher Block Chaining (PCBC) is available hardware accelerated.
+If so, use the following VCL to use PCBC AES encryption:
+
+::
+
+  sub vcl_init {
+    te_opts.set("algorithm", "pcbc(aes)");
+  }
+
+API
+===
+
+$Function BLOB blob(STRING value)
+
+Cast a STRING to a BLOB.
+If using a STRING based secret, this function must be used to cast the secret to a BLOB.
+
+$Function STRING string(BLOB value)
+
+Cast a BLOB to a STRING.
+
+$Function STRING hex_encode(BLOB value)
+
+Hex encode a binary (BLOB) value. Lowercase hex is used.
+
+$Function BLOB hex_decode(STRING value)
+
+Hex decode a hex string into a binary BLOB.
+
+$Function STRING base64_encode(BLOB value)
+
+Base64 encode a binary (BLOB) value.
+
+$Function BLOB base64_decode(STRING value)
+
+Base64 decode a string into a binary BLOB.
+
+$Function BLOB urandom(INT bytes = 16)
+
+Get bytes from ``/dev/urandom``.
+
+$Function BLOB secret()
+
+Get the contents of the secret file from the command line parameter ``-E``.
+If using a Total Encryption secret key, this value will be scrubbed and the return value will be empty.
+
+$Function VOID hash_part(PRIV_TASK, ENUM {md5,sha1,sha224,sha256,sha384,sha512} algorithm, STRING part)
+$Function BLOB hash(PRIV_TASK, ENUM {md5,sha1,sha224,sha256,sha384,sha512} algorithm, STRING value)
+
+$Object hmac_init(ENUM {sha1,sha224,sha256,sha384,sha512} algorithm, STRING cache_name = "")
+
+Create a new HMAC signing object. This object using the Linux Kernel Crypto API for signing.
+The HMAC key used is securely stored in the kernel and not kept in the Varnish address space.
+
+$Method VOID .set_key(BLOB key)
+$Restrict vcl_init
+
+Set the key of an HMAC signing object. Can only be used in ``sub vcl_init``.
+
+$Method VOID .add_string(STRING value)
+
+Add a string to the HMAC.
+
+$Method VOID .add_blob(BLOB value)
+
+Add a blob to the HMAC.
+
+$Method BLOB .get()
+
+The the HMAC value. After calling, the HMAC state is reset.
+
+$Function BLOB hmac(ENUM {sha1,sha224,sha256,sha384,sha512} algorithm, BLOB key, STRING value)
+
+Perform an HMAC operation.
+
+$Function VOID aes_key(PRIV_TASK, BLOB key, BLOB salt = 0, STRING algorithm = "")
+
+Set an AES key. This is request scope only. The Linux Kernel Crypto API is used.
+
+The key must be  either 128, 192, or 256 bit.
+The salt (iv) must be 16 bytes, block size is 16 bytes and padding is NULL bytes
+
+Note: If using Total Encryption, this can be safely used in ``sub vcl_recv`` only.
+This is automatically called in ``sub vcl_backend_response`` and ``sub vcl_deliver`` with a key
+unique to the request. Please contact support for advanced usage.
+
+$Function BLOB aes_encrypt(PRIV_TASK, STRING value)
+
+AES encrypt a value. The block size is 16 bytes and the result is NULL padded.
+
+$Function STRING aes_decrypt(PRIV_TASK, BLOB value)
+
+AES decrypt a value. The block size must be 16 bytes.
+
+$Function INT aes_get_length()
+
+Get the padding length.
+
+$Function VOID aes_set_length(PRIV_TASK, INT length)
+
+Set the padding length.
+
+$Function VOID aes_encrypt_response(PRIV_TASK)
+
+Encrypt a response.
+
+$Function VOID aes_decrypt_response(PRIV_TASK)
+
+Decrypt a response.
+
+$Function VOID aes_skip_response(PRIV_TASK)
+
+Skip a response.
+
+$Function STRING uuid_v4()
+
+Get a [version 4 UUID](https://tools.ietf.org/html/rfc4122#section-4.4).
+
+AVAILABILITY
+============
+
+The ``crypto`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

@@ -6,9 +6,11 @@ import (
 	"log"
 	"os"
 
+	"github.com/varnish/vclparser/analyzer"
 	"github.com/varnish/vclparser/ast"
 	"github.com/varnish/vclparser/parser"
 	"github.com/varnish/vclparser/types"
+	"github.com/varnish/vclparser/vmod"
 )
 
 // PrettyPrinter implements a visitor that prints the AST in a readable format
@@ -191,6 +193,26 @@ func main() {
 	program, err := parser.Parse(string(content), filename)
 	if err != nil {
 		log.Fatalf("Parse error: %v", err)
+	}
+
+	// Initialize VMOD registry and perform validation
+	var validationErrors []string
+	if err := vmod.Init(); err != nil {
+		validationErrors = []string{"Warning: VMOD validation unavailable - " + err.Error()}
+	} else {
+		validationErrors, err = analyzer.ValidateVCLFile(program, vmod.DefaultRegistry)
+		if err != nil {
+			log.Printf("VMOD validation error: %v", err)
+		}
+	}
+
+	// Show validation results
+	if len(validationErrors) > 0 {
+		fmt.Printf("VMOD Validation Issues:\n")
+		for _, errMsg := range validationErrors {
+			fmt.Printf("  - %s\n", errMsg)
+		}
+		fmt.Println()
 	}
 
 	if outputJSON {

@@ -1,0 +1,634 @@
+$Module http 3 "HTTP communication (http)"
+$License
+
+DESCRIPTION
+===========
+
+The ``http`` vmod allows for HTTP communication to be made to other services from VCL.
+This includes communication back to Varnish in the form of a new request.
+``vmod-http`` supports both synchronous and asynchronous calls and has automatic
+loop detection and prefetch URL generation capabilities.
+
+``vmod-http`` supports all string and integer [CURLOPT options](https://curl.haxx.se/libcurl/c/curl_easy_setopt.html)
+via ``http.req_set_sparam()`` and ``http.req_set_iparam()``.
+
+EXAMPLES
+========
+
+Video Prefetch
+--------------
+
+Prefetch the next video segment:
+
+::
+
+  vcl 4.0;
+
+  import http;
+
+  sub vcl_recv
+  {
+    if (req.url ~ "^/vod/") {
+      http.init(0);
+
+      http.req_copy_headers(0);
+      http.req_set_method(0, "HEAD");
+
+      // Generate the next URL by incrementing the first
+      // number sequence found and send it back to Varnish.
+      // If no number sequence is found, the request is skipped.
+      http.req_set_url(0, http.prefetch_next_url());
+
+      http.req_send_and_finish(0);
+    }
+  }
+
+Search Prefetch
+---------------
+
+Prefetch the next two search pages using the ``page`` query parameter:
+
+::
+
+  vcl 4.0;
+
+  import http;
+
+  sub vcl_recv
+  {
+    http.init(0);
+
+    // Allow this request to loop at most twice
+    http.req_set_max_loops(0, 2);
+
+    http.req_copy_headers(0);
+    http.req_set_method(0, "HEAD");
+
+    // Generate the next URL by incrementing the first number
+    // sequence found after 'page=' and send it back to Varnish.
+    // If 'page=' and the following number sequence is not found,
+    // the request is skipped.
+    http.req_set_url(0, http.prefetch_next_url("page="));
+
+    http.req_send_and_finish(0);
+  }
+
+Link Prefetch
+-------------
+
+Prefetch using a ``Link`` response header hint.
+
+Example: ``Link: </images/big.jpeg>; rel=prefetch``
+
+::
+
+  vcl 4.0;
+
+  import http;
+
+  sub vcl_recv {
+    // Store Varnish's local address for later use
+    set req.http.X-prefetch = http.varnish_url("/");
+  }
+
+  sub vcl_backend_response {
+    if (beresp.http.Link ~ "<.+>.*(prefetch|next)") {
+      // Pull out the Link URL
+      set bereq.http.X-link = regsub(beresp.http.Link, "^.*<([^>]*)>.*$", "\1");
+      set bereq.http.X-prefetch = regsub(bereq.http.X-prefetch, "/$", bereq.http.X-link);
+
+      // Prefetch the Link URL back through Varnish
+      http.init(0);
+      http.req_copy_headers(0);
+      http.req_set_url(0, bereq.http.X-prefetch);
+      http.req_send_and_finish(0);
+    }
+  }
+
+HTTP Request
+------------
+
+Send a request to another service and include the response cookie.
+
+::
+
+  vcl 4.0;
+
+  import cookieplus;
+  import http;
+
+  sub vcl_recv
+  {
+    // We need to initialize the HTTP object here, as it is going to be used
+    // in vcl_deliver with ``http.req_sent(0)``, which requires the object to be
+    // initialized before usage.
+    http.init(0);
+
+    // Send the request if we do not have a session
+    // We will read the response later
+    if (!cookieplus.get("session")) {
+      http.req_copy_headers(0);
+      http.req_set_url(0, "https://example.com/api/authorize");
+
+      http.req_send(0);
+    }
+  }
+
+  sub vcl_deliver
+  {
+    // Get the session response cookies
+    if (http.req_sent(0)) {
+      http.resp_wait(0);
+
+      if (http.resp_get_status(0) == 200) {
+        http.resp_copy_headers(0, "Set-Cookie");
+      } else {
+        return(synth(401, "UNAUTHORIZED"));
+      }
+    }
+  }
+
+Request Mirroring
+-----------------
+
+Send a read only copy of all requests to another service.
+
+::
+
+  vcl 4.0;
+
+  import http;
+  import std;
+
+  sub vcl_recv
+  {
+    std.cache_req_body(100KB);
+
+    http.init(0);
+
+    http.req_copy_headers(0);
+    http.req_set_header(0, "X-Varnish-fork", http.version());
+    http.req_set_max_loops(0, -1); // Remove loop counter header
+    http.req_set_method(0, req.method);
+    http.req_copy_body(0);
+    http.req_set_url(0, "http://service_host" + req.url);
+
+    http.req_send_and_finish(0);
+  }
+
+POST Request
+------------
+
+Send a POST request with a custom body using [CURLOPT_POSTFIELDS](https://curl.haxx.se/libcurl/c/CURLOPT_POSTFIELDS.html).
+The ``CURLOPT_`` prefix is optional on all curl options.
+
+::
+
+  vcl 4.0;
+
+  import http;
+
+  sub vcl_deliver
+  {
+    http.init(0);
+
+    http.req_set_method(0, "POST");
+    http.req_set_url(0, "https://some.host/data/service");
+    http.req_set_sparam(0, "POSTFIELDS", "postdata is here");
+
+    http.req_send_and_finish(0);
+  }
+
+JSON API Call With Caching
+--------------------------
+
+::
+
+  vcl 4.0;
+
+  import goto;
+  import http;
+  import json;
+
+  sub vcl_init {
+    new api = goto.dns_director("api.example.com");
+  }
+
+  sub vcl_recv {
+    if (req.http.Host == "www.example.com") {
+      // Pull JSON through Varnish
+      http.init(0);
+      http.req_copy_headers(0);
+      http.req_set_url(0, http.varnish_url("/auth/"));
+      http.req_set_header(0, "Host", "api.example.com");
+      http.req_send(0);
+      http.resp_wait(0);
+
+      // Invalid response
+      if (http.resp_get_status(0) != 200) {
+        return (synth(401));
+      }
+
+      // Parse the response
+      json.parse(http.resp_get_body(0));
+
+      // Invalid authorization
+      if (!json.is_object() || !json.get("auth") || json.get("error")) {
+        return (synth(401));
+      }
+
+      // Pull data out of the JSON response
+      set req.http.X-auth = json.get("auth");
+      unset req.http.Authorization;
+    } else if (req.http.Host == "api.example.com") {
+      set req.backend_hint = api.backend();
+      return (hash);
+    }
+  }
+
+API
+===
+
+$Event init_function
+
+$Function VOID init(
+	PRIV_TASK,
+	INT name,
+	ENUM {NONE, LOW, MEDIUM, HIGH, DEBUG} log_level = HIGH,
+	BOOL validate_charset = 0)
+
+Initialize an http call, by ``name``. The ``name`` must be used on all
+calls which reference this instance, it must also be non-negative and less
+than ``HTTP_MAX_OBJECTS``. Referencing an uninitialized ``name`` in a http
+call will result in a Varnish assertion error.
+
+When ``validate_charset`` is true, the URL, method and headers passed in
+will be checked for valid characters. Invalid characters (like a control
+character in a header field) will cause VCL failure.
+
+$Function STRING prefetch_next_url(
+	PRIV_CALL,
+	STRING prefix = "",
+	STRING url_prefix = "",
+	STRING url = "",
+	INT count = 1,
+	ENUM {DECIMAL, HEX, HEX_UPPER} base = "DECIMAL")
+$Restrict client
+
+Generate the next prefetch URL. This works by finding a numeric sequence in the
+current URL and incrementing it by ``count``. If no numeric sequence is found, an empty URL
+is returned which will cause the http request to be skipped. Cannot be used in a backend
+context (``sub vcl_backend_*``).
+
+If ``prefix`` is used, the numeric sequence used is searched for after ``prefix``.
+``prefix`` is a regular expression. If ``prefix`` is not found, an empty URL is
+returned. This value is static and cannot change between calls.
+
+``url_prefix`` is the URL prefix. It is appended before ``req.url`` to
+compose the full URL needed for the http request. It must start with ``http://`` or
+``https://``, followed by a hostname or IP, and an optional port. It must not contain a
+trailing slash character, ``/``. If not defined, ``server.ip`` and ``std.port(server.ip)``
+are used with ``http://``. If the port detected is ``443``, ``https://`` is used.
+
+``count`` is the amount to add to the numeric sequence found when generating the
+next prefetch URL. Defaults to 1.
+
+``base`` is the format that the ``url`` is in. Either ``DECIMAL``, ``HEX``, or
+``HEX_UPPER``. ``DECIMAL`` indicates that the url string will be in decimal, base 10.
+``HEX`` indicates that the URL string will be in hexadecimal, base 16. It's alpha
+characters of the string are lower case. ``HEX_UPPER`` is the same as ``HEX`` but the
+alpha characters are upper case. If not defined, ``base`` will be set to ``DECIMAL``.
+
+$Function STRING varnish_url(STRING url)
+$Restrict client
+
+Generate a Varnish callback URL. This is done by appending the URL to
+``server.ip`` and ``std.port(server.ip)`` with ``http://`` as the protocol.
+If the port detected is ``443``, ``https://`` is used. Cannot be used in a backend
+context (``sub vcl_backend_*``).
+
+$Function STRING backend_url(BACKEND be, STRING url)
+$Restrict vcl_backend_fetch
+
+Generate a URL from a backend or director. This is done by appending the URL to the resolved
+backend's IP address and port. If the SSL flag is set, ``https://`` is used as the protocol.
+Otherwise, ``http://`` is used as the protocol. This can only be used in ``sub vcl_backend_fetch``.
+
+$Function VOID req_set_url(PRIV_TASK, INT name, STRING url)
+
+Set the URL for a request. If ``url`` is empty, the request is not performed.
+``url`` must start with ``http://`` or ``https://`` and contain the host or IP destination
+and the trailing URL.
+
+When the URL has an IPv6 address, it must be enclosed between square brackets:
+
+::
+
+    http.set_url(0, "http://[::1]:8080/auth");
+
+The other functions ``http.varnish_url()``, ``http.backend_url()`` and
+``http.prefetch_next_url()`` already enclose IPv6 addresses by default.
+
+$Function VOID req_set_method(PRIV_TASK, INT name, STRING method)
+
+Set the request method. E.g.: ``GET``, ``HEAD``, ``POST``.
+
+$Function VOID req_set_header(PRIV_TASK, INT name, STRING header, STRING value)
+
+Set a request header.
+
+$Function STRING req_get_header(PRIV_TASK, INT name, STRING header_name, STRING default = 0)
+
+Copy all Varnish request headers into this request.
+
+$Function VOID req_copy_headers(PRIV_TASK, INT name, STRING list = "")
+$Restrict client backend
+
+Copy all Varnish request headers into this request. If ``list`` is blank then
+all request headers are copied over. Defaults to copying all headers.
+
+Headers are copied to the request in order of appearance. If headers have
+already been set for the request when this function is called, they will be
+replaced by any Varnish request header with the same name. If the Varnish
+request contains multiple headers with the same name, each header is added to
+the request in order.
+
+$Function VOID req_copy_body(PRIV_TASK, INT name)
+$Restrict client backend
+
+Copy the request body to this request. ``std.cache_req_body()`` must be called before using this function.
+
+$Function VOID req_unset_header(PRIV_TASK, INT name, STRING header)
+
+Unset a request header.
+
+$Function VOID req_set_sparam(
+	PRIV_TASK,
+	INT name,
+	STRING param,
+	STRING value,
+	INT debug_param = 0)
+
+Set a string parameter for this request.
+Please see [CURLOPT options](https://curl.haxx.se/libcurl/c/curl_easy_setopt.html) for supported parameters.
+The ``CURLOPT_`` prefix is optional.
+
+$Function VOID req_set_iparam(
+	PRIV_TASK,
+	INT name,
+	STRING param,
+	INT value,
+	INT debug_param = 0)
+
+Set an integer parameter for this request.
+Please see [CURLOPT options](https://curl.haxx.se/libcurl/c/curl_easy_setopt.html) for supported parameters.
+The ``CURLOPT_`` prefix is optional.
+
+$Function VOID req_set_max_loops(PRIV_TASK, INT name, INT loops)
+
+Set the maximum number of times this request can loop when doing a request
+back to Varnish. This is done via a special request header, ``VMOD-http-loops``,
+which keeps track of the number of times the request passes through this VMOD.
+This has a default value of ``1``, meaning this VMOD will only make a single
+call to Varnish. Increasing this value in conjunction with ``prefetch_next_url()``
+allows multiple URLs to be prefetched from a single client call.
+
+Note: A negative value removes the loop counting header and potentially allows
+unlimited loops.
+
+$Function INT req_get_loops(PRIV_TASK, INT name)
+
+Get the current loop iteration for this request. The first request starts at ``0`` and the first loop is ``1``.
+
+$Function BOOL req_is_loop(PRIV_TASK, INT name)
+
+Return ``true`` if the request has looped at least once.
+
+$Function BOOL req_send(PRIV_TASK, INT name, BOOL resp_skip_body = 0)
+
+Send the request.
+
+If ``resp_skip_body`` is ``true`` then the body of the response will be ignored.
+Once a response is ready, the calls accessing the body or body length will
+behave as if the response had no body.
+
+$Function BOOL req_send_and_finish(PRIV_TASK, INT name, BOOL flush = 0)
+
+This is a shorthand for::
+
+    http.req_send(<name>, resp_skip_body = true);
+    http.finish(<name>);
+
+$Function VOID finish(PRIV_TASK, INT name)
+
+Mark a request as finished, releasing and cleaning up all resources associated
+with the HTTP call, including the ``name``. Referencing the ``name`` again will
+result in a Varnish assertion error. ``name`` can be safely reused in another
+``init()`` call.
+
+Calling ``finish()`` on an HTTP request is optional. All HTTP calls will be
+safely marked as finished when the VCL transaction completes.
+
+An ongoing request marked as finished will complete in the background before
+its effective cleanup.
+
+$Function BOOL req_sent(PRIV_TASK, INT name)
+
+Has the request been sent? If ``true``, it is safe to call ``resp_wait()``. Useful if
+a request has been conditionally sent.
+
+$Function BOOL resp_is_ready(PRIV_TASK, INT name)
+
+Is the response ready? Errors are considered ready responses.
+Can be called at anytime, before or after the request has been sent.
+
+$Function VOID resp_wait(PRIV_TASK, INT name)
+
+Wait for a response. When this function returns, the response is ready.
+Errors are considered ready responses. Can only be called after a request
+has been sent.
+
+$Function INT resp_get_status(PRIV_TASK, INT name)
+
+Get the status code for a response. If no response status was received, due to
+error, this function will return 0. Can only be called after a response is ready.
+
+$Function INT resp_get_errorcode(PRIV_TASK, INT name)
+
+Get the internal response error code. If no error has happened, this function
+will return ``0``. Otherwise a nonzero error code will be returned. Can only be called
+after a response is ready.
+
+$Function STRING resp_get_reason(PRIV_TASK, INT name)
+
+Get the response reason. Can only be called after a response is ready.
+This is the string after the response status, ex: 200 OK, the reason is ``OK``.
+
+$Function STRING resp_get_header(
+	PRIV_TASK,
+	INT name,
+	STRING header_name,
+	STRING default = 0)
+
+Get a response header. If not found, ``default`` is returned.
+Can only be called after a response is ready.
+
+$Function VOID resp_copy_headers(PRIV_TASK, INT name, STRING header_name = "")
+$Restrict vcl_deliver vcl_synth vcl_backend_response
+
+Copy all matching response headers into the Varnish response. Can only be called
+after a response is ready. Cannot be called from ``vcl_recv``, as the Varnish
+response has not been initialized yet.
+
+$Function BLOB resp_get_body_blob(PRIV_TASK, INT name)
+
+Get the response body as a blob. Can only be called after a response is ready.
+
+$Function STRING resp_get_body(PRIV_TASK, INT name)
+
+Get the response body. Can only be called after a response is ready.
+
+$Function INT resp_get_body_len(PRIV_TASK, INT name)
+
+Get the response body length. Can only be called after a response is ready.
+
+$Function STRING version()
+
+Get the ``vmod-http`` version.
+
+$Function VOID set_log_level(
+	PRIV_TASK,
+	INT name,
+	ENUM {NONE, LOW, MEDIUM, HIGH, DEBUG} log_level)
+
+Change the logging level of a request.
+
+$Function VOID debug_print(PRIV_TASK, INT name)
+
+Print the internal ``vmod-http`` stats.
+
+$Function INT get_request_count(BOOL async_only = 0)
+
+Returns the number of active HTTP requests across all loaded VCLs.
+
+When ``async_only`` is ``true``, only requests marked as finished still being
+processed in the background are accounted for.
+
+$Function INT task_count(INT name, BOOL async_only = 0)
+
+Returns the number of ongoing HTTP tasks for a given ``name``, across all
+loaded VCLs. All submitted tasks are accounted for, regardless of the current
+state of the request (active or queued).
+
+Task accounting is performed across all loaded VCLs with the assumption that
+two VCLs using the same ``name`` share the same HTTP usage, for example when
+a VCL is reloaded, before the old VCL ongoing traffic completes.
+
+When ``async_only`` is ``true``, only requests marked as finished still being
+processed in the background are accounted for.
+
+GLOBAL PARAMETERS
+=================
+
+This vmod also exposes some parameters that are set at the global level, either
+using the ``-p`` argument in the ``varnishd`` command line, or with ``varnishadm
+param.set`` while ``varnishd`` is running (in which case the value won't persist
+after a restart).
+
+vmod_http_max_conn
+------------------
+
+* Default: 25 connections
+
+Limits the number of connections kept open for reuse in subsequent tasks.
+
+Each vmod_http thread has its own connection cache and will prioritize reusing
+connections from the cache if possible. A new connection is opened if there are
+no available connections in the cache.
+
+This parameter can be increased to reduce the number of new connection
+establishments in vmod_http at the cost of a higher number of long-lived
+connections. For more details, see documentation of ``libcurl``'s s
+``CURLMOPT_MAXCONNECTS`` option.
+
+vmod_http_max_tasks_total
+-------------------------
+
+* Default: 1000 tasks
+
+Limits the number of concurrent tasks across all vmod_http threads.
+
+A task is either a synchronous or a asynchronous request initiated by
+``http.req_send()`` or ``http.req_send_and_finish()``. The task is completed
+when the response has been fully received or it has failed.
+
+This parameter can be adjusted to limit concurrent vmod_http requests. It
+applies per VCL, so each loaded VCL will have its own limit. If the limit is
+reached, the new task is aborted and the ``handle_limited`` varnishstat counter
+is incremented.
+
+vmod_http_min_tasks_thread
+--------------------------
+
+* Default: 100 tasks
+
+Threshold for delegating tasks to multiple threads.
+
+Threads in vmod_http can manage many tasks at once by active polling. To
+minimize the resource usage of vmod_http when there are few concurrent tasks to
+perform, tasks are first delegated to only one thread. When that thread has
+reached its threshold, new tasks are delegated to another thread. If all threads
+have reached their threshold, new tasks are delegated to the least busy thread.
+
+This parameter can be adjusted to influence task delegation, but it is generally
+recommended to leave it on default.
+
+vmod_http_pool_timeout
+----------------------
+
+* Default: 118 seconds
+
+Timeout for idle connections in the connection cache.
+
+Cached connections stay open until they are either reused or reach the timeout.
+If they are reused, the timeout countdown resets. The timeout also applies to
+connections in the CLOSE-WAIT state.
+
+This parameter can be increased to make connection reuse more likely, or reduced
+to close idle connections earlier.
+
+vmod_http_prefer_http_11
+------------------------
+
+* Default: on
+
+Prefer HTTP/1.1 when negotiating new connections.
+
+This parameter can be turned off to use ``libcurl`` defaults.
+
+vmod_http_require_http
+----------------------
+
+* Default: on
+
+Only enable the HTTP and HTTPS protocols.
+
+This parameter can be turned off to use ``libcurl`` defaults.
+
+vmod_http_threads
+-----------------
+
+* Default: 10 threads
+
+Number of vmod_http threads.
+
+The threads spawned by vmod_http are responsible for carrying out tasks
+initiated from VCL. Each loaded VCL has its own set of threads.
+
+This parameter can be increased to handle more tasks in total with a higher
+potential resource consumption.
+
+AVAILABILITY
+============
+
+The ``http`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

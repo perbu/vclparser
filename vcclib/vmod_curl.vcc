@@ -1,0 +1,150 @@
+# auto_docs = false
+$Module curl 3 "cURL bindings for Varnish"
+$License
+
+# DESCRIPTION
+
+This vmod provides cURL bindings for Varnish so you can use Varnish
+as an HTTP client and fetch headers and bodies from backends.
+
+WARNING: Using vmod-curl to connect to HTTPS sites is currently unsupported
+and may lead to segmentation faults on VCL load/unload. (openssl library
+intricacies)
+
+To use the vmod do something along the lines of::
+
+	import curl;
+
+	sub vcl_recv {
+		curl.get("http://example.com/test");
+		if (curl.header("X-Foo") == "bar") {
+		...
+		}
+
+		curl.free();
+	}
+
+
+Development of this VMOD has been sponsored by the Norwegian company
+Aspiro Music AS for usage on their WiMP music streaming service.
+
+$Event event_function
+
+$Function VOID get(PRIV_TASK, STRING url)
+
+Send a GET request to ``url``.
+
+$Function VOID head(PRIV_TASK, STRING)
+
+Send a HEAD request to ``url``.
+
+$Function VOID fetch(PRIV_TASK, STRING)
+
+Compatibility name for ``curl.get``.
+
+$Function VOID post(PRIV_TASK, STRING url, STRING body)
+
+Send a POST request with a ``body`` to ``url``.
+
+$Function STRING header(PRIV_TASK, STRING name)
+
+Return the response header ``name``.
+
+$Function VOID free(PRIV_TASK)
+
+Free the memory used by headers. Optional, will be handled
+automatically if it's not called.
+
+$Function INT status(PRIV_TASK)
+
+Return the HTTP status code of the response.
+
+$Function STRING error(PRIV_TASK)
+
+Return an error message or ``NULL`` on success.
+
+$Function STRING body(PRIV_TASK)
+
+Return the response body.
+
+A response body can contain chars that are not allowed into headers,
+e.g. CRLF. If the response body is a binary and/or it contains any
+special chars, then this funtion MUST be used via synthetic::
+
+    synthetic(curl.body())
+
+Otherwise it can be assigned to a header::
+
+    set resp.http.x-body = curl.body();
+
+.. Test 12 for a complete example.
+.. XXX: synthetic won't work if body contains a null character.
+
+$Function VOID set_timeout(PRIV_TASK, INT)
+
+Per-request cURL timeout in milliseconds. Can NOT be used to set a global
+timeout in ``sub vcl_init``.
+
+$Function VOID set_connect_timeout(PRIV_TASK, INT)
+
+Per-request cURL connect timeout in milliseconds. Can NOT be used to set
+a global connect timeout in ``sub vcl_init``.
+
+$Function VOID set_ssl_verify_peer(PRIV_TASK, INT)
+
+Enable or disable verification of the peer's certificate chain.
+
+$Function VOID set_ssl_verify_host(PRIV_TASK, INT)
+
+Enable or disable verification of the peer's certificate identity.
+
+$Function VOID set_ssl_cafile(PRIV_TASK, STRING)
+
+Tells  curl  to use the specified certificate file to verify the peer.
+
+$Function VOID set_ssl_capath(PRIV_TASK, STRING)
+
+Tells curl to use the specified certificate directory to verify the peer.
+
+$Function STRING escape(STRING)
+
+Use curl to escape a string.
+
+$Function STRING unescape(STRING)
+
+Use curl to unescape a string.
+
+$Function VOID header_add(PRIV_TASK, STRING)
+
+Add a header to the curl request.
+
+$Function VOID header_remove(PRIV_TASK, STRING)
+
+Remove a header from the curl request.
+
+$Function VOID header_add_all(PRIV_TASK)
+$Restrict client backend
+
+Add all headers from ``req`` or ``bereq`` to the curl request.
+
+$Function VOID proxy(PRIV_TASK, STRING)
+
+Deprecated, same as ``set_proxy``.
+
+$Function VOID set_proxy(PRIV_TASK, STRING)
+
+Use the specified proxy.
+
+$Function VOID set_method(PRIV_TASK, STRING)
+
+Set the method of the curl request.
+
+$Function VOID set_unix_path(PRIV_TASK, STRING)
+
+Connect through this Unix domain socket, instead of using the network.
+
+Logs an ``Error`` if curl wasn't compiled with Unix domain socket support.
+
+$Function VOID set_debug(PRIV_TASK, ENUM { none, text, header_in, header_out, data_in, data_out })
+
+Add ``Debug`` logs during curl transactions.

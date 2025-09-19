@@ -1,0 +1,263 @@
+$Module mse 3 "MSE control (mse)"
+$ABI strict
+$License
+
+DESCRIPTION
+===========
+
+The ``mse`` vmod lets you influence how MSE works, on a per request basis,
+from VCL. It does not implement any core MSE features by itself, but
+is an interface for VCL to manipulate storage selection and other
+behavior. This means that it is possible to use MSE for storage without
+using this VMOD.
+
+To use the functions described in this document, you need to import the
+MSE VMOD into your VCL configuration. This is done by including a line,
+``import mse;`` near the top of your VCL file. If you use labels, you also
+need to add this line for each of your labels where the VMOD is used.
+
+Memory Only Objects
+-------------------
+
+When an object goes into MSE, it will typically go into an *MSE
+store*, which is an on-disk file specified in mse.conf (see
+``varnish-mse(7)``). However, it can also become a *memory only*, if (at
+least) one of the following are true:
+
+* The MSE is configured without any stores.
+* The IO queue for the selected store is too long.
+* The object is *short lived*.
+* In VCL, ``mse.set_stores("none");`` was called.
+* In the configuration file, ``default_stores`` was set to ``"none"``, and
+  ``mse.set_stores`` was not called.
+
+The possibility of forcing *memory only* objects makes it natural to
+use MSE as the only storage in a Varnish setup.
+
+Storage Selection
+-----------------
+
+The main functionality of this VMOD is to let the user influence how
+MSE selects a store from the list of stores defined in a MSE
+configuration file.
+
+When a (disk) store is needed for a cache insertion, it will be
+selected randomly from a set of *candidates*. By default this is all
+the stores in the MSE, and the they are selected in a round robin
+fashion. This is fine for homogenous setups, but if you have stores of
+varying sizes, overriding this is natural.
+
+The set of candidates is overridden by calling the function
+``mse.set_stores()``. You can also set a default set of stores in the
+configuration file through the parameter ``default_stores``.
+
+When the MSE vmod has been invoked, either by calling one of its
+function or by setting ``default_stores``, then the *round robin*
+algorithm is replaced by a random selection from the *candidates*.
+
+The candidates can have an uneven *weighting*. By default it is by
+store *size*, but it can be overridden for individual objects in VCL,
+by calling the function ``mse.set_weighting()``.
+
+Setups with more than one -s argument
+-------------------------------------
+
+In Varnish it is possible to use more than one -s argument to create
+more than one store, and there is a "hidden" store called
+Transient. These are called *stevedores* internally, and these can be
+selected by setting ``beresp.storage_hint``. If this variable is not
+set, Varnish will use a *round robin* algorithm to select a stevedore.
+
+The stevedore selection happens *before* MSE has a chance to select
+one of its stores. This means that if a *malloc* stevedore is selected
+by this logic, then any previous calls into the MSE VMOD will be
+ignored.
+
+Similarly, if more than one ``-s`` argument with MSE was used in the
+command line, then one of these will be selected before the store
+selection logic happens, and only stores from the selected MSE will be
+available. For this reason we have the following recommendation for
+setups currently using more than one ``-s`` argument:
+
+* Combine books from all MSE configuration files into one new MSE
+  configuration file
+
+* Drop any malloc stevedores, and change the VCL code to use
+  ``mse.set_stores("none")`` where you would otherwise select the malloc
+  stevedore.
+
+Use with existing MSE setups
+----------------------------
+
+Since this VMOD simply modifies the behavior of MSE, no additional
+action is needed when you start using this VMOD. The exception is if
+you want to add a ``default_stores`` parameter in your configuration
+file. This will require a restart, but no ``mkfs.mse`` invocation is
+necessary.
+
+In other words, there is even no need for a restart - you can just
+load a new VCL with storage selection logic, and it will take effect
+on the next request.
+
+EXAMPLES
+========
+
+Use the store size as weights
+-----------------------------
+
+If you have stores of different sizes, and you want them to be picked
+in a rate that is proportional to their sizes, the following
+example is enough:
+
+::
+
+  import mse;
+  sub vcl_backend_response {
+    mse.set_weighting(size);
+  }
+
+This means that if you use this on a set of empty stores, the expected
+time for them to fill up (to a certain level) will be the same for
+each store.
+
+Fill up a new store
+-------------------
+
+A related use case is where an MSE configuration has been updated with
+a new book and store. The existing stores are close to full, while the
+new one is empty. In this case it might be a bad idea to put all new
+content in the new store, but you probably want to pick the empty
+store more often than the others. There is a special selection mode
+for this specific use case, called "smooth". In this mode, the weight
+will be equal to the available space in the store, plus the actual
+size of the store:
+
+::
+
+  import mse;
+  sub vcl_backend_response {
+    mse.set_weighting(smooth);
+  }
+
+In the code snippet above, using ``mse.set_weighting(available);`` would fill
+up the free store much faster. However, in most cases, using ``smooth``
+will probably work better.
+
+Different types of stores
+-------------------------
+
+For short lived objects it is smart to make them *memory only*. If an
+object has a TTL of a minute, and the server is restarted, the object
+will probably be expired or almost expired when MSE reads its
+database.
+
+It is also natural to send different types of objects to different
+stores in an heterogeneous setup. For example, one might choose to
+store small objects on nVMe drives, and bigger objects on slower SATA
+drives. This example combine these two:
+
+::
+
+  import mse;
+  import std;
+
+  sub vcl_backend_response {
+    if (beresp.ttl < 120s) {
+      mse.set_stores("none");
+    } else {
+      if (beresp.http.Transfer-Encoding ~ "chunked"
+          || std.bytes(beresp.http.Content-Length, 0B) > 1M) {
+        mse.set_stores("sata");
+      } else {
+        mse.set_stores("fast");
+      }
+    }
+  }
+
+  sub vcl_deliver {
+    set resp.http.store = mse.get_location(STORE);
+  }
+
+The example shows how to send objects with chunked transfer encoding
+and objects bigger than one megabyte to the SATA stores, but it is
+possible to use other criteria for this selection.
+
+The above requires the SATA stores to have a tag or name equal to
+"sata", and the fast stores to have a tag "fast". Read
+``varnish-mse(7)`` about how to add tags to stores. If the configuration
+does not have any stores which match "fast", then the corresponding
+insertions will fail. It is possible to check the return value of
+``mse.set_stores("fast")`` to detect this. To demonstrate where the object
+landed, we use ``mse.get_location(STORE)`` to store the value in a HTTP header.
+
+Note that rotating media should only be used for MSE in very special
+circumstances, where read/write performance can be sacrificed for
+storage size.
+
+API
+===
+
+$Function VOID set_weighting(ENUM {size, available, smooth} weights)
+$Restrict backend
+
+Selects how the selected stores should be weighted when a
+random store for the object is to be selected. The weights can
+be based on the store sizes, the amount of free space in the
+stores, flat (equivalent to an unweighted random distribution)
+or the special "smooth" weights, which corresponds to the
+amount of available space in the stevedore plus the size of
+the store itself).
+
+$Function BOOL set_stores(STRING tag)
+$Restrict backend
+
+Sets a tag that will be used when randomly selecting a store.
+
+If there are no stores defined or if no stores match the
+tag, false will be returned.
+
+If there exists a store with the given tag, false is returned.
+
+If false is returned, and the failure is not remedied (for
+example by calling ``mse.set_stores("none");``), the transaction
+will fail with a 503 message (unless changed in ``sub
+vcl_backend_error``).
+
+$Function INT server_fingerprint()
+
+Returns the fingerprint of the set of books loaded in the MSE environment(s).
+
+The fingerprint is the *xor* of the unique IDs of all the
+books in all of the loaded MSE environments. (Note that using
+exactly one MSE environment is necessary to use the memory
+governor, and is considered best practice). This means that if
+a book is added or removed, the fingerprint will change. If
+several books are combined into one MSE environment, the
+fingerprint will not change as long as the set of books remain
+constant.
+
+$Function STRING get_location(ENUM {STORE, BOOK} type)
+$Restrict vcl_hit vcl_deliver
+
+Returns the identifier of the MSE store or book the current object is being held in.
+Can only be called from vcl_hit and vcl_deliver. Will return none if object
+is stored in memory only MSE or NULL if it is not currently being stored in MSE.
+Storage name can also be obtained using .storage on the object.
+
+$Function BOOL is_mse3()
+
+This function returns true if the Varnish server is configured with one or
+more instances of the MSE version 3 stevedore. This can be useful in order
+to construct alternate VCL instructions depending on the storage
+configuration of the Varnish server instance.
+
+REFERENCES
+==========
+
+* :ref:``varnish-mse(7)``
+* :ref:``varnishd(1)``
+
+AVAILABILITY
+============
+
+The ``mse`` VMOD is available in Varnish Enterprise version ``6.0.1r3`` and later.

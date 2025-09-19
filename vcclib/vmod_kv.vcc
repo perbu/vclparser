@@ -1,0 +1,356 @@
+$Module kv 3 "key-value store allowing sharing between instances"
+$Addon
+
+DESCRIPTION
+===========
+
+The ``kv`` vmod allows key-value storage with optional TTLs and optionally
+sharing of the stored information between servers.
+
+EXAMPLES
+========
+
+Implementing session tracking, forcing a user to not do any requests for 5
+minutes before being allowed to change IP addresses globally in the store
+while tracking the total number of operations done during the session. This
+may take up to 10s to asynchronously detect that a user uses the same session
+with different IPs from different instances if requests happens at the same
+time.
+
+::
+  vcl 4.1;
+
+  import kv;
+
+  sub vcl_init {
+      new store = kv.init(grace = 10s);
+      store.add_redis_server("1.2.3.4:6379");
+  }
+
+  sub vcl_recv {
+      set req.http.client-ip = client.ip;
+
+      store.set_key_group("sess:" + req.http.X-Session-Id);
+
+      if (store.get_real("created_at", -1.0) < 0.0) {
+          store.set_real("created_at", std.time2real(now, -1.0));
+          store.set("ip", req.http.client-ip, ttl = 5m);
+      }
+
+      if (req.http.client-ip != store.get("ip", "")) {
+           store.incr_int("rejected", 1, ttl = 5m);
+           return (synth(403, "Go away for now"));
+      }
+
+      # this refreshes the TTL of the entire session
+      store.incr_int("count", 1, ttl = 5m);
+
+      # this simply counts requests globally
+      store.incr_int("count", 1, key_group = "");
+  }
+
+In this example, if ``X-Session-Id`` is equal to ``1234`` then the following is
+observable in the Redis server CLI after some requests:
+
+::
+  redis> HGETALL sess:1234
+  1) "createdat"
+  2) "1722603018"
+  3) "ip"
+  4) "4.3.2.1"
+  5) "rejected"
+  6) "1"
+  7) "count"
+  8) "2"
+  redis> TTL sess:1234
+  (integer) 283
+  redis> GET count
+  "2"
+
+Using a prefix for key groups that cannot conflict with regular keys is highly
+recommended (see below).
+
+API
+===
+
+$Event init_function
+
+$Object init(PRIV_VCL, INT buckets = 293, ENUM {VCL, STATIC} scope = VCL,
+        DURATION grace = 60, DURATION keep = 10, INT max_retries = 2, DURATION idle_delay = 5,
+        ENUM {SYNC, TRY_SYNC, ASYNC} mode_read = TRY_SYNC,
+        ENUM {SYNC, TRY_SYNC, ASYNC} mode_write = ASYNC,
+        ENUM {SYNC, TRY_SYNC, ASYNC} mode_del = ASYNC)
+
+Creates a key-value store able to store in-memory data, the number of buckets
+can be tuned to avoid contention on data access.
+
+By default, the store is created with ``VCL`` scope making it specific to the
+VCL it was created in. This means that it is not shared between VCLs and its
+lifetime is bound to the lifetime of the VCL it was created in.
+A ``STATIC`` scope store is shared to all VCLs referencing it with the same
+name, ``mode_read``, ``mode_write`` and ``mode_del`` and the store is only
+destroyed when no loaded VCL references it anymore. Note that if different VCLs
+have different configurations for a ``STATIC`` store, the last initializer will
+apply its values with the exception of ``buckets`` which cannot be changed. In
+all cases, access is shared across request transactions.
+
+When the data is not shared between multiple instances the other parameters are
+ignored.
+
+When the data is shared between multiple instances, the in-memory state is
+considered as a cache of what is stored in a central hub. As synchronous
+access to the central hub may be costly, each type of operation has
+an access pattern governed by the ``mode_read``, ``mode_write`` and
+``mode_del``. If the mode is set to ``SYNC`` then VCL operation blocks further
+processing until the corresponding commands against the central hub have either
+succeeded or the max number of tries are exhausted.
+If the mode is set to ``TRY_SYNC`` then VCL operation blocks further processing
+until the corresponding commands against the central hub have either succeeded
+or at least one try was attempted (other retries continue asynchronously).
+If the mode is set to ``ASYNC`` then VCL operation does not block and all
+commands against the central hub occur asynchronously.
+
+The ``grace`` value is used to indicate how long the in-memory state is
+considered fresh for without requiring an update from central hub. The ``keep``
+indicates how long the in-memory state should require an update from the central
+hub in an asynchonous way regardless of the ``mode_read``. Any read past the
+``grace`` plus ``keep`` will rely on ``mode_read`` as if it was a first access.
+A local set will position the ``grace`` and ``keep`` as if the value was
+retrieved from the central hub.
+
+Any failure to retrieve or propagate data to the central hub is retried up to
+``max_retries`` times. A negative value will retry until success. Once the
+maximum retries are exhausted the operations are considered in success.
+
+While synchronous operations are performed as fast as possible, access to the
+central hub may benefit from some delay before being executed, the value of
+``idle_delay`` indicates how long can be spent without taking action when
+no synchronous operations are waiting to process asynchronous operations.
+
+$Method VOID .set_key_group(STRING key_group)
+$Restrict client backend
+
+This sets the ``key_group`` for the request being evaluated. Note that setting a
+``key_group`` in the client request will not affect backend requests nor would
+setting a ``key_group`` in the backend request change the ``key_group`` of the
+client request.
+
+The empty string can be used to clear the currently set ``key_group``.
+
+Having a ``key_group`` changes the semantics of further data access:
+
+* Without a ``key_group``, the ``key`` provided in each access call is the sole
+identifier of the data inside both the in-memory storage and the Redis server.
+The TTL is specific to each ``key``.
+
+* With a ``key_group``, the ``key`` is a field within the ``key_group``, the
+``key_group`` is the effective key in the Redis server storing a Redis hash. In
+such a case the TTL is specific to the ``key_group`` not to the individual keys.
+
+$Method STRING .get(STRING key, STRING fallback = 0, [STRING key_group])
+
+This method returns the value associated with ``key`` in the store, or
+``fallback`` if ``key`` was not found.
+If ``key_group`` is specified, it takes precedence over a ``key_group`` set with
+``.set_key_group()``. The empty string being an invalid ``key_group``, using
+this as an argument will simply ignore any ``key_group`` set using
+``set_key_group()``.
+
+$Method VOID .set(STRING key, STRING value, [DURATION ttl], [STRING key_group])
+
+This method sets the value associated with ``key`` in the store with
+an optional TTL.
+If ``key_group`` is specified, it takes precedence over a ``key_group`` set with
+``.set_key_group()``. The empty string being an invalid ``key_group``, using
+this as an argument will simply ignore any ``key_group`` set using
+``set_key_group()``.
+The TTL is ``key_group`` wide if one is set and ``key`` specific if no
+``key_group`` was specified. Not passing a ``ttl`` value or a negative ``ttl``
+value will not apply an expiration time persisting the entry.
+
+$Method INT .get_int(STRING key, INT fallback = 0, [STRING key_group])
+
+This method returns the value associated with ``key`` in the store, or
+``fallback`` if ``key`` was not found or if the key is not of ``INT`` type.
+If ``key_group`` is specified, it takes precedence over a ``key_group`` set with
+``.set_key_group()``. The empty string being an invalid ``key_group``, using
+this as an argument will simply ignore any ``key_group`` set using
+``set_key_group()``.
+
+$Method VOID .set_int(STRING key, INT value, [DURATION ttl], [STRING key_group])
+
+This method sets the value associated with ``key`` in the store with
+an optional TTL.
+If ``key_group`` is specified, it takes precedence over a ``key_group`` set with
+``.set_key_group()``. The empty string being an invalid ``key_group``, using
+this as an argument will simply ignore any ``key_group`` set using
+``set_key_group()``.
+The TTL is ``key_group`` wide if one is set and ``key`` specific if no
+``key_group`` was specified. Not passing a ``ttl`` value or a negative ``ttl``
+value will not apply an expiration time persisting the entry.
+
+$Method INT .incr_int(STRING key, INT by, [DURATION ttl], [STRING key_group])
+
+This method increments the value associated with ``key`` in the store with
+an optional TTL.
+If ``key_group`` is specified, it takes precedence over a ``key_group`` set with
+``.set_key_group()``. The empty string being an invalid ``key_group``, using
+this as an argument will simply ignore any ``key_group`` set using
+``set_key_group()``.
+The TTL is ``key_group`` wide if one is set and ``key`` specific if no
+``key_group`` was specified. Not passing a ``ttl`` value or a negative ``ttl``
+value will not apply an expiration time persisting the entry.
+
+$Method REAL .get_real(STRING key, REAL fallback = 0, [STRING key_group])
+
+This method returns the value associated with ``key`` in the store, or
+``fallback`` if ``key`` was not found or if the key is not of ``REAL`` type.
+If ``key_group`` is specified, it takes precedence over a ``key_group`` set with
+``.set_key_group()``. The empty string being an invalid ``key_group``, using
+this as an argument will simply ignore any ``key_group`` set using
+``set_key_group()``.
+
+$Method VOID .set_real(STRING key, REAL value, [DURATION ttl], [STRING key_group])
+
+This method sets the value associated with ``key`` in the store with
+an optional TTL.
+If ``key_group`` is specified, it takes precedence over a ``key_group`` set with
+``.set_key_group()``. The empty string being an invalid ``key_group``, using
+this as an argument will simply ignore any ``key_group`` set using
+``set_key_group()``.
+The TTL is ``key_group`` wide if one is set and ``key`` specific if no
+``key_group`` was specified. Not passing a ``ttl`` value or a negative ``ttl``
+value will not apply an expiration time persisting the entry.
+
+$Method VOID .delete(STRING key, [STRING key_group])
+
+This method deletes any value associated with ``key`` in the store.
+If ``key_group`` is specified, it takes precedence over a ``key_group`` set with
+``.set_key_group()``. The empty string being an invalid ``key_group``, using
+this as an argument will simply ignore any ``key_group`` set using
+``set_key_group()``.
+
+$Method VOID .add_redis_server(STRING connection_string,
+        DURATION connect_timeout = 5,
+        DURATION command_timeout = 10,
+        DURATION max_reconnect_timeout = 10,
+        INT select_db = 0,
+        [STRING user],
+        [STRING password])
+$Restrict vcl_init
+
+Add a Redis server to synchronize from and to as a central hub. Only one Redis
+server is used at a time, adding multiple Redis servers is allowed as a fallback
+in case of failure communicating with one.
+
+A Redis server is identified in ``connection_string`` in the form of
+``ip:port``, ``dns_name:port`` or a path to a UNIX socket.
+
+The ``connect_timeout`` value indicates how long to wait for a successful
+connection to the Redis server. A negative value waits forever.
+
+The ``command_timeout`` value indicates how long before a command should be
+considered as failed. A negative value waits forever.
+
+The ``max_reconnect_timeout`` value indicates the maximum time to wait before
+reconnecting to this server. The first retry is always as fast as possible
+followed with an exponential back-off up to this value as a maximum. A value
+of 0 always retries as fast as possible and a negative value is not valid.
+
+The value of ``select_db`` is used to select a Redis database to work on using
+the Redis ``SELECT`` command.
+
+The ``user`` and ``password`` values are used for authentication against the
+Redis server using the semantics of the Redis ``AUTH`` command. To authenticate
+against a Redis global ``requirepass`` directive the ``user`` field must not be
+set.
+
+All client connections to the Redis server are named using the ``CLIENT SETNAME``
+command in the form of ``vmod_kv:{name}``, where ``{name}`` is substituted
+with the name of the store.
+
+REDIS DATA MODEL
+================
+
+Keys without a ``key_group``
+----------------------------
+
+A ``key`` without a ``key_group`` is a normal Redis key.
+
+For example the following VCL:
+
+::
+  vcl 4.1;
+
+  import kv;
+
+  sub vcl_init {
+      new store = kv.init();
+      store.add_redis_server("1.2.3.4:6379");
+  }
+
+  sub vcl_recv {
+      store.set("mykey", "mystr", ttl = 100);
+  }
+
+will result in the following in Redis:
+
+::
+  redis> GET mykey
+  "mystr"
+  redis> TTL mykey
+  (integer) 98
+
+Keys with a ``key_group``
+-------------------------
+
+A key group is materialized by a single key in the Redis server of type
+``hash``, each sub-key within it being a field of the ``hash``.
+
+Note that the TTL value is always applied to the entire ``key_group`` which
+means that successive updates to individual keys within a ``key_group`` can be
+used to prolong the entire ``key_group``.
+
+The following VCL:
+
+::
+  vcl 4.1;
+
+  import kv;
+
+  sub vcl_init {
+      new store = kv.store();
+      store.add_redis_server("1.2.3.4:6379");
+  }
+
+  sub vcl_recv {
+      store.set_key_group("mygroup");
+      store.set("mykey1", "mystr1");
+      store.set_int("mykey2", 123);
+  }
+
+will result in the following in Redis:
+
+::
+  redis> HGETALL mygroup
+  1) "mykey1"
+  2) "mystr1"
+  3) "mykey2"
+  4) "123"
+
+Type conflicts
+--------------
+
+Type conflicts may happen in which case the system may issue deletes during
+retries to resolve the issue. Adequately making key names unique from each
+other in VCL negates this risk.
+
+Type conflicts may happen for example when a ``key_group`` is accessed as if
+it was a ``key`` or if an increment is performed on a key not containing an
+integer.
+
+AVAILABILITY
+============
+
+The ``kv`` VMOD is available in Varnish Enterprise version ``6.0.14r6`` and
+later as a feature add-on.

@@ -4,17 +4,19 @@ This document outlines planned improvements and extensions for the VCL parser im
 
 ## Current Limitations
 
-### Object Literal Parsing
-- Issue: Complex backend properties like inline probes are not fully supported
-- Example: `.probe = { .url = "/health"; .interval = 5s; }`
-- Impact: Parser fails on backends with nested object properties
+### VMOD Object Instantiation
+- Issue: The `new` keyword for VMOD object instantiation is not implemented
+- Example: `new cluster = directors.round_robin();` fails to parse
+- Impact: Critical VCL features like directors cannot be used
 - Priority: High
+- Status: Integration tests exist but fail due to missing parser support
 
-### VMOD Support
-- Issue: VMOD function calls and imports are parsed but not validated
-- Example: `import directors; new cluster = directors.round_robin();`
-- Impact: No type checking for VMOD functions and their parameters
+### VMOD Function Validation
+- Issue: VMOD function calls are parsed but validation is incomplete
+- Example: Function signatures and return types are not fully validated
+- Impact: Limited type checking for VMOD functions and their parameters
 - Priority: Medium
+- Status: Basic validation framework exists in analyzer/
 
 ### Advanced Expression Parsing
 - Issue: Some complex expressions may not parse correctly
@@ -88,6 +90,7 @@ Supported VMODs:
 - [ ] Refactoring: Rename variables across files
 
 ### 7. Testing and Quality Assurance
+- [x] Integration Tests: Comprehensive VMOD validation tests (currently failing due to missing `new` keyword support)
 - [ ] Fuzzing: Automated testing with malformed VCL inputs
 - [ ] Performance Benchmarks: Measure parsing speed with large VCL files
 - [ ] Memory Profiling: Optimize memory usage for large ASTs
@@ -118,10 +121,16 @@ Supported VMODs:
 ## Implementation Roadmap
 
 ### Phase 1: Core Improvements (Next 2-3 months)
-1. Object literal parsing for backend properties
-2. Basic VMOD function validation
-3. Enhanced error messages and recovery
-4. VCL formatter implementation
+1. **URGENT**: Implement `new` keyword parsing for VMOD object instantiation
+2. Object literal parsing for backend properties
+3. Basic VMOD function validation
+4. Enhanced error messages and recovery
+5. VCL formatter implementation
+
+### Current Status
+- Integration tests moved to `tests/` directory (✓)
+- VMOD validation framework exists but incomplete
+- Integration tests failing due to missing `new` keyword support
 
 ### Phase 2: Advanced Analysis (Next 6 months)
 1. Complete semantic analysis

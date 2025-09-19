@@ -115,6 +115,7 @@ const (
 	RETRY_KW
 	OK_KW
 	FAIL_KW
+	NEW_KW
 )
 
 // String returns the string representation of a token type
@@ -270,6 +271,8 @@ func (t TokenType) String() string {
 		return "ok"
 	case FAIL_KW:
 		return "fail"
+	case NEW_KW:
+		return "new"
 	default:
 		return fmt.Sprintf("TokenType(%d)", int(t))
 	}
@@ -310,6 +313,7 @@ var Keywords = map[string]TokenType{
 	"retry":     RETRY_KW,
 	"ok":        OK_KW,
 	"fail":      FAIL_KW,
+	"new":       NEW_KW,
 }
 
 // LookupKeyword returns the token type for a keyword, or ID if not a keyword

@@ -1,0 +1,429 @@
+#
+# Copyright (c) 2017 Varnish Software
+# All rights reserved.
+
+$Module akamai 3 "Akamai Connector"
+
+$ABI vrt
+$License
+
+DESCRIPTION
+===========
+
+The Akamai Connector for Varnish allows for the integration of data and
+configuration between an origin Varnish server and Akamai's CDN network.
+
+The latest version of the Akamai Connector is ``1.0.7``.
+
+INSTALLATION
+============
+
+In order to install the Akamai Connector for Varnish, you first need to setup
+access to the connector repo. If you have not already done so, please contact
+support at support@varnish-software.com to get assistance with repo setup.
+
+Ubuntu Installation
+-------------------
+
+::
+
+  > apt-get install varnish-plus-akamai-connector
+
+Redhat Enterprise Linux Installation
+------------------------------------
+
+::
+
+  > yum install varnish-plus-akamai-connector
+
+CONFIGURATION
+=============
+
+The following configuration steps are required to get the
+Akamai Connector running within your Varnish setup.
+
+Automatic VCL Integration
+-------------------------
+
+::
+
+  include "akamai_41_auto.vcl";
+
+This will automatically hook Akamai request and response logic into the
+appropriate vcl_* subroutines. All Connector functionality is enabled
+and no further configuration is required.
+
+Note: This examples assumes VCL version 4.1 (there is a vcl 4.1 line in your
+VCL configuration). If you are using VCL version 4.0 you need to
+include "akamai_auto.vcl" instead of "akamai_41_auto.vcl".
+
+Purge Synchronization
+---------------------
+If you would like to synchronize purge requests on this host
+to the Akamai network, the following Akamai CCU API fields need
+to be configured within the ``/etc/varnish/akamai-connector.conf`` file:
+
+* purge_host
+* purge_client_token
+* purge_client_secret
+* purge_access_token
+
+Omitting these fields or removing this configuration file will
+cause the Akamai purge functionality to be skipped entirely.
+
+You can also point Varnish Cache to an alternate configuration
+path by setting VMOD_AKAMAI_CONFIG_FILE to the alternate path.
+
+Example::
+
+  export VMOD_AKAMAI_CONFIG_FILE=/opt/akamai/.ac.conf
+
+Starting in version 1.0.7, the connector supports purge by cache tag and CP Code.
+
+Advanced VCL Integration
+------------------------
+
+To selectively choose which features of the Connector you wish to use,
+you can use the following vcl subroutines (via ``akamai.vcl``):
+
+* akamai_init_sureroute
+* akamai_recv_timeout
+* akamai_recv_esi
+* akamai_recv_device_detection
+* akamai_recv_true_client_ip
+* akamai_recv_sureroute
+* akamai_purge
+* akamai_deliver_edge_control
+* akamai_deliver_esi
+* akamai_deliver_vary
+* akamai_deliver_via
+
+Each subroutines need to be called in the appropriate ``sub vcl_*`` subroutine as
+specified in the 2nd part of the name. For example, ``akamai_deliver_edge_control``
+needs to be called in ``sub vcl_deliver``. If multiple subroutines have the same
+functionality label, as specified by the 3rd part of the name, each one needs
+to be invoked. For example, both ``akamai_recv_esi`` and ``akamai_deliver_esi``
+need to be called to integrate ESI with Akamai.
+
+Sureroute Example:
+
+::
+
+  include "akamai.vcl";
+
+  sub vcl_init {
+    call akamai_init_sureroute;
+  }
+
+  sub vcl_recv {
+    call akamai_recv_sureroute;
+  }
+
+If you have unused subroutines, you can disable Varnish Cache from reporting
+them as an error by adding the following startup parameter to ``varnishd``:
+
+::
+
+  -p vcc_err_unref=false
+
+Tag Based Purging:
+
+This example will show how to override the ``akamai_auto.vcl`` to use a different
+purging call to Akamai to purge by cache tags. Additionally, this will show you
+how to use ykey purging at the same time as Akamai purging. Akamai assigns
+cache tags to an object through the response header ``Edge-Cache-Tag``
+
+::
+
+  include "akamai_auto.vcl";
+
+  sub vcl_recv {
+    if (req.method == "PURGE") {
+      # Purge Varnish and Akamai with tags
+      set req.http.ykey_purges = ykey.purge(req.http.tags);
+      akamai.purge_cachetag(req.http.tags);
+
+      return (synth(941, "Purged"));
+    }
+  }
+
+  # Add information about ykey purge to synthetic return
+  sub vcl_synth {
+    if (resp.status == 941) {
+      set resp.http.ykey_purges = req.http.ykey_purges;
+    }
+    # Output from Akamai purge automatically added from
+    # akamai_auto.vcl
+  }
+
+  sub vcl_backend_response {
+    # Align ykey keys with Akamai cache tags
+    ykey.add_key(beresp.http.Edge-Cache-Tag);
+  }
+
+Proxy support
+-------------
+In order to direct all request via a proxy on can set the "proxy"-key in the
+VMOD_AKAMAI_CONFIG_FILE. Set the key-value to a string specifing the proxy,
+like this [scheme]://[user:secret]@IP|host[:port]. See libcurl documentation
+for more details on defining a proxy.
+
+Tunneling is also supported and enabled by setting the "http_proxy_tunnel"-key
+to 1 in the VMOD_AKAMAI_CONFIG_FILE.
+
+Akamai Configuration
+--------------------
+
+The Akamai Connector requires no additional changes to your Akamai configuration
+and is designed to operate with your current Akamai environment as-is.
+
+For best results, ensure that your Akamai configuration classifies requests as
+cacheable by default and excludes those requests that are not cacheable.
+
+The Connector, using VCL, can correctly define the cacheability status
+and appropriate TTLs. However, the early classification will ensure that the
+Akamai Intelligent Platform will use SureRoute and Tiered Distribution
+for non cacheable and cacheable content respectfully.
+
+To utilize Device Characteristics in Varnish you will need to enable
+the behavior for Device Characteristics on your Configuration.
+
+Validating Installation
+-----------------------
+
+Run the following ``curl`` command:
+
+::
+
+  curl -I http://[host]/akamai/testobject.html \
+       -H "Via: akamai.net(ghost) (AkamaiGHost)"
+
+Substitute ``[host]`` with the name or IP address of the Varnish server running the Akamai Connector.
+You should see the following response:
+
+::
+
+  HTTP/1.1 200 OK
+  Content-Length: 20480
+  Date: Thu, 09 Mar 2017 23:19:41 GMT
+  X-Varnish: 2
+  Edge-Control: max-age=130
+  Cache-Control: post-check=120
+  Via: 1.1 varnish-v4, Akamai Connector/[version]
+  X-varnish-hits: 0
+  Accept-Ranges: bytes
+  Connection: keep-alive
+
+In particular, verify you have a successful ``200`` response code or that the ``Via`` header states ``Akamai Connector``.
+
+Feature Overview
+================
+
+The Akamai Connector for Varnish offers the following functionality.
+
+Object TTL and Grace
+--------------------
+
+The Varnish Cache internal value of beresp.ttl, beresp.grace, and
+beresp.uncacheable will be synchronized with the Akamai CDN on each request.
+These values will supersede the Cache-Control header.
+
+In your Luna Property Configuration for Akamai, set your
+caching behavior to honor origin cache control and expires.
+
+Purge Synchronization
+---------------------
+
+When a purge request is handled by Varnish Cache, the Connector
+will synchronize the invalidation request against the Akamai CDN.
+The Connector will use the value of req.url and req.http.Host for invalidation.
+
+The akamai-connector.conf needs to have all of the purge_* fields filled in,
+otherwise purge synchronization is skipped on this host.
+
+If purge synchronization is configured, Varnish Cache will relay
+the Akamai CCU API response as its purge response.
+
+CCU API credentials need to be generated via the Luna Control Center.
+
+True Client IP
+--------------
+
+The Varnish Cache value of req.http.True-Client-IP will always
+contain the True Client IP of the requestor.
+
+In Luna, make sure the header used is True-Client-IP.
+
+SureRoute
+---------
+
+The Connector will respond to requests for /akamai/testobject.html with a native SureRoute response.
+
+The response size is configured via sureroute_resp_bytes in akamai-connector.conf.
+
+In Luna, make sure the SureRoute test object path is /akamai/testobject.html.
+
+ESI
+---
+
+ESI processing in Varnish Cache is deferred to Akamai when requests originate from the Akamai CDN.
+
+In Luna, make sure the ESI processor is enabled.
+
+Device Characterization
+-----------------------
+
+Each characteristic in the X-Akamai-Device-Characteristics field will be put
+into its own header. The header name is X-ADC-[characteristic] where
+[characteristic] is the characteristic name. For example, the value of
+is_mobile will be put into the X-ADC-is_mobile header.
+
+Connection Keep-Alive
+---------------------
+
+Connections between Akamai CDN and Varnish Cache will be held open for 301 seconds.
+
+API
+===
+
+The connector supports Akamai calls to purge by cache tag and CP Code.
+
+These functions require the ``akamai-connector.conf`` to be configured with the
+appropriate Akamai CCU API values for ``purge_host``, ``purge_client_token``,
+``purge_client_secret``, and ``purge_access_token``. The connector will automatically
+sign the request using the configured Akamai credentials in ``akamai-connector.conf``.
+
+If ``akamai-connector.conf`` is not configured, these calls do nothing.
+
+
+$Event event_function
+
+$Function BOOL is_esi()
+$Restrict vcl_deliver
+
+Returns true if the object to be delivered was scanned during
+fetch for ESI instructions (beresp.do_esi was set).
+
+This is useful in situations where you have layered caches, and for
+some set of the incoming requests Varnish is not the edge layer where
+the ESI processing should be executed. To help the next layer know
+whether the data should be scanned for ESI instructions or not, this
+vmod can be used to set a response header.
+
+$Function VOID set_session_timeout_idle(DURATION timeout)
+
+Set the session idle timeout. The timeout will be set for the
+current session only, and will silently fail if the session is
+not available in the current VCL sub.
+
+Note: This function will only have effect if the target
+Varnish version has built in support for per session idle
+timeouts.
+
+Example
+
+::
+  sub vcl_recv {
+    if(...) {
+      akamai.set_session_timeout_idle(300s);
+    }
+  }
+
+$Function REAL duration2real(DURATION, REAL)
+
+Convert a VCL DURATION to a VCL REAL.
+
+$Function DURATION obj_ttl()
+
+Return the obj.ttl. Only valid in VCL functions where obj exists.
+Returns 0 if called from any other VCL function.
+
+$Function DURATION obj_grace()
+
+Return the obj.grace. Only valid in VCL functions where obj exists.
+Returns 0 if called from any other VCL function.
+
+$Function DURATION obj_keep()
+
+Return the obj.keep. Only valid in VCL functions where obj exists.
+Returns 0 if called from any other VCL function.
+
+$Function VOID parse_adc_params(STRING)
+
+Parse the Akamai Device Characteristics header string. Each value gets
+put into its own request header with an X-ADC- prefix.
+
+Expects the format to be param=value with semicolon separating pairs
+and optional spaces in between.
+
+Example
+
+::
+
+  sub vcl_recv {
+    akamai.akamai.parse_adc_params("brand_name=Google;is_tablet=false; device_os=Android");
+    if (req.http.X-ADC-brand_name == "Google") {
+    ...
+    }
+  }
+
+$Function VOID purge(PRIV_VCL, PRIV_TASK, STRING url, STRING hostname = "", BOOL delete = 0, STRING delims = "")
+
+Send a purge request to the Akamai CCU API. This requires the
+akamai-connector.conf to be configured with the appropriate Akamai
+CCU API values for purge_host, purge_client_token, purge_client_secret,
+and purge_access_token. If the akamai-connector.conf is not configured,
+this call does nothing.
+
+$Function VOID purge_cachetag(PRIV_VCL, PRIV_TASK, STRING tags, BOOL delete = 0, STRING delims = " ,")
+
+Send a cache tag purge request to the Akamai CCU API. This requires the
+akamai-connector.conf to be configured with the appropriate Akamai
+CCU API values for purge_host, purge_client_token, purge_client_secret,
+and purge_access_token. If the akamai-connector.conf is not configured,
+this call does nothing.
+
+$Function VOID purge_cpcode(PRIV_VCL, PRIV_TASK, STRING cpcodes, BOOL delete = 0, STRING delims = " ,")
+
+Send a cpcode purge request to the Akamai CCU API. This requires the
+akamai-connector.conf to be configured with the appropriate Akamai
+CCU API values for purge_host, purge_client_token, purge_client_secret,
+and purge_access_token. If the akamai-connector.conf is not configured,
+this call does nothing.
+
+$Function VOID api(PRIV_VCL, PRIV_TASK, STRING method, STRING url, STRING json)
+
+Send an Akamai CCU v3 API call.
+
+$Function INT get_resp_code(PRIV_TASK)
+
+Get the response code for the last invocation of ``purge()``. If ``purge()`` was
+not called, 0 is returned.
+
+$Function STRING get_resp_body(PRIV_TASK)
+
+Get the response body for the last invocation of ``purge()``. If ``purge()`` was
+not called, an empty string is returned.
+
+$Function STRING get_resp_reason(PRIV_TASK)
+
+Get the response reason phrase for the last invocation of ``purge()``. If ``purge()`` was
+not called, an empty string is returned.
+
+$Object NULL_OK sureroute(PRIV_VCL)
+
+Create a sureroute backend.
+
+$Method BACKEND .backend()
+
+Return the sureroute backend.
+
+$Function STRING get_useragent()
+
+Return the user agent string for this VMOD, a composition of the VMOD
+name and version.
+
+AVAILABILITY
+============
+
+The ``akamai connector`` VMOD is available in Varnish Enterprise version ``6.0.2r1`` and later.

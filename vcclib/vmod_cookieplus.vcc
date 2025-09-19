@@ -1,0 +1,392 @@
+$Module cookieplus 3 "Cookie Plus (cookieplus)"
+$License
+
+DESCRIPTION
+===========
+
+The ``cookieplus`` vmod allows you to get, add, delete, and keep Cookie and Set-Cookie values.
+It also allows you to remove unused client side Cookies.
+
+All functions will by default parse Cookies from the ``req.http.Cookie`` and Set-Cookies
+from ``resp.http.Set-Cookie``, unless otherwise specified. Backend context is supported.
+
+All functions keep an internal state of Cookies and Set-Cookies until written out
+using ``write()`` or ``setcookie_write()``.
+
+Set-Cookie operations all have a ``setcookie`` prefix and can only be used where a
+``resp`` or ``beresp`` object exists.
+
+EXAMPLES
+========
+
+Cookie Filtering
+----------------
+
+Only allow application specific Cookies.
+
+::
+
+  vcl 4.0;
+
+  import cookieplus;
+
+  sub vcl_recv
+  {
+    // Keep these Cookies
+    cookieplus.keep("JSESSIONID");
+    cookieplus.keep_regex("^BNES_SSESS");
+    cookieplus.keep_regex("^SSESS[a-zA-Z0-9]+$");
+    cookieplus.keep_regex("^SESS[a-zA-Z0-9]+$");
+
+    // Any Cookie that is not kept will be removed
+    cookieplus.write();
+  }
+
+Conditional Cookie Filtering
+----------------------------
+
+Conditionally allow application specific Cookies.
+
+::
+
+  vcl 4.0;
+
+  import cookieplus;
+
+  sub vcl_recv
+  {
+    // Mark all Cookies for removal
+    cookieplus.keep("");
+
+    // Only allow these Cookies if the URL allows for it
+    if (req.url ~ "^/admin") {
+      cookieplus.keep("JSESSIONID");
+      cookieplus.keep_regex("^BNES_SSESS");
+      cookieplus.keep_regex("^SSESS[a-zA-Z0-9]+$");
+      cookieplus.keep_regex("^SESS[a-zA-Z0-9]+$");
+    }
+
+    // Any Cookie that is not kept will be removed
+    cookieplus.write();
+  }
+
+VCL Cookies
+-----------
+
+Add a VCL cookie.
+
+::
+
+  vcl 4.0;
+
+  import cookieplus;
+  import std;
+
+  sub vcl_deliver
+  {
+    // Get the vcpsess Cookie value
+    set req.http.X-vcpsess = cookieplus.get("vcpsess", "");
+
+    if (req.http.X-vcpsess == "") {
+      // Create a new random vcpsess value
+      set req.http.X-vcpsess = std.random(1, 10000000) + "." + std.random(1, 10000000);
+
+      // Create a vcpsess Set-Cookie, valid for 30 days
+      cookieplus.setcookie_add("vcpsess", req.http.X-vcpsess, 30d, req.http.Host, "/");
+
+      // Write the Set-Cookie to the response
+      cookieplus.setcookie_write();
+    }
+
+    // req.http.X-vcpsess now contains the vcpsess cookie value
+  }
+
+Set-Cookie Filtering
+--------------------
+
+Only allow application specific Set-Cookie values from the backend.
+
+::
+
+  vcl 4.0;
+
+  import cookieplus;
+
+  sub vcl_backend_response
+  {
+    // Mark all Set-Cookies for removal
+    cookieplus.setcookie_keep("");
+
+    // Only allow these Set-Cookies if the URL allows for it
+    if (bereq.url ~ "^/admin") {
+      cookieplus.setcookie_keep("JSESSIONID");
+      cookieplus.setcookie_keep_regex("^BNES_SSESS");
+      cookieplus.setcookie_keep_regex("^SSESS[a-zA-Z0-9]+$");
+      cookieplus.setcookie_keep_regex("^SESS[a-zA-Z0-9]+$");
+    }
+
+    // Any Set-Cookie that is not kept will be removed
+    cookieplus.setcookie_write();
+  }
+
+Set-Cookie Extra
+----------------
+
+Restrict Set-Cookie from cross-site requests.
+
+::
+
+  vcl 4.0;
+
+  import cookieplus;
+
+  sub vcl_backend_response
+  {
+    cookieplus.setcookie_add("cookie", "plus", extra = "SameSite=Strict;");
+    cookieplus.setcookie_write();
+  }
+
+Client Cookie Removal
+---------------------
+
+Conditionally allow application specific Cookies and remove
+all other Cookies from the client.
+
+::
+
+  vcl 4.0;
+
+  import cookieplus;
+
+  sub vcl_recv
+  {
+    // Mark all Cookies for removal
+    cookieplus.keep("");
+
+    // Only allow these Cookies if the URL allows for it
+    if (req.url ~ "^/admin") {
+      cookieplus.keep("JSESSIONID");
+      cookieplus.keep_regex("^BNES_SSESS");
+      cookieplus.keep_regex("^SSESS[a-zA-Z0-9]+$");
+      cookieplus.keep_regex("^SESS[a-zA-Z0-9]+$");
+    }
+
+    // Any Cookie that is not kept will be removed
+    cookieplus.write();
+  }
+
+  sub vcl_backend_response
+  {
+    // Mark all Set-Cookies for removal
+    cookieplus.setcookie_keep("");
+
+    // Only allow these Set-Cookies if the URL allows for it
+    if (bereq.url ~ "^/admin") {
+      cookieplus.setcookie_keep("JSESSIONID");
+      cookieplus.setcookie_keep_regex("^BNES_SSESS");
+      cookieplus.setcookie_keep_regex("^SSESS[a-zA-Z0-9]+$");
+      cookieplus.setcookie_keep_regex("^SESS[a-zA-Z0-9]+$");
+    }
+
+    // Any Set-Cookie that is not kept will be removed
+    cookieplus.setcookie_write();
+  }
+
+  sub vcl_deliver
+  {
+    // Do not attempt to delete these Cookies from the client
+    // as they may have been conditionally removed, but we want
+    // to keep them.
+    cookieplus.remove_deleted("JSESSIONID");
+    cookieplus.remove_deleted_regex("^BNES_SSESS");
+    cookieplus.remove_deleted_regex("^SSESS[a-zA-Z0-9]+$");
+    cookieplus.remove_deleted_regex("^SESS[a-zA-Z0-9]+$");
+
+    // Do not delete Google Analytic Cookies
+    cookieplus.remove_deleted("_ga");
+    cookieplus.remove_deleted("_git");
+    cookieplus.remove_deleted("_gat");
+    cookieplus.remove_deleted_regex("^__ut..$");
+
+    // Delete all other Cookies that were sent in the request
+    cookieplus.setcookie_add_deleted();
+    cookieplus.setcookie_write();
+  }
+
+API
+===
+
+$Function STRING get(PRIV_TASK, STRING name, STRING default = 0, ENUM {FIRST, LAST} occurrence = FIRST)
+
+Get the first Cookie value for ``name``, If not found, ``default`` is returned.
+
+$Function STRING get_regex(PRIV_TASK, PRIV_CALL, STRING regex, STRING default = 0)
+
+Get the first Cookie value which matches ``regex``. The ``regex`` is matched on the name only.
+If not found, ``default`` is returned.
+
+$Function VOID add(PRIV_TASK, STRING name, STRING value, BOOL keep = 1, BOOL override = 1)
+
+Add a Cookie with ``name`` and ``value``.
+If in keep_mode and keep is true, cookie value is kept when writing.
+
+$Function VOID delete(PRIV_TASK, STRING name, BOOL delete_keep = 0)
+
+Delete all cookies that match ``name``. If ``delete_keep`` is true, delete kept cookies.
+
+$Function VOID delete_regex(PRIV_TASK, PRIV_CALL, STRING regex, BOOL delete_keep = 0)
+
+Delete all cookies that match ``regex``. The ``regex`` is matched on the name only.
+If ``delete_keep`` is true, delete kept cookies.
+
+$Function VOID keep(PRIV_TASK, STRING name)
+
+Keep cookies which match ``name``. This enables keep_mode.
+When writing, only cookies which have been kept are written.
+
+$Function VOID keep_regex(PRIV_TASK, PRIV_CALL, STRING regex)
+
+Keep cookies which match ``regex``. This enables keep_mode.
+When writing, only cookies which have been kept are written.
+
+$Function VOID remove_deleted(PRIV_TASK, STRING name)
+
+CookiePlus keeps track of what Cookies have been deleted.
+This is so you can delete them from the client using ``setcookie_add_deleted()``.
+This function removes a Cookie from the deleted list, so it cannot be removed from the client.
+
+$Function VOID remove_deleted_regex(PRIV_TASK, PRIV_CALL, STRING regex)
+
+CookiePlus keeps track of what Cookies have been deleted.
+This is so you can delete them from the client using ``setcookie_add_deleted()``.
+This function removes Cookies which match regex from the deleted list, so they cannot be removed from the client.
+
+$Function VOID remove_duplicate(PRIV_TASK, STRING name, ENUM {FIRST, LAST} keep = FIRST)
+
+Removes all duplicates of a given name. Can keep either the first or last occurrence.
+
+$Function VOID remove_all_duplicates(PRIV_TASK, ENUM {FIRST, LAST} keep = FIRST)
+
+Removes all duplicate cookies. Can retain either the first or last occurrence.
+
+$Function INT count(PRIV_TASK)
+
+The number of cookies which will be written.
+
+$Function VOID write(PRIV_TASK)
+$Restrict client backend
+
+Write cookies back out to the 'Cookie' header.
+
+$Function STRING as_string(PRIV_TASK)
+
+Return Cookie header string. Can be used to write cookies to a different header.
+
+$Function VOID parse(PRIV_TASK, STRING cookies)
+
+Parse cookies from ``cookies`` string. Any internal state is reset.
+
+$Function VOID reset(PRIV_TASK)
+
+Reset the internal state.
+
+$Function VOID regsub(PRIV_TASK,
+    PRIV_CALL,
+    STRING name,
+    ENUM {NAME, VALUE} where,
+    STRING pattern,
+    STRING replace,
+    BOOL repeat = 0)
+
+Cookies that match the regular expression ``name`` can have their name or
+value substituted based off the regular expression ``pattern`` with ``replace``.
+
+$Function STRING setcookie_get(PRIV_TASK, STRING name, STRING default = 0)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Get the first Set-Cookie value for ``name``. If not found, ``default`` is returned.
+
+$Function STRING setcookie_get_regex(PRIV_TASK, PRIV_CALL, STRING regex, STRING default = 0)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Get the first Set-Cookie value for ``regex``. The ``regex`` is matched on the name only.
+If not found, ``default`` is returned.
+
+$Function VOID setcookie_add(PRIV_TASK,
+    STRING name,
+    STRING value,
+    DURATION ttl = 0,
+    STRING domain = "",
+    STRING path = "",
+    BOOL secure = 0,
+    BOOL httponly = 0,
+    STRING extra = "",
+    BOOL keep = 1,
+    BOOL override = 1)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Add a Set-Cookie.
+
+$Function VOID setcookie_add_deleted(PRIV_TASK, BOOL keep = 1)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Add a Set-Cookie for each deleted cookie.
+
+$Function VOID setcookie_delete(PRIV_TASK, STRING name, BOOL delete_keep = 0)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Delete all Set-Cookie headers that match ``name``.
+
+$Function VOID setcookie_delete_regex(PRIV_TASK, PRIV_CALL, STRING regex, BOOL delete_keep = 0)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Delete all Set-Cookie headers that match ``regex``. The ``regex`` is matched on the name only.
+
+$Function VOID setcookie_keep(PRIV_TASK, STRING name)
+
+Keep Set-Cookies which match ``name``. This enables keep_mode.
+When writing, only Set-Cookies which have been kept are written.
+
+$Function VOID setcookie_keep_regex(PRIV_TASK, PRIV_CALL, STRING regex)
+
+Keep Set-Cookies which match ``regex``. This enables keep_mode.
+When writing, only Set-Cookies which have been kept are written.
+
+$Function INT setcookie_count(PRIV_TASK)
+
+The number of Set-Cookies which will be written.
+
+$Function VOID setcookie_write(PRIV_TASK, HEADER header = 0)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Write Set-Cookies back out to the 'Set-Cookie' header. Override with ``header``.
+
+$Function VOID setcookie_parse(PRIV_TASK, HEADER header)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Parse Set-Cookie(s) from ``header``.
+
+$Function VOID setcookie_reset(PRIV_TASK)
+$Restrict vcl_backend_response vcl_deliver vcl_synth
+
+Reset the internal Set-Cookie state.
+
+$Function VOID setcookie_regsub(PRIV_TASK,
+    PRIV_CALL,
+    STRING name,
+    ENUM {NAME, VALUE, ATTRIBUTES} where,
+    STRING pattern,
+    STRING replace,
+    BOOL repeat = 0)
+
+Set-Cookies that match the regular expression ``name`` can have their
+name, value or attributes substituted based off the regular expression ``pattern`` with ``replace``.
+
+$Function STRING as_json(PRIV_TASK, STRING prefix = 0, ENUM {COOKIE, SETCOOKIE, BOTH} print = "BOTH")
+
+Return Cookie name and value pairs as JSON.
+
+AVAILABILITY
+============
+
+The ``cookieplus`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

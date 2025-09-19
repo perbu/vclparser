@@ -24,6 +24,8 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseErrorStatement()
 	case lexer.RESTART_KW:
 		return p.parseRestartStatement()
+	case lexer.NEW_KW:
+		return p.parseNewStatement()
 	case lexer.LBRACE:
 		return p.parseBlockStatement()
 	case lexer.CSRC:
@@ -304,6 +306,36 @@ func (p *Parser) parseCSourceStatement() *ast.CSourceStatement {
 		Code: p.currentToken.Value,
 	}
 
+	return stmt
+}
+
+// parseNewStatement parses a new statement for VMOD object instantiation
+func (p *Parser) parseNewStatement() *ast.NewStatement {
+	stmt := &ast.NewStatement{
+		BaseNode: ast.BaseNode{
+			StartPos: p.currentToken.Start,
+		},
+	}
+
+	p.nextToken() // move past 'new'
+	stmt.Name = p.parseExpression()
+
+	// Parse assignment operator
+	if !p.expectPeek(lexer.ASSIGN) {
+		p.addError("expected '=' after variable name in new statement")
+		return nil
+	}
+
+	p.nextToken() // move past '='
+	stmt.Constructor = p.parseExpression()
+
+	if stmt.Constructor == nil {
+		p.addError("expected constructor expression after '=' in new statement")
+		return nil
+	}
+
+	stmt.EndPos = p.currentToken.End
+	p.skipSemicolon()
 	return stmt
 }
 

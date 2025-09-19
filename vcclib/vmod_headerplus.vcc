@@ -1,0 +1,416 @@
+$Module headerplus 3 "Header Manipulation (headerplus)"
+$License
+
+DESCRIPTION
+===========
+
+The ``headerplus`` is a vmod for advanced header access, creation and manipulation for
+singular headers, multiple headers of the same name, or groups of headers through regex.
+Additionally, this VMOD provides an easy to use API to access and manipulate individual
+attributes from a header.
+
+Documentation for the legacy ``vmod-header`` can be found [here]({{< relref "/varnish-enterprise/vmods/header" >}}).
+
+EXAMPLES
+========
+
+Set keep if the Cache-Control stale-if-error exists
+---------------------------------------------------
+
+::
+
+  import headerplus;
+
+  sub vcl_backend_response {
+    headerplus.init(beresp);
+    set bereq.http.stale-if-error = headerplus.attr_get("Cache-Control", "stale-if-error");
+    if (bereq.http.stale-if-error != "") {
+      set beresp.keep = std.duration(bereq.http.stale-if-error + "s", 11s);
+    }
+  }
+
+Delete all headers starting with X-
+-----------------------------------
+
+::
+
+  import headerplus;
+
+  sub vcl_recv {
+    headerplus.init(req);
+    headerplus.delete_regex("^X-");
+    headerplus.write();
+  }
+
+Combine all ykey headers
+------------------------
+
+::
+
+  import headerplus;
+  import ykey;
+
+  sub vcl_backend_response {
+    headerplus.init(beresp);
+    headerplus.collapse_regex("^ykey-", "all-ykey");
+    headerplus.write();
+
+    ykey.add_key(beresp.http.all-key);
+  }
+
+Whitelist a set of headers
+--------------------------
+
+::
+
+  import headerplus;
+
+  sub vcl_recv {
+    headerplus.init(req);
+    headerplus.keep("Host");
+    headerplus.keep("X-Forwarded-For");
+    headerplus.keep("Connection");
+    headerplus.keep("Accept-Language");
+    headerplus.keep("Accept-Encoding");
+    headerplus.keep("Referer");
+    headerplus.keep("User-Agent");
+    headerplus.keep("Authorization");
+    headerplus.keep("Cookie");
+    headerplus.keep_regex("^Upgrade-.*");
+    headerplus.keep_regex("^Sec-.*");
+    headerplus.write();
+  }
+
+API
+===
+
+``init()`` is required to be called before using any other function. All functions keep an
+internal state of the URL until it is written out using ``write()``.
+
+This VMOD uses a state called ``keep`` mode, enabled by calling ``keep()`` or ``keep_regex()``.
+When ``keep()`` or ``keep_regex()`` is called, all headers except those matching the specified
+name are implicitly marked for deletion. This means that headers will be deleted when ``write()``
+occurs unless they are explicitly kept by subsequent ``keep()`` or ``keep_regex()`` calls (until
+`.write()` is called).
+For example, if you have the following headers: Host, User-Agent, Accept-Encoding, and Cookie,
+and then you set ``keep("Host");``, the User-Agent, Accept-Encoding, and Cookie headers will be
+marked for deletion even if you do not call the ``delete()`` function. Simply put, in general,
+if at least one header is set in ``keep()``, the rest of the headers will be unset.
+
+You can call ``keep()`` or ``keep_regex()`` multiple times to retain multiple headers. Similarly,
+the ``keep`` parameter in some functions, such as ``add()`` and ``set()``, marks headers to be kept,
+which can be referenced by filtering functions such as delete(). For example, all headers without
+a keep flag can be marked for deletion.
+
+The ``delete()`` and ``delete_regex()`` functions operate in the opposite way of ``keep()`` and
+``keep_regex()``. If there is at least one header in the ``delete()`` function, then that header
+alone will be deleted. This contrasts with ``keep()``, where setting at least one header to be
+kept will mark the rest of the headers for deletion. For example, if you have the following
+headers: Host, User-Agent, Accept-Encoding, and Cookie, and then you set ``delete("Host");``, only
+the Host header will be unset.
+
+When a header name is marked for both retention and deletion, the header is
+kept. A regular expression that is not specific enough is a common cause of
+double marking, and care must be taken to prevent ambiguous marking.
+
+All parameters that use regex (noted by a ``_re`` suffix) must be a static string and cannot
+change between requests. Regex on header names (noted by ``name_re``) are case insensitive.
+
+$Function VOID init(PRIV_TASK, HTTP scope)
+
+Set up the internal state of headers. This is required to be called before
+any of the below functions can be used.
+
+$Function VOID init_req(PRIV_TASK)
+$Restrict client backend
+
+A variant of ``init`` that targets the appropriate scope between ``req`` or
+``bereq`` depending on where it is called. This can be useful for code reuse
+across contexts::
+
+    sub myapp_cleanup {
+        headerplus.init_req();
+        headerplus.delete_regex("^myapp-");
+        headerplus.write();
+    }
+
+    sub vcl_recv {
+        # prevent myapp-* headers injection in req
+        call myapp_cleanup;
+
+        # internally use myapp-* headers
+    }
+
+    sub vcl_backend_fetch {
+        # don't forward internal headers with bereq
+        call myapp_cleanup;
+    }
+
+This function must be called from a context where either ``req`` or ``bereq``
+is writable.
+
+$Function VOID init_resp(PRIV_TASK)
+$Restrict client backend
+
+The counterpart of ``init_req`` for respectively ``resp`` or ``beresp``.
+
+$Function VOID reset(PRIV_TASK)
+
+Clear the internal state of headers.
+
+$Function VOID reset_req(PRIV_TASK)
+$Restrict client backend
+
+Roll back any modification to ``req`` or ``bereq`` depending on where this
+function is called. All changes, whether performed by this VMOD or not, are
+reverted to the initial request, including across restarts and retries.
+
+It is conceptually equivalent to executing the following operations
+atomically:
+
+- ``headerplus.init_req();``
+- for each header not present in the initial request
+
+  - ``headerplus.delete(<name>);``
+
+- for each header present in the initial request
+
+  - ``headerplus.set(<name>, <value>);``
+
+- ``headerplus.write();``
+
+The rollback is comprehensive and includes the following pseudo-headers:
+
+- ``req.method``
+- ``req.url``
+- ``req.proto`` (not to be modified anyway, read-only since VCL 4.1)
+
+$Function VOID write(PRIV_TASK)
+
+Write out the internal state of headers to the scope.
+
+$Function VOID write_req0(PRIV_TASK)
+$Restrict vcl_recv
+
+This function is experimental. This means that its name and
+functionality is subject to change until this notice has been
+removed. In other words, use it with care, test well, and report
+any problems which might occur.
+
+This function is only available in ``sub vcl_recv``, and is
+designed to be used in conjunction with ``return
+(vcl(label));``. It is also only available in the *top* request, not
+ESI or slicer sub requests.
+
+This function is very similar to ``write``, but it does not update
+the ``req.*`` variables. Instead, it updates the internal structure
+representing the *original* request (hence ``req0``).
+
+This internal structure is the starting point of request handling,
+for the main VCL, for label VCLs and for ESI and slicer sub
+requests.
+
+This means that when the function returns, calling
+``return(vcl(label))`` will make the state or ``req.*`` "*reset*"
+to the *new* starting point (and not the original starting point,
+which is normally the case), and VCL processing will start again
+in the label. In a similar way, ESI and slicer sub requests will
+also start at this new starting point.
+
+Note that even though ``req.url`` and ``req.method`` need to be
+set outside of the ``headerplus`` VMOD, they *will* be copied over
+to *req0* through ``write_req0()``.
+
+Calling ``std.rollback()`` will similarly reset to the new ``req0``.
+
+$Function VOID add(PRIV_TASK, STRING name, STRING value, BOOL keep = 1)
+
+Add a new header. This function does not overwrite or remove headers of the same name.
+
+The parameter ``keep`` is described in the :ref:`API` section.
+
+$Function VOID set(PRIV_TASK, STRING name, STRING value, BOOL keep = 1)
+
+Set a new header. Removes all previous headers of the same name.
+
+The parameter ``keep`` is described in the :ref:`API` section.
+
+$Function VOID append(PRIV_TASK, STRING name, STRING value,
+    STRING delim = ", ", BOOL all = 0, BOOL keep = 1)
+
+Append a value to the end of a header. If ``all`` is ``true``, append to all
+headers of same name. The ``keep`` value is inherited from the original header.
+If the header is not present, create a new one using ``keep`` as the keep value.
+
+The parameter ``keep`` is described in the :ref:`API` section.
+
+$Function STRING get(PRIV_TASK, PRIV_CALL, STRING name, [STRING value_re], STRING def = 0)
+
+Return the value of the first header matching ``name``. If ``value_re`` is
+present, the value must match as well.
+
+$Function STRING get_regex(PRIV_TASK, PRIV_CALL, STRING name_re,
+   [STRING value_re], STRING def = 0)
+
+Return the value of the first header matching ``name_re``. If ``value`` is
+present, the ``value_re`` must match as well.
+
+$Function STRING get_name_regex(PRIV_TASK, PRIV_CALL, [STRING name_re],
+    [STRING value_re])
+
+Return the name of the first header matching ``name_re``. If ``value_re`` is
+present, the value must match as well. If ``name_re`` is not present,
+return the name of the first header with a value matching ``value_re.
+If neither are present, return the first header.
+
+$Function STRING collapse(PRIV_TASK, STRING name, [STRING new_name],
+    STRING delim=", ", BOOL keep = 1)
+
+Merge all headers with ``name``. Optionally rename the header to ``new_name``.
+
+The parameter ``keep`` is described in the :ref:`API` section.
+
+$Function STRING collapse_regex(PRIV_TASK, PRIV_CALL, STRING name_re,
+    STRING new_name, STRING delim=", ", BOOL keep = 1)
+
+Merge all headers matching ``name_re`` to a new header ``new_name``.
+Overwrites headers matching ``name_re``.
+
+The parameter ``keep`` is described in the :ref:`API` section.
+
+$Function VOID split(PRIV_TASK, STRING name, STRING delim = ", ")
+
+Split header ``name`` into multiple headers, breaking up the value by delim.
+Overwrites header ``name``. The ``keep`` value is inherited from the original header.
+
+$Function INT count(PRIV_TASK, STRING name)
+
+Return the number of headers with ``name``.
+
+$Function INT count_regex(PRIV_TASK, PRIV_CALL, STRING name_re)
+
+Return the number of headers matching ``name_re``.
+
+$Function VOID keep(PRIV_TASK, STRING name)
+
+Enable keep mode and keep all headers with ``name``.
+
+$Function VOID keep_regex(PRIV_TASK, PRIV_CALL, STRING name_re)
+
+Enable keep mode and keep all headers with names matching ``name_re``.
+
+$Function VOID delete(PRIV_TASK, STRING name, BOOL delete_keep = 0)
+
+Remove all headers with ``name``. If set to ``true``, delete kept headers.
+
+$Function VOID delete_regex(PRIV_TASK, PRIV_CALL, STRING name_re, BOOL delete_keep = 0)
+
+Remove all headers matching ``name_re``. If set to ``true``, delete kept headers.
+
+$Function VOID rename(PRIV_TASK, STRING name, STRING new_name, BOOL remove = 1)
+
+Change the name of all headers matching ``name`` to ``new_name``.
+Remove original header when ``remove`` is ``true``, otherwise a new header is
+appended.
+
+$Function VOID regsub_name(PRIV_TASK, PRIV_CALL, STRING name_re,
+    STRING sub, BOOL all = 0, BOOL remove = 1)
+
+Regsub on all headers matching ``name_re``. Rename headers matching
+``name_re``. ``sub`` is the substitution pattern. The regex can be repeated on
+the name if ``all`` is ``true``. Remove original header when ``remove`` is ``true``,
+otherwise a new header is added.
+
+$Function VOID regsub_value(PRIV_TASK, PRIV_CALL, STRING name_re,
+    STRING value_re, STRING sub, BOOL all = 0)
+
+Regsub the value on all headers matching ``name_re``. ``sub`` is the substitution
+pattern. The regex can be repeated on the value if ``all`` is ``true``.
+
+$Function VOID prefix(PRIV_TASK, PRIV_CALL, STRING name_re, STRING prefix,
+    BOOL remove = 1)
+
+Add a prefix to all headers matching ``name_re``. Overwrites headers matching
+``name_re``. ``name_re`` is grouped. Remove original header when ``remove`` is
+``true``, otherwise a new header is added.
+
+$Function VOID suffix(PRIV_TASK, PRIV_CALL, STRING name_re, STRING suffix,
+    BOOL remove = 1)
+
+Add a suffix to all headers matching ``name_re``. Overwrites headers matching
+``name_re``. ``name_re`` is grouped. Remove original header when ``remove``
+is ``true``, otherwise a new header is added.
+
+$Function VOID from_json(PRIV_TASK, STRING json, BOOL overwrite = 0, BOOL keep = 1, BOOL skip = 0)
+
+Add the values of a JSON string as headers. The format should be
+``{"header": "value"}``. To add multiple headers an array should be used.
+For example, ``{"X-ample": ["a", "b", "c"]}`` will result in 3 headers with
+a name of ``X-ample`` with the values of ``a``, ``b``, and ``c``. If ``overwrite`` is
+``true``, overwrite headers from the current scope. Multiple headers with the
+same name in ``json`` will not be overwritten.
+``skip`` being ``true`` only set headers that don't already have at least
+one value in the internal state. Setting both ``skip`` and `overwrite`` will
+trigger a VCL failure.
+
+The parameter ``keep`` is described in the :ref:`API` section.
+
+$Function STRING as_list(PRIV_TASK, ENUM {BOTH, NAME, VALUE} which = "BOTH",
+    STRING hdr_delim = ", ", STRING value_delim = ": ", BOOL sort = 1,
+    ENUM {NONE, UPPER, LOWER} name_case = "NONE")
+
+Turn the set of headers to a string. This can be made up of just header names,
+just header values, or both headers and values.
+
+$Function STRING as_json(PRIV_TASK, ENUM {FIRST, LAST, ARRAY, ALL} which = "FIRST")
+
+Turn set of headers to a JSON string in the format of ``{"header":"value"}``.
+``which`` dictates which header to use if there are multiple headers. Use either
+the first header, last header, combine them into an array, or add all headers
+as is.
+
+$Function STRING attr_get(PRIV_TASK, STRING name, STRING attr,
+    STRING hdr_delim = ", ", STRING attr_delim = "=", STRING def = 0)
+
+Return the value of the attribute of a header ``name``. For example, if header
+``Cache-Control: public, max-age=123`` is present, given ``name`` Cache-Control
+and ``attr`` max-age, 123 is returned. The first instance of ``attr`` is returned.
+
+$Function BOOL attr_exists(PRIV_TASK, STRING name, STRING attr,
+    STRING hdr_delim = ", ", STRING attr_delim = "=")
+
+Returns true if the attribute of a header ``name`` exists.
+
+$Function VOID attr_set(PRIV_TASK, STRING name, STRING attr, STRING value = "",
+    STRING hdr_delim = ", ", STRING attr_delim = "=",
+    ENUM {FIRST, UPDATE, ALL} how = "FIRST")
+
+Set the value of the attribute of a header ``name``. For example, if header
+``Cache-Control: public, max-age=123`` is present, given ``name`` Cache-Control
+and ``attr`` max-age, max-age will be set to ``value``. If ``how`` is ``UPDATE``,
+the attribute will be added to all matching headers containing the
+attribute and attribute deliminator. If ``how`` is ``FIRST`` update the
+attribute to the first matching headers containing the attribute and
+attribute deliminator. If it is not found, append to the first header matching
+name. If ``how`` is ``ALL`` the value will be updated or appended to all headers
+matching ``name``.
+
+$Function VOID attr_delete(PRIV_TASK, STRING name, STRING attr,
+    STRING hdr_delim = ", ", BOOL all = 0, STRING attr_delim = "=")
+
+Remove the attribute of a header ``name``. For example, if header
+``Cache-Control: public, max-age=123`` is present given ``name`` Cache-Control
+and ``attr`` max-age, ``max-age=123`` will be removed from the header. If the
+header is empty after removing ``attr`` the header will be deleted. If ``all``
+is ``true``, the value is removed from all headers matching ``name``. The first
+instance of ``attr`` is removed. ``hdr_delim`` is a list of header delimiters.
+
+$Function INT attr_count(PRIV_TASK, STRING name,
+    STRING hdr_delim = ", ", STRING attr_delim = "=")
+
+Return the number of attributes of a header ``name``.
+
+AVAILABILITY
+============
+
+The ``headerplus`` VMOD is available in Varnish Enterprise version ``6.0.6r6`` and later.

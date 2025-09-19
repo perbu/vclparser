@@ -1,0 +1,361 @@
+$Module s3 3 "S3 VMOD"
+$License
+
+DESCRIPTION
+===========
+
+This VMOD provides functionality for using Varnish as a caching proxy in front
+of S3. This includes a dynamic backend director for S3 bucket endpoints with the
+following set of features:
+
+* ``Multiple IPs``: Any number of IPs can be returned by DNS.
+* ``Load-Balancing``: Traffic is evenly balanced over each IP.
+* ``Smart retries``: Retried fetches always go to a different IP if possible.
+* ``Dual-Stack``: Both IPv4 and IPv6 are supported.
+* ``Ready after load``: DNS is resolved during ``vcl.load``, no warmup needed.
+* ``Async DNS resolution``: IPs are kept up to date without blocking.
+* ``Global resolution cache``: DNS resolutions are cached across VCL reloads.
+
+EXAMPLES
+========
+
+S3 Director
+-----------
+
+To set up Varnish in front of a bucket at ``example.com``, you can add the
+following to your VCL.
+::
+
+	import s3;
+
+	sub vcl_init {
+		new bucket = s3.director("bucket", "region", "example.com");
+	}
+
+	sub vcl_backend_fetch {
+		set bereq.backend = bucket.backend();
+	}
+
+Director - signing with key
+---------------------------
+
+A director can sign the backend requests with the S3V4 algorithm if
+you provide an access key and key-id.
+::
+
+	import s3;
+
+	sub vcl_init {
+		new bucket = s3.director("bucket", "region", "example.com");
+		bucket.set_access_key("<your_key>", "<your_key_id>");
+	}
+
+	sub vcl_backend_fetch {
+		set bereq.backend = bucket.backend();
+	}
+
+Director - Key Rotation
+-----------------------
+
+You can change (rotate) the director's key at any time.
+::
+
+	import s3;
+
+	sub vcl_init {
+		new bucket = s3.director("bucket", "region", "example.com");
+		bucket.set_access_key("<your_key>", "<your_key_id>");
+	}
+
+	sub vcl_backend_fetch {
+		# how you decide to change the key is up to you
+		if (new_key_detected) {
+			bucket.set_access_key("<new_key>", "<new_key_id>");
+		}
+
+		set bereq.backend = bucket.backend();
+	}
+
+Director - signing with IAM
+---------------------------
+
+A director can sign the backend requests using an IAM role when running on
+EC2. The role is used to fetch an access key and key-id from the IAM API.
+::
+
+	import s3;
+
+	sub vcl_init {
+		new bucket = s3.director("bucket", "region", "example.com");
+		bucket.set_iam_role("<your_role>");
+	}
+
+	sub vcl_backend_fetch {
+		set bereq.backend = bucket.backend();
+	}
+
+If set an empty role, the director will try to look up the ``instance``
+role. The instance role is then used to fetch an access key and key-id from
+the IAM API.
+::
+
+	import s3;
+
+	sub vcl_init {
+		new bucket = s3.director("bucket", "region", "example.com");
+		bucket.set_iam_role();
+	}
+
+	sub vcl_backend_fetch {
+		set bereq.backend = bucket.backend();
+	}
+
+Signer - signing with key
+-------------------------
+
+You can also sign backend requests without using an actual director.
+The signer will set the necessary headers and create the Authorization
+header with the request signature. You can set the backend of your
+choice. Be sure the Host header is set correctly as it is part of the
+signature.
+::
+
+	import s3;
+
+	sub vcl_init {
+		new signer = s3.signer();
+		signer.set_region("region");
+		signer.set_access_key("<your_key>", "<your_key_id>");
+	}
+
+	sub vcl_backend_fetch {
+		set bereq.backend = <some backend>;
+		set bereq.http.Host = "example.com";
+		if (!signer.sign()) {
+			std.log("signing failed, check log");
+		}
+	}
+
+Signer - signing with IAM
+-------------------------
+
+The signer also supports using the EC2 IAM role.
+::
+
+	import s3;
+
+	sub vcl_init {
+		new signer = s3.signer();
+		bucket.set_iam_role("<your_role>");
+		signer.set_region("region");
+	}
+
+	sub vcl_backend_fetch {
+		set bereq.backend = <some backend>;
+		set bereq.http.Host = "example.com";
+		if (!signer.sign()) {
+			std.log("signing failed, check log");
+		}
+	}
+
+
+DNS
+---
+
+DNS is resolved using ``getaddrinfo()`` with the ``AF_UNSPEC`` flag set. This
+means that backends will created based on IPv4 and/or IPv6 addresses. DNS is
+resolved during ``vcl.load`` (blocking), which means that there is no period of
+time after the VCL has been loaded where the director contains no backends. If
+the initial DNS resolution fails or returns no results, we look for cached
+results in the global endpoint cache. If no results are found, the VCL will fail
+to load.
+
+An asynchronous DNS resolver thread will continue to resolve the domain name at
+regular intervals. If these resolutions fail, the event will be logged, but
+otherwise nothing bad will happen. When the resolver thread makes a successful
+resolution, it will create a new set of backends, reusing currently active
+backends if possible. Each VCL gets one DNS resolver thread, and the resolver
+thread only runs while the VCL is warm.
+
+LOAD BALANCING
+--------------
+
+Traffic is balanced by picking a random backend from the backend list. Each
+backend fetch task will remember which backend was initially picked, and will
+pick the next backend in the list on retries, Round-Robin style.
+
+HOST HEADER
+-----------
+
+The buckets domain name is also used as the HTTP Host header for the backend
+fetch. This is set when Varnish executes the directors ``resolve()`` function,
+which happens after ``sub vcl_backend_fetch``.
+
+SIGNING
+-------
+
+An S3 director can optionally sign backend requests with the AWS S3 V4
+algorithm. To enable signing, you must call the ``.set_iam_role()`` and/or
+``.set_access_key()`` methods. See :ref:`Signing Notes`.
+
+$Event vmod_event
+
+$Object director(PRIV_VCL, STRING bucket, STRING region, STRING endpoint)
+
+When created in ``sub vcl_init``, this director resolves ``endpoint`` and
+creates a backend list. The DNS resolver thread periodically re-resolves
+``endpoint`` and keeps the backend list up to date. ``endpoint`` is also used as
+the Host header for backend fetches.
+
+By default, backends are created with port number 80. ``endpoint`` may specify a
+scheme or an explicit port number to use a different port. If both scheme and
+port number are defined, the explicit port number takes precedence. For example,
+setting the ``endpoint`` to "http://example.com:6081" will result in backends
+with port number 6081.
+
+If ``endpoint`` starts with ``https://`` or ends with ``:443``, the directors'
+backends will have TLS enabled. This corresponds to enabling TLS by declaring
+``.ssl = 1`` in a static ``backend`` block.
+
+Parameters:
+
+* ``bucket``: The name of the bucket.
+* ``region``: The name of the region.
+* ``endpoint``: The host name of your S3 endpoint.
+
+$Method BACKEND .backend()
+
+Returns a virtual backend object. Can be used to set either ``bereq.backend`` or
+``req.backend_hint``.
+
+$Method VOID .set_iam_role([STRING role])
+$Restrict vcl_init
+
+Set an IAM ``role`` for this director (bucket). The ``role`` parameter is
+optional. If you pass a ``role``, it is stored and used by the director.
+If you do not pass a ``role``, this method will attempt to lookup the IAM
+role attached to this EC2 instance. If the role lookup fails, the
+``vcl_init`` will fail.
+
+The director will use the ``role`` to fetch the access ``key`` and ``key_id``
+pair from the Amazon EC2 API for the role. Once the pair are successfully
+retrieved from the API, the director will sign all requests to this backend
+with the ``key`` and ``key_id``. The director keeps the pair up to date by
+refetching them before they expire.
+
+$Method VOID .set_access_key(STRING key, STRING key_id)
+
+Set the access ``key`` and ``key_id`` pair. Both fields are required. The
+director will sign all requests to this backend with the ``key`` and ``key_id``.
+Use this method if you wish to manage the access key yourself.  You can
+update the pair at any time with this method.
+
+$Method VOID .set_service(STRING service)
+$Restrict vcl_init
+
+Set the ``service`` name. The default is ``s3``.
+
+$Method VOID .set_provider(ENUM {aws, gcp} provider)
+$Restrict vcl_init
+
+Set the ``provider`` of the bucket this director is accessing. The supported
+values are currently ``aws`` (default) and ``gcp``. While AWS and GCP both
+support the S3 V4 signing, there are some differences. For example, they each
+use a different signing algorithm name. This setting allows the director to
+properly sign the backend request for the provider.
+
+$Method VOID .set_signed_headers(STRING regex)
+$Restrict vcl_init
+
+Set a regex for additional headers to sign. By default, the ``host`` and
+``^x-amz-`` headers are signed. Any headers matched by this regex will be
+signed in addition to the default headers. Note that the regex matching
+ignores case.
+
+
+$Object signer(PRIV_VCL)
+
+When created in ``sub vcl_init``, this signer allows you to sign backend
+requests (bereq), without creating an actual director.
+
+$Method VOID .set_access_key(STRING key, STRING key_id)
+
+Set the access ``key`` and ``key_id`` pair. Both fields are required. The
+``.sign()`` method will use this pair to sign a backend request. Use this
+method if you wish to manage the access key pair yourself.  You can update
+the pair at any time with this method.
+
+$Method VOID .set_iam_role([STRING role])
+$Restrict vcl_init
+
+Set an IAM ``role`` for this signer. The ``role`` parameter is optional.
+If you pass a ``role``, it is stored and used by the signer. If you do not
+pass a ``role``, this method will attempt to lookup the IAM role attached
+to this EC2 instance. If the role lookup fails, the ``vcl_init`` will fail.
+
+The signer will use the ``role`` to fetch the access ``key`` and ``key_id``
+pair from the Amazon EC2 API for the role. The ``.sign()`` method will use
+this pair to sign a backend request. The signer keeps the IAM key pair up
+to date by refetching them before they expire.
+
+$Method VOID .set_region(STRING region)
+$Restrict vcl_init
+
+Set the ``region`` name.
+
+$Method VOID .set_service(STRING service)
+$Restrict vcl_init
+
+Set the ``service`` name. The signer's default service is ``s3``.
+
+$Method VOID .set_provider(ENUM {aws, gcp} provider)
+$Restrict vcl_init
+
+Set the ``provider`` of the endpoint this signer is accessing. The supported
+values are currently ``aws`` (default) and ``gcp``. While AWS and GCP both
+support the S3 V4 signing, there are some differences. For example, they each
+use a different signing algorithm name. This setting allows the signer to
+properly sign the backend request for the specific provider.
+
+$Method VOID .set_signed_headers(STRING regex)
+$Restrict vcl_init
+
+Set a regex for additional headers to sign. By default, the ``host`` and
+``^x-amz-`` headers are signed. Any headers matched by this regex will be
+signed in addition to the default headers. Note that the regex matching
+ignores case.
+
+$Method BOOL .sign()
+$Restrict vcl_backend_fetch
+
+Sign the backend request (bereq) with the S3 V4 algorithm using the key and
+key_id pair. This method sets the appropriate ``x-amz-*`` headers and the
+``Authorization`` header. Before you call this method you must:
+
+* provide the key and key_id pair by calling ``.set_access_key()`` or by setting the IAM role with ``.set_iam_role()``.
+* set the region name by calling ``.set_region()``.
+* set the ``bereq.http.Host`` header for your specific backend.
+
+Signing Notes
+-------------
+It is valid to call ``.set_iam_role()`` and ``.set_access_key()`` from the
+same director or signer. For example, you can set a role (that is not yet
+active in IAM) and also set an access key pair. In this scenario, the access
+key pair will be used until the role key pair are retrieved from the IAM API.
+
+The director or signer can optionally sign the request body (for PUT and POST
+requests). However, you must call ``std.cache_req_body()`` from ``sub vcl_recv``
+so that the body has been fully read when the backend request is made.
+
+To sign requests to GCP, you must get an HMAC ``secret`` and ``access key``
+pair from GCP. The GCP ``secret`` is the equivalent of our ``key``. The GCP
+``access key`` is the equivalent of our ``key_id``. The GCP ``secret`` and
+``access key`` can be passed into ``.set_access_key()``. You must also call
+``.set_provider(gcp)``.
+
+AVAILABILITY
+============
+
+The ``s3`` VMOD is available in Varnish Enterprise version ``6.0.11r2`` and later.
+
+The request signing is available in Varnish Enterprise version ``6.0.13r7`` and later.

@@ -1,0 +1,273 @@
+$Module uri 3 "Uniform Resource Identifier (uri)"
+$License
+
+DESCRIPTION
+===========
+
+The ``uri`` vmod let you parse a ``URI`` into the five generic components: scheme,
+authority, path, query and fragment, as described by RFC3986.
+``vmod-uri`` makes no attempt to verify if the URI is using the scheme correctly,
+but rather it extracts the generic components, if present, of an URI.
+
+``parse`` is usually called before any other functions, but in case of no prior
+call, an implicit ``parse`` will take place with the default parameters before the
+function itself will run.
+
+EXAMPLES
+========
+
+Rewrite the location header from the backend
+--------------------------------------------
+
+::
+
+  vcl 4.1;
+
+  import uri;
+
+  sub vcl_backend_response {
+    if (beresp.status == 301 || beresp.status == 302) {
+      uri.parse(beresp.http.location);
+      uri.set_port();
+      set beresp.http.location = uri.as_string();
+      set beresp.status = beresp.status; // The reason field will be automatically set
+    }
+  }
+
+Follow redirects from the backend
+---------------------------------
+
+::
+
+  vcl 4.1;
+
+  import goto;
+  import uri;
+
+  sub vcl_backend_response {
+    call follow_redirects;
+  }
+
+  sub follow_redirects {
+    if (beresp.status == 301 || beresp.status == 302) {
+      uri.parse(beresp.http.location);
+      uri.write();
+      set bereq.backend = goto.dns_backend(uri.as_string(), ttl_rule = abide, ignore_update = onempty);
+      return(retry);
+    }
+  }
+
+API
+===
+
+$Function VOID parse(PRIV_TASK priv_task, [STRING input], BOOL norm = 0)
+
+Parse a ``URI`` and build the corresponding internal state,
+any information from the previous state is overwritten. The ``URI`` must
+be provided in the percent-encoded format. No mandatory components,
+meaning a ``URI`` lacking components is as valid as a full URI containing
+all components. The authority component must start with two forward
+slashes, and a path must start with a forward slash if an authority
+component is also present.
+
+If ``input`` is not present, as it is optional, ``parse`` will use the
+combined value of ``be/req.http.Host`` + ``be/req.url``. However, if ``input``
+is present, but happens to be ``NULL``, or empty, then all internal states
+will be initiated but left empty.
+
+If ``norm`` is true, the internal state is also rebuilt to reflect the
+safe normalization process of RFC3986 Section 6.
+
+The generic normalization process (safe):
+
+- Remove percent-encoding for unreserved characters.
+
+- Convert upper-case letters to lower-case in both the host and the scheme component.
+
+- Convert remaining lower-case percent-encoding to upper-case.
+
+- Employ remove_dot_segments algorithm to the path component, see RFC3986 Section 5.2.4.
+
+- Convert empty path to "/" when an authority component is present.
+
+- Removes default port for some commonly understood schemes: http (80),
+https (443), ftp (21), ssh (22).
+
+$Function VOID write(PRIV_TASK)
+$Restrict client backend
+
+Replace the combined value of ``be/req.http.Host`` + ``be/req.url`` with the
+currently loaded internal state. The ``scheme`` and ``userinfo`` component
+are currently ignored as they are not in use.
+
+$Function VOID reset(PRIV_TASK)
+
+Reset internal state of the VMOD back to its default.
+
+$Function STRING as_string(PRIV_TASK, STRING fmt = "%S%A%P%Q%F", BOOL decode = 0)
+
+
+Build and return a ``URI`` based on the current internal state. Use ``fmt``
+to decide how and what to return. The default is to return all
+components, as described by RFC3986 Section 5.3.
+
+If ``decode`` is true, then before returning an attempt will be made to
+remove percent encoding for any reserved characters.
+
+``fmt`` is a format string, valid percent-tokens are:
+
+- ``%%`` - outputs a single percent.
+
+- ``%S`` - outputs the ``scheme`` component of the internal state.
+
+- ``%A`` - outputs the ``autority`` component of the internal state.
+
+- ``%U`` - outputs the ``userinfo`` component of the internal state.
+
+- ``%H`` - outputs the ``host`` component of the internal state.
+
+- ``%p`` - outputs the ``port`` component of the internal state.
+
+- ``%P`` - outputs the ``path`` component of the internal state.
+
+- ``%Q`` - outputs the ``query`` component of the internal state.
+
+- ``%F`` - outputs the ``fragment`` component of the internal state.
+
+$Function STRING get_scheme(PRIV_TASK)
+
+Returns the ``scheme`` found in the currently loaded internal state,
+or ``NULL`` if there is none.
+
+$Function VOID set_scheme(PRIV_TASK, STRING new = "")
+
+Sets the ``scheme`` found in the currently loaded internal state.
+
+In case of no new string given (default), the previous string from the
+internal state is cleared.
+
+$Function STRING get_userinfo(PRIV_TASK, BOOL decode = 0)
+
+Returns the ``user information`` found in the currently loaded
+internal state, or ``NULL`` if there is none.
+
+If ``decode`` is true, then before returning an attempt will be made to
+remove percent encoding for any reserved characters.
+
+$Function VOID set_userinfo(PRIV_TASK, STRING new = "", BOOL encode = 0)
+
+Sets the ``user information`` found in the currently loaded internal state.
+
+In case of no new string given (default), the previous string from the
+internal state is cleared.
+
+If ``encode`` is true, then before returning an attempt will be made to
+add percent encoding for any reserved characters.
+
+$Function STRING get_host(PRIV_TASK, BOOL decode = 0)
+
+Returns the ``host`` found in the currently loaded internal state,
+or ``NULL`` if there is none.
+
+If ``decode`` is true, then before returning an attempt will be made to
+remove percent encoding for any reserved characters.
+
+$Function VOID set_host(PRIV_TASK, STRING new = "", BOOL encode = 0)
+
+Sets the ``host`` found in the currently loaded internal state.
+
+In case of no new string given (default), the previous string from the
+internal state is cleared.
+
+If ``encode`` is true, then before returning an attempt will be made to
+add percent encoding for any reserved characters.
+
+$Function STRING get_port(PRIV_TASK)
+
+Returns the ``port`` found in the currently loaded internal state,
+or ``NULL`` if there is none.
+
+$Function VOID set_port(PRIV_TASK, STRING new = "")
+
+Sets the ``port`` found in the currently loaded internal state.
+
+In case of no new string given (default), the previous string from the
+internal state is cleared.
+
+$Function STRING get_path(PRIV_TASK, BOOL decode = 0)
+
+Returns the ``path`` found in the currently loaded internal state,
+or ``NULL`` if there is none.
+
+If ``decode`` is true, then before returning an attempt will be made to
+remove percent encoding for any reserved characters.
+
+$Function VOID set_path(PRIV_TASK, STRING new = "", BOOL encode = 0)
+
+Sets the ``path`` found in the currently loaded internal state.
+
+In case of no new string given (default), the previous string from the
+internal state is cleared.
+
+If ``encode`` is true, then before returning an attempt will be made to
+add percent encoding for any reserved characters.
+
+$Function STRING get_query(PRIV_TASK, BOOL decode = 0)
+
+Returns the ``query`` found in the currently loaded internal state,
+or ``NULL`` if there is none.
+
+If ``decode`` is true, then before returning an attempt will be made to
+remove percent encoding for any reserved characters.
+
+$Function VOID set_query(PRIV_TASK, STRING new = "", BOOL encode = 0)
+
+Sets the ``query`` found in the currently loaded internal state.
+
+In case of no new string given (default), the previous string from the
+internal state is cleared.
+
+If ``encode`` is true, then before returning an attempt will be made to
+add percent encoding for any reserved characters.
+
+$Function STRING get_fragment(PRIV_TASK, BOOL decode = 0)
+
+Returns the ``fragment`` found in the currently loaded internal state,
+or ``NULL`` if there is none.
+
+If ``decode`` is true, then before returning an attempt will be made to
+remove percent encoding for any reserved characters.
+
+$Function VOID set_fragment(PRIV_TASK, STRING new = "", BOOL encode = 0)
+
+Sets the ``fragment`` found in the currently loaded internal state.
+
+In case of no new string given (default), the previous string from the
+internal state is cleared.
+
+If ``encode`` is true, then before returning an attempt will be made to
+add percent encoding for any reserved characters.
+
+$Function STRING decode(STRANDS in, BOOL strict = 1)
+
+Perform URL decoding of the provided string, limited to only decoding
+the characters that are allowed in a URI as per RFC3986 ("unreserved
+characters").
+
+Note that compared to the other functions provided in this VMOD, this
+function provides a stand-alone one-shot operation, and does not alter
+or refer to any internal state.
+
+With `strict=true` (default), decoding failures will also fail the VCL
+transaction. For `strict=false`, the operation will never fail, and
+will attempt to preserve existing unparseable inputs.
+
+Example::
+
+	set req.url = uri.decode(req.url);
+
+
+AVAILABILITY
+============
+
+The ``uri`` VMOD is available in Varnish Enterprise version ``6.0.8r2`` and later.

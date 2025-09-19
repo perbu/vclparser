@@ -1,0 +1,203 @@
+#-
+# Copyright (c) 2018 Varnish Software AS
+#
+# Author: Guillaume Quintard <guillaume.quintard@gmail.com>
+#
+$Module synthbackend 3 "Synthetic backends (synthbackend)"
+$License
+
+DESCRIPTION
+===========
+
+The ``synthbackend`` vmod allows the insertion of synthetic object
+at the beginning of the fetch pipeline, allowing you to store and manipulate
+them exactly like backend-generated response.
+
+Varnish can produce synthetic responses out-of-the-box, but these objects aren't
+inserted into the cache, and they aren't processed the same way (no ESI, gzip
+processing for example).
+
+EXAMPLES
+========
+
+Pushing a file in cache
+-----------------------
+
+::
+
+  vcl 4.0;
+
+  import synthbackend;
+
+  backend s1 {
+    .host = "1.1.1.1";
+  }
+
+  sub vcl_recv {
+    # because varnish will reset the method to "GET", we have to store the
+    # POST info in a header
+    unset req.http.post-method;
+    if (req.method == "POST") {
+      set req.http.post-method = "yes";
+      return (hash);
+    }
+  }
+
+  sub vcl_backend_fetch {
+    # if the request was a POST, reestablish the method, and set the
+    # "mirror" backend that will send back the request body as response body
+    if (bereq.http.post-method == "yes") {
+      set bereq.method = "POST";
+      set bereq.backend = synthbackend.mirror();
+      return (fetch);
+    }
+  }
+
+curl can then be used to push content:
+
+::
+
+  curl 'http://example.com/path/to/file.html' --data-binary @file.html
+
+Triggering a multi-URLs pre-warm
+--------------------------------
+
+It's also possible to tell Varnish to fetch a list of URLs to prime the cache.
+
+In this example, ``vmod_xbody`` is used to transform the provided list of URLs:
+
+::
+
+  /path/to/page/1
+  /path/to/page/2
+  /path/to/page/3
+  ...
+
+into
+
+::
+
+  {{ > /path/to/page/1 }}
+  {{ > /path/to/page/2 }}
+  {{ > /path/to/page/3 }}
+  ...
+
+which is ``vmod_edgestash`` syntax to trigger subrequests.
+
+In this example, we push the URL file with the ``LOAD`` method:
+
+::
+
+  curl 'http://example.com/' --data-binary @url.list -X LOAD
+
+VCL:
+
+::
+
+  import edgestash;
+  import synthbackend;
+  import xbody;
+
+  backend s1 {
+    .host = "1.1.1.1";
+  }
+
+  sub vcl_recv {
+    unset req.http.warm-state;
+    # set the warm-state header: "top" for the initial request, "sub" for
+    # subrequests to be cached
+    if (req_top.method == "LOAD") {
+      if (req.esi_level == 0) {
+        set req.http.warm-state = "top";
+        # we don't want the request cached, only its subrequests
+        return(pass);
+      } else {
+        set req.http.warm-state = "sub";
+        # convert the request into a HEAD one to avoid sending
+        # the body back
+        set req.method = "HEAD";
+        return(hash);
+      }
+    }
+  }
+
+  sub vcl_backend_fetch {
+    # only use mirror for the top request
+    if (bereq.http.warm-state == "top") {
+      set bereq.backend = synthbackend.mirror();
+    } else {
+      set bereq.backend = s1;
+    }
+  }
+
+  sub vcl_backend_response {
+    # prepare the list for edgestash processing
+    if (bereq.http.warm-state == "top") {
+      set bereq.backend = synthbackend.mirror();
+      xbody.regsub("(.*)\n?", "{{ > \1 }}");
+      edgestash.parse_response();
+    }
+  }
+
+  sub vcl_deliver {
+    # trigger the edgestash processing
+    if (req.http.warm-state == "top") {
+      edgestash.execute();
+      return (deliver);
+    }
+  }
+
+Caching string data
+-------------------
+
+This example uses ``vmod_cookieplus`` to retrieve the ``user`` cookie and parse
+its value into the string that feeds ``synthbackend.from_string()``.
+
+::
+
+  vcl 4.0;
+
+  import cookieplus;
+  import synthbackend;
+
+  backend default {
+    .host = "1.1.1.1";
+  }
+
+  sub vcl_hash {
+    #As the returned object depends on the "user" cookie, add it to the hash key
+    hash_data(cookieplus.get("user"));
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = synthbackend.from_string("Welcome " + cookieplus.get("user"));
+  }
+
+API
+===
+
+$Function BACKEND from_blob(BLOB)
+$Restrict vcl_backend_fetch
+
+Take a BLOB as argument and return a backend that will respond
+``200 OK`` with the argument as body. This function must be called from ``sub vcl_backend_fetch``.*
+
+$Function BACKEND from_string(STRING)
+$Restrict vcl_backend_fetch
+
+Take a STRING as argument and return a backend that will respond
+``200 OK`` with the argument as body. This function must be called from ``sub vcl_backend_fetch``.
+
+$Function BACKEND mirror()
+
+Reflects the request body as response body. If ``bereq.http.content-encoding``
+exists, it'll be copied to ``beresp.http.content-encoding``.
+
+$Function BACKEND null()
+
+Returns a "null" backend, akin to an empty director or a sick backend.
+
+AVAILABILITY
+============
+
+The ``synthbackend`` VMOD is available in Varnish Enterprise version ``6.0.1r3`` and later.

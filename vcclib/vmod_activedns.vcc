@@ -1,0 +1,650 @@
+$Module activedns 3 "ActiveDNS"
+$ABI strict
+$License
+
+DESCRIPTION
+===========
+
+The ``activedns`` vmod lets you configure the ActiveDNS service to provide compatible VMODs
+with DNS updates. The ActiveDNS service works in the background, prompting
+directors to create or remove backends when DNS results change.
+
+DNS Group Configuration
+-----------------------
+
+In order to start creating dynamic backends, you must first create a DNS group.
+A DNS group is ActiveDNS's way of keeping track of a DNS configuration that when
+resolved, results in a set of backends. Each DNS group is given a unique tag,
+and ActiveDNS compatible directors can subscribe to the tag in order to receive
+asynchronous DNS updates.
+
+A DNS group can be (re)configured at any time after creation, and from any VCL
+subroutine. A configuration consists of the following attributes:
+
+* Hostname: Name to resolve.
+* Port: Port to create backends with.
+* TTL: Interval of DNS resolutions.
+* Rules: Control aspects of DNS resolution and updates.
+* Templates: Blueprint for creating dynamic backends.
+
+The hostname is the only attribute you are required to set before DNS resolution
+and updates can start. All other attributes have sensible default values that
+will be used if the attribute is not explicitly set.
+
+Minimal configuration::
+
+::
+
+  sub vcl_init {
+    new group1 = activedns.dns_group("example.com");
+  }
+
+This configuration will resolve "example.com" at an interval determined by the
+DNS results, and generate backends with port number 80 (or SRV record port).
+
+DNS Group Updates
+-----------------
+
+When a DNS group has a hostname and at least one subscriber, the group is
+considered "active", and will be resolved by ActiveDNS. A DNS group that has
+been active can also become "inactive", if it looses all of its subscribers, or
+if the VCL goes cold.
+
+A DNS group will normally be resolved and updated at an interval determined by
+the Time To Live(TTL) attribute obtained from DNS records. This interval can be
+overridden by changing the TTL rule of the DNS group, and defining a custom TTL.
+Regardless of which rule you choose, if the TTL returned from DNS is 0, the
+custom TTL will be used instead.
+
+ActiveDNS may decide to skip an update to the subscribers of a DNS group after
+resolution if nothing changed since last update, or if the update rule dictates
+that the update should be skipped.
+
+If you have made changes to a DNS group or the DNS environment, and don't want
+to wait for the next scheduled update, you can initiate a new update with
+``dns_group.refresh()``. ActiveDNS has several layers of caching and
+revalidation, so a refresh can be configured to skip some or all of these
+layers. For example, setting a new hostname for a DNS group just requires a
+``dns_group.refresh(host)`` to take effect, while a change in DNS records may
+require a ``dns_group.refresh(cache)`` to avoid getting cached results from a
+previous resolution that have not expired yet.
+
+Global Resources
+----------------
+
+ActiveDNS has a set of worker threads that perform DNS resolutions and give
+updates to subscribers. These workers are shared between all VCLs, each pulling
+from a shared queue of DNS groups to be resolved. This limits the overhead on
+deployments with large numbers of VCLs.
+
+The worker threads have access to a shared DNS cache, where the results of
+successful DNS resolutions are cached for the duration of their TTLs. This can
+significantly reduce the number outbound DNS requests, and because the cache is
+shared between VCLs, dynamic backends can be regenerated very fast during a VCL
+reload.
+
+The lifetime of these global resources, and ActiveDNS itself, is limited to the
+combined lifetime of loaded VCLs that use ActiveDNS. In other words, ActiveDNS
+is initialized on demand when the first VCL wants to use it, and is torn down
+when there are no more ActiveDNS-using VCLs loaded.
+
+EXAMPLES
+========
+
+Backend and probe templates:
+
+::
+
+  backend b1 {
+    .host = "0.0.0.0";
+    .host_header = "example";
+  }
+
+  probe p1 {
+    .url = "/";
+  }
+
+  sub vcl_init {
+    new group = activedns.dns_group("example.com");
+    group.set_backend_template(b1);
+    group.set_probe_template(p1);
+  }
+
+This configuration generates backends with the ``.host_header`` backend
+attribute set to "example", and a probe making health checks to "/".
+
+SSL/TLS backend configuration:
+
+::
+
+  backend b1 {
+    .host = "0.0.0.0";
+    .ssl = 1;
+  }
+
+  sub vcl_init {
+    new group = activedns.dns_group("example.com:443");
+    group.set_backend_template(b1);
+  }
+
+This configuration generates ssl-enabled backends.
+
+SRV records:
+
+::
+
+  sub vcl_init {
+    new group = activedns.dns_group("example.com:1234");
+    group.set_mode_rule(srv);
+    group.set_port_rule(force);
+  }
+
+This configuration resolves only SRV records, but instead of using the port
+provided by each SRV record, we override the port to 1234.
+
+Host backend:
+
+::
+
+  sub vcl_init {
+    new group = activedns.dns_group("example.com");
+    group.set_mode_rule(host);
+  }
+
+This configuration generates a single backend. The backend may have both an IPv4
+address and an IPv6 address.
+
+Dynamic hostname:
+
+::
+
+  acl trusted { "127.0.0.1"; }
+
+  sub vcl_init {
+    new group = activedns.dns_group("example.com");
+  }
+
+  sub vcl_recv {
+    if (req.http.New-Domain && client.ip ~ trusted) {
+      group.set_host(req.http.New-Domain);
+      group.refresh();
+      return (synth(200));
+    }
+  }
+
+This configuration will initially create backends from the results of
+"example.com". When a request containing the ``New-Domain`` header comes from
+localhost, the dns_group hostname will be set to the contents of the header. The
+dns_group is then refreshed, updating the subscribers according to the update
+rule.
+
+Local resolution:
+
+::
+
+  sub vcl_init {
+    new group = activedns.dns_group("example.com");
+    group.set_nsswitch_rule(files_only);
+  }
+
+This configuration makes ActiveDNS ignore the contents of the ``hosts:`` field
+defined in /etc/nsswitch.conf, opting to only resolve hostnames from /etc/hosts.
+
+API
+===
+
+$Event vmod_event
+
+$Object dns_group([STRING host])
+
+Create a new DNS group. This object's methods can be called from any VCL
+subroutine. The ActiveDNS service will start resolving this group once it has a
+hostname and at least one subscriber. The hostname can be set by providing the
+optional ``host`` argument or by calling ``.set_host()``.
+
+$Method VOID .set_host(STRING host)
+
+Set the hostname to be resolved. This can be a single component domain, a
+(sub)domain name, or even a url. A group candidate port number can be inferred
+from ``host``, either from the scheme of the url or an explicit port number. See
+examples below.
+
+::
+
+  group1.set_host("example.com"); # host: example.com
+  group2.set_host("http//example.com"); # host: example.com, port:80
+  group3.set_host("https://example.com/path"); # host: example.com, port: 443
+  group4.set_host("example.com:1234"); # host: example.com, port: 1234
+  group5.set_host("example"); # host: example
+  group6.set_host("subdomain.example.com"); host: subdomain.example.com
+
+$Method VOID .set_port(STRING port)
+
+Set the group candidate port number. Default is port 80. Must be non-zero.
+
+::
+
+  group1.set_port("443");
+
+$Method VOID .set_ttl(DURATION ttl)
+
+Set the group candidate TTL. Default is 10 seconds. Must be greater than or
+equal to 1 second.
+
+::
+
+  group1.set_ttl(5s);
+
+$Method VOID .set_ipv_rule(ENUM {auto, ipv4, ipv6, all} ipv_rule)
+
+Set the IP version rule. Default is ``auto`` where both IPv4 and IPv6 addresses
+are allowed, but only one address type is used. The cache parameter ``prefer_ipv6``
+determines which address type is resolved first, and which is fallback in case no
+records of the first type exists. Influences order of DNS resolution and determines
+which IP address types are to be used.
+
+::
+
+  group1.set_ipv_rule(ipv6);
+
+$Method VOID .set_ttl_rule(ENUM {force, abide, morethan, lessthan} ttl_rule)
+
+Set the TTL rule. Default is ``abide``. Determines wether the group update
+interval shall be the group candidate TTL or the DNS candidate TTL.
+Can use the larger or smaller TTL of group and DNS candidate TTLs.
+
+::
+
+  group1.set_ttl_rule(force);
+
+$Method VOID .set_port_rule(ENUM {abide, force} port_rule)
+
+Set the port rule. Default is ``abide``. Determines wether the port used for
+backend creation shall be the group candidate port or the DNS candidate port. If
+no DNS candidate port exists, e.g. no SRV records are resolved, the group
+candidate port is always used. If the DNS candidate port is zero, the group
+candidate port is used.
+
+::
+
+  group1.set_port_rule(force);
+
+$Method VOID .set_mode_rule(ENUM {auto, host, dns, srv} mode_rule)
+
+Set the resolution mode rule. Default is ``auto``. Determines what types of DNS
+records are resolved and how these records constitute a set of backends. All
+resolution modes respect the IP version rule.
+
+Modes:
+
+  * ``auto``: Resolve A, AAAA, and SRV records, and pick one of the other modes
+    based on the results. If any SRV records are found, ``srv`` mode is always
+    chosen. If multiple A and/or multiple AAAA records are found, ``dns`` mode
+    is chosen. If a single A and/or a single AAAA record is found, ``host`` mode
+    is chosen. If the IP version rule is set to ``all``, ``host`` mode is never
+    chosen in favor of ``dns`` mode. ``auto`` mode will dynamically switch
+    between modes as DNS changes.
+
+  * ``host``: A single backend is created from the first A and/or the first AAAA
+    record. The backend can have both an IPv4 address and an IPv6 address.
+
+  * ``dns``: Backends are created from the set of A records, the set of AAAA
+    records, or the combined set of A and AAAA records, depending on
+    ``ipv_rule``.
+
+  * ``srv``: Backends are created from the set of SRV records. Each SRV record
+    results in one backend, which can have both an IPv4 address and an IPV6
+    address.
+
+Some resolution modes can produce backends with both an IPv4 address and an IPv6
+address. When Varnish connects to such backends, the preferred address type will
+be attempted first, with a fall-back on the second address type.
+
+::
+
+  group1.set_mode_rule(srv);
+
+$Method VOID .set_update_rule(ENUM {always, ignore_empty, ignore_error} update_rule)
+
+Set the update rule. Default is ``ignore_error``. Determines wether or not to
+perform a subscriber update after DNS resolution.
+
+Rules:
+
+  * ``always``: Subscriber updates are always performed.
+
+  * ``ignore_empty``: Subscriber updates are not performed if the set of
+    backends is empty for any reason, including NXDOMAIN and NODATA.
+
+  * ``ignore_error``: Subscriber updates are not performed if the the DNS query
+    failed. Does not perform an update on DNS error responses like SERVFAIL, but
+    does perform an update on NXDOMAIN and NODATA.
+
+In the event of a manually triggered DNS group refresh where the DNS results are
+such that this rule mandates the update to be skipped, an update will be issued
+with the previous DNS results.
+
+::
+
+  group1.set_update_rule(ignore_empty);
+
+$Method VOID .set_nsswitch_rule(ENUM {auto, dns_first, dns_only, files_first, files_only} nsswitch_rule)
+
+Set the nsswitch rule. Default is ``auto``. Determines wether DNS updates for
+this DNS group are resolved from DNS, ``/etc/hosts``, or both.
+
+Rules:
+
+  * ``auto``: Choose a rule based on the contents of the ``hosts:`` field in
+    ``/etc/nsswitch.conf``.
+
+  * ``dns_first``: Attempt a DNS resolution first. If no results, go to file.
+    Equivalent of ``hosts: dns files`` in ``/etc/nsswitch.conf``.
+
+  * ``dns_only``: Attempt a DNS resolution only. Equivalent of ``hosts: dns`` in
+    ``/etc/nsswitch.conf``.
+
+  * ``files_first``: Attempt a file resolution first. If no results, go to DNS.
+    Equivalent of ``hosts: files dns`` in ``/etc/nsswitch.conf``.
+
+  * ``files_only``: Attempt a file resolution only. Equivalent of
+    ``hosts: files`` in ``/etc/nsswitch.conf``.
+
+For rules where both sources are accepted, one will act as a fallback for the other.
+ActiveDNS will not produce a combination of results from files and DNS.
+
+::
+
+  group1.set_nsswitch_rule(dns_only);
+
+$Method VOID .set_hash_rule(ENUM {socket, service} hash_rule)
+
+Set the hash rule. Default is ``socket``. Determines which attributes of the
+resolution to base the resolutions identity hash on.
+
+Rules:
+
+  * ``socket``: Generate the hash based on the IPv4 and/or IPv6 socket address
+    (IP + port) of each entry.
+
+  * ``service``: Generate the hash based on the resolved domain name. This only
+    takes effect when resolving a single IPv4 and/or IPv6 address, for example
+    when resolving domains from SRV records.
+
+This rule can be used to make the hash of entries described by SRV records
+consistent, even when the socket address changes. Useful in Kubernetes-like
+environments with persisted caches, as nodes can disappear and come back with
+a different socket address.
+
+::
+
+  group1.set_hash_rule(service);
+
+$Method VOID .set_backend_template(BACKEND backend)
+
+Set a backend template for backend creation. The backend must be a plain VCL
+backend. After setting a backend template, each new backend created will inherit
+this backend template, with the exception of the fields ``.host``, ``.port``,
+``.path``, and ``.probe``.
+
+VCL requires either the ``.host`` or ``.path`` field to be set. This can be set
+to any value, as it is ignored by ActiveDNS.
+
+::
+
+  backend example_backend {
+    .host = "0.0.0.0";
+    .connect_timeout = 10s;
+    .ssl = 1;
+    .certificate = "example";
+  }
+
+  sub vcl_init {
+    new group1 = activedns.dns_group("example.com");
+    group1.set_backend_template(example_backend);
+  }
+
+$Method VOID .set_probe_template(PROBE probe)
+
+Set a probe template to be used as a template for backend creation. After
+setting a probe template, each new backend created will get a new probe based on
+this probe template.
+
+::
+
+  probe example_probe {
+    .url = "/path";
+    .interval = 5s;
+  }
+
+  sub vcl_init {
+    new group1 = activedns.dns_group("example.com");
+    group1.set_probe_template(example_probe);
+  }
+
+$Method VOID .refresh(ENUM {host, cache, info} layer = host, BOOL wait = 0)
+
+Initiate a subscriber update, and conditionally wait for ActiveDNS to complete
+the update. A refresh can bypass several caching/revalidation layers, and a
+refresh on a certain layer, will also refresh all the layers above it. For
+example, a refresh on the ``info`` layer will also refresh the ``host`` and
+``cache`` layer.
+
+Layers:
+
+  * ``host``: Refresh the host layer. This will provide updated results if the
+    configured host and/or port has changed, but may hit internally cached
+    results for that domain.
+
+  * ``cache``: Refresh the DNS cache layer. This will skip the lookup in the
+    internal DNS cache, and thus force a new external DNS query. Any existing
+    backends that match one of the resulting DNS records will be revalidated and
+    continue to exist in their current configuration.
+
+  * ``info``: Refresh the info layer. This will actively remove all current
+    backends and replace them with brand new ones based on DNS results. This is
+    mostly useful for changes to backend/probe templates.
+
+Multiple concurrent refresh calls will only trigger a single refresh. The cost
+of performing a refresh is going to depend on refresh layer, with the ``host``
+layer being fairly cheap since it hits the internal DNS cache. A refresh
+on the ``info`` layer is comparatively expensive, as it has to reach out to DNS
+and regenerate backends.
+
+ActiveDNS can wait for the subscriber update to complete before returning. This
+is off by default. Setting this to true will make the calling request wait, while
+other requests continue to use the cached DNS results.
+
+::
+
+  group1.refresh(cache, wait = true);
+
+$Method STRING .get_tag()
+
+Retrieve the string uniquely representing this DNS group. Other VMODs can use
+this string to subscribe to the tag and receive updates.
+
+::
+
+  new group1 = activedns.dns_group();
+  new mon1 = activedns.monitor();
+  mon1.subscribe(group1.get_tag());
+
+$Function VOID set_default_port(STRING port)
+
+Set the default port. Every DNS group created in this VCL from this point
+forward will inherit this attribute.
+
+::
+
+  activedns.set_default_port("443");
+
+$Function VOID set_default_ttl(DURATION ttl)
+
+Set the default TTL. Every DNS group created in this VCL from this point forward
+will inherit this attribute.
+
+::
+
+  activedns.set_default_ttl(5s);
+
+$Function VOID set_default_ipv_rule(ENUM {auto, ipv4, ipv6, all} ipv_rule)
+
+Set the default IP version rule. Every DNS group created in this VCL from this
+point forward will inherit this attribute.
+
+::
+
+  activedns.set_default_ipv_rule(ipv6);
+
+$Function VOID set_default_ttl_rule(ENUM {force, abide, morethan, lessthan} ttl_rule)
+
+Set the default TTL rule. Every DNS group created in this VCL from this point
+forward will inherit this attribute.
+
+::
+
+  activedns.set_default_ttl_rule(force);
+
+$Function VOID set_default_port_rule(ENUM {abide, force} port_rule)
+
+Set the default port rule. Every DNS group created in this VCL from this point
+forward will inherit this attribute.
+
+::
+
+  activedns.set_default_port_rule(force);
+
+$Function VOID set_default_mode_rule(ENUM {auto, host, dns, srv} mode_rule)
+
+Set the default mode rule. Every DNS group created in this VCL from this point
+forward will inherit this attribute.
+
+::
+
+  activedns.set_default_mode_rule(srv);
+
+$Function VOID set_default_update_rule(ENUM {always, ignore_empty, ignore_error} update_rule)
+
+Set the default update rule. Every DNS group created in this VCL from this point
+forward will inherit this attribute.
+
+::
+
+  activedns.set_default_update_rule(ignore_empty);
+
+$Function VOID set_default_nsswitch_rule(ENUM {auto, dns_first, dns_only, files_first, files_only} nsswitch_rule)
+
+Set the default nsswitch rule. Every DNS group created in this VCL from this
+point forward will inherit this attribute.
+
+::
+
+  activedns.set_default_nsswitch_rule(dns_only);
+
+$Function VOID set_default_hash_rule(ENUM {socket, service} hash_rule)
+
+Set the default hash rule. Every DNS group created in this VCL from this point
+forward will inherit this attribute.
+
+::
+
+  activedns.set_default_hash_rule(service);
+
+$Function VOID set_default_backend_template(BACKEND backend)
+
+Set the default backend template. Every DNS group created in this VCL from this
+point forward will inherit this attribute.
+
+::
+
+  backend example_backend {
+    .host = "0.0.0.0";
+    .connect_timeout = 10s;
+    .ssl = 1;
+    .certificate = "example";
+  }
+
+  sub vcl_init {
+    activedns.set_default_backend_template(example_backend);
+  }
+
+$Function VOID set_default_probe_template(PROBE probe)
+
+Set the default probe template. Every DNS group created in this VCL from this
+point forward will inherit this attribute.
+
+::
+
+  probe example_probe {
+    .url = "/path";
+    .interval = 5s;
+  }
+
+  sub vcl_init {
+    activedns.set_default_probe_template(example_probe);
+  }
+
+$Object monitor()
+
+Create a new monitor. A monitor can subscribe to a DNS group and keep track of
+information related to the DNS group. It is not necessary to create monitor for
+a DNS group, rather this is meant to serve as an optional information endpoint
+for testing and logging.
+
+$Method VOID .subscribe(STRING tag)
+
+Subscribe to a DNS group, and cache the info received from subscriber updates.
+Each new update will clear the cached info from the previous update.
+
+$Method VOID .unsubscribe()
+
+Unsubscribe from a DNS group. This monitor will now stop receiving updates from
+the DNS group it was previously subscribed to.
+
+$Method STRING .get_info(ENUM {new, present, updated, removed} state, ENUM {string, hash} format = string)
+
+Generate a list of entries from the previous resolution, where each item in the
+list describes the socket address(es), priority, and weight of a backend.
+
+The ``state`` argument determines which info entries will be made part of the
+list. The following ``states`` can be specified:
+- ``new``: New info not seen in the previous update
+- ``present``: Info seen in the previous update that has not changed
+- ``updated``: Info seen in the previous update that has changed
+- ``removed``: Info seen in the previous update that has been removed
+
+The ``format`` argument determines the output format of the info list:
+- ``string``: sa[4,6]:IP:PORT-[sa6:IP:PORT-]pri:PRIORITY-wgt:WEIGHT, ...
+- ``hash``: HASH, ...
+
+::
+
+  sa4:127.0.0.1:1234-sa6:::1:1234-pri:1-wgt:1, sa4:127.0.0.2:4567-pri:1-wgt:1
+
+$Method STRING .get_new_info()
+
+Deprecated, use ``.get_info(new)`` instead.
+
+$Method STRING .get_present_info()
+
+Deprecated, use ``.get_info(present)`` instead.
+
+$Method STRING .get_updated_info()
+
+Deprecated, use ``.get_info(updated)`` instead.
+
+$Method STRING .get_removed_info()
+
+Deprecated, use ``.get_info(removed)`` instead.
+
+$Method DURATION .get_ttl()
+
+Each update includes information about the time until next update. This will
+either be the group candidate TTL or the DNS candidate TTL, depending on which
+``ttl_rule`` is set.
+
+AVAILABILITY
+============
+
+The ``activedns`` VMOD is available in Varnish Enterprise version ``6.0.9r5`` and later.

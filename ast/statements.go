@@ -102,3 +102,13 @@ type CSourceStatement struct {
 
 func (cs *CSourceStatement) String() string { return "CSourceStatement" }
 func (cs *CSourceStatement) statementNode() {}
+
+// NewStatement represents a VMOD object instantiation statement
+type NewStatement struct {
+	BaseNode
+	Name        Expression // The variable name being assigned to
+	Constructor Expression // The VMOD constructor call expression
+}
+
+func (ns *NewStatement) String() string { return "NewStatement" }
+func (ns *NewStatement) statementNode() {}

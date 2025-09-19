@@ -1,0 +1,194 @@
+$Module brotli 3 "Brotli"
+$License
+
+DESCRIPTION
+===========
+
+The ``brotli`` vmod brings full Brotli compression support to Varnish.
+
+This includes validating Brotli response bodies, compressing bodies before inserting into cache, and on the fly delivery transcoding for clients who do not support Brotli. ``vmod_brotli`` can even transcode GZIP into Brotli and vice versa, either on insertion or on delivery.
+In the case where ESI is used and a Brotli body is returned, ``vmod_brotli`` will convert the body to GZIP for better performance since ESI is optimized for GZIP only.
+
+Brotli, developed by Google, is a lossless compressed data format that compresses data using a combination of the LZ77 algorithm and Huffman coding.
+This is similar to Varnish's native compression algorithm, GZIP.
+Brotli compression has shown to have a higher compression ratio compared to the GZIP family of compression algorithms with similar speeds.
+Brotli is growing in popularity since its inception with support by all major browsers.
+
+Once Brotli support is enabled via the API below, Brotli objects can be inserted into cache and delivered to clients.
+If your backend supports Brotli natively, ``init()`` or ``accept()`` can be used to instruct Varnish to accept Brotli objects.
+When calling ``init()`` a global context is created and will allow Brotli to be fetched on all requests.
+``accept()`` is for per request control on whether to fetch a Brotli object.
+When both ``accept()`` and ``init()`` are called at the same time, accept will override the global settings set up in ``init()`` with the settings from ``accept()``.
+
+``compress()`` and ``decompress()`` allow Varnish to perform Brotli operations on the server in ``sub vcl_backend_response`` if your backend does not natively support Brotli.
+
+To disable Brotli support completely, add ``-p http_brotli_support=off`` to the varnishd start command. Brotli support is default ``on``. When ``http_gzip_support`` is ``off`` ``http_brotli_support`` cannot be enabled.
+
+EXAMPLES
+========
+
+Add Brotli support
+------------------
+
+This is the recommended configuration. This adds Brotli support to Varnish and keeps GZIP support in place.
+The backend is responsible for the actual Brotli encoding. Clients who do not support Brotli will get a
+transcoded GZIP response.
+
+::
+
+  import brotli;
+
+  sub vcl_init {
+    brotli.init(BOTH, transcode = true);
+  }
+
+Compress response bodies with Brotli
+------------------------------------
+
+In the case that a backend doesn't support Brotli but you want to deliver Brotli to clients,
+you can store all compressible objects as Brotli in cache. Clients who do not support Brotli will get a
+transcoded GZIP response.
+
+::
+
+  import brotli;
+
+  sub vcl_init {
+    brotli.init(BOTH, transcode = true);
+  }
+
+  sub vcl_backend_response {
+    if (beresp.http.content-encoding ~ "gzip" ||
+        beresp.http.content-type ~ "text") {
+          brotli.compress();
+    }
+  }
+
+Allow Brotli objects per request
+--------------------------------
+
+Enable Brotli for certain content types. This does not allow for transcoding.
+Clients who do not support Brotli will get plaintext. The backend is responsible for
+Brotli compression.
+
+::
+
+  import brotli;
+
+  sub vcl_backend_fetch {
+    if (bereq.url ~ "\.(js|css|html)") {
+      brotli.accept(BR);
+    }
+  }
+
+Overwriting global settings
+---------------------------
+
+::
+
+  import brotli;
+
+  sub vcl_init {
+    brotli.init(BR, 0.75, 0.5);
+  }
+
+  sub vcl_backend_fetch {
+    brotli.accept(BOTH, 0.5, 0.75);
+  }
+
+Dual Object Support
+-------------------
+
+By default Varnish will only store one content encoding per object: either GZIP or Brotli.
+It is possible to store both encodings simultaneously, preventing the need for deliver transcoding.
+Note that this will use more storage in the cache.
+This can be done by setting the ``Vary`` response header to a copy of the ``Accept-Encoding`` header (``x-ae``).
+
+::
+
+	import brotli;
+	import headerplus;
+
+	sub vcl_init {
+		brotli.init(encoding = BOTH);
+	}
+
+	sub vcl_recv {
+		if (req.http.accept-encoding ~ "br") {
+			set req.http.x-ae = "br";
+		} else {
+			set req.http.x-ae = "gzip";
+		}
+	}
+
+	sub vcl_backend_fetch {
+		# If the backend supports brotli nativly, use this code
+		# to get the right version and cache it:
+		if (bereq.http.x-ae == "br") {
+			brotli.accept(BOTH);
+		} else {
+			brotli.accept(GZIP);
+		}
+	}
+
+	sub vcl_backend_response {
+		headerplus.init(beresp);
+		headerplus.attr_set("Vary", "x-ae");
+		headerplus.write();
+
+		# If the backend does not support Brotli, or if the
+		# support for it is unknown, use this code
+		if (bereq.http.x-ae == "br") {
+			# Adjust quality here, if needed
+			brotli.compress(quality=6);
+		} else {
+			brotli.decompress();
+		}
+	}
+
+	sub vcl_deliver {
+		headerplus.init(resp);
+		headerplus.attr_delete("Vary", "x-ae");
+		headerplus.write();
+	}
+
+API
+===
+
+$Function VOID init(ENUM {BR, GZIP, BOTH, NONE} encoding, [REAL br_q = 1],
+    [REAL gzip_q = 1], BYTES buf_size = 32768, ENUM {GENERIC, UTF8, FONT}
+    mode = GENERIC, INT quality = 6, INT window_size = 22, BOOL large_window = 0,
+    BOOL transcode = 0)
+$Restrict vcl_init
+
+Set up global Brotli settings. Can only be called in ``sub vcl_init``.
+
+Note:
+
+``br_q`` and ``gzip_q`` are numbers between 0 and 1 with no more than 3 digits after the decimal point.
+``quality`` is a number between 0 and 11 where 11 is a higher rate of compression. Higher compression rate requires more CPU resources.
+``window_size`` is a value between 10 and 24.
+
+$Function VOID accept(ENUM {BR, GZIP, BOTH, NONE} encoding, [REAL br_q = 1], [REAL gzip_q = 1])
+$Restrict vcl_backend_fetch
+
+Set up or change per request Brotli support. This will dictate the type of object (GZIP,
+Brotli or plain text) that should be in cache. Can only be called in ``sub vcl_backend_fetch``.
+
+$Function VOID compress([BYTES buf_size = 32768], [ENUM {GENERIC, UTF8, FONT}
+    mode = GENERIC], [INT quality = 6], [INT window_size = 22], [BOOL large_window = 0])
+$Restrict vcl_backend_response
+
+Use Brotli to compress the response body. Can only be called in ``sub vcl_backend_response``.
+
+Note: ``quality`` is a number between 0 and 11 where 11 is a higher rate of compression. Higher compression rate requires more CPU resources. The ``window_size`` parameter is a value between 10 and 24.
+
+$Function VOID decompress([BOOL large_window = 0])
+$Restrict vcl_backend_response
+
+Decompress a Brotli response body. Can only be called in ``sub vcl_backend_response``.
+
+AVAILABILITY
+============
+
+The ``brotli`` VMOD is available in Varnish Enterprise version ``6.0.6r10`` and later.

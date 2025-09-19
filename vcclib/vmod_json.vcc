@@ -1,0 +1,160 @@
+$Module json 3 "JSON parsing (json)"
+$License
+
+DESCRIPTION
+===========
+
+The ``json`` vmod allows for JSON parsing. It can parse JSON strings, request body JSON,
+and response body JSON.
+
+To use this vmod, a JSON context must first be created using one of the ``parse``
+functions. This context is then used by all subsequent ``vmod_json`` function calls. Creating
+a new context will clear any previously created context.
+
+In addition, this vmod can be used in conjunction with other vmods, such as ``vmod_jwt`` and ``vmod_edgestash``.
+
+EXAMPLES
+========
+
+Item at Array Index
+-------------------
+
+::
+
+  vcl 4.1;
+
+  import json;
+
+  sub vcl_deliver {
+    json.parse({"{
+      "baz": [
+        3.14159,
+        "pie",
+        true
+        ]
+      }"});
+
+    if (json.is_valid()) {
+      set resp.http.result = json.get("baz[1]");
+    }
+  }
+
+Request Body Parsing
+--------------------
+
+::
+
+  vcl 4.0;
+
+  import json;
+  import std;
+
+  sub vcl_recv
+  {
+    std.cache_req_body(100KB);
+    json.parse_req_body();
+
+    if (json.is_valid() && json.is_object() &&
+      json.get("authorization")) {
+      req.http.X-authorization = json.get("authorization");
+    } else {
+      return(synth(401));
+    }
+  }
+
+API
+===
+
+$Function VOID parse(PRIV_TASK, STRING json)
+
+Parse a JSON string and create a new JSON context. Any previous context is freed.
+
+$Function VOID parse_req_body(PRIV_TASK)
+$Restrict vcl_recv
+
+Parse a request body and create a new JSON context. Can only be used in ``sub vcl_recv``.
+``std.cache_req_body()`` must be called prior. Any previous context is freed.
+
+$Function VOID parse_resp_index(PRIV_TASK)
+$Restrict vcl_deliver
+
+Parse a response body and create a new JSON context. Must be used in conjunction with [``edgestash.index_json()``](https://docs.varnish-software.com/varnish-enterprise/vmods/edgestash/#index_json).
+Can only be used in ``sub vcl_deliver``. Any previous context is freed.
+
+$Function BOOL contains(PRIV_TASK, STRING element)
+
+Traverse from the document root with a given ``path``. For example,
+``myobject.value`` requires ``myobject`` to be in the root, and ``value`` to be a child.
+You can't search for arbitrary values without a full path.
+This function is faster to call than ``get`` and does not require workspace allocations.
+
+$Function STRING get(PRIV_TASK, STRING search, STRING error = 0, BOOL json_string = 0)
+
+Get the value for ``search`` in the current JSON context.
+
+Examples:
+
+* ``myobject.value`` requires ``myobject`` to be in the root, and ``value`` to be a child.
+* ``myarray[2]`` obtains the third entry in an array.
+
+$Function INT length(PRIV_TASK, [STRING element])
+
+Get the length of the JSON node described by ``element``, or the root JSON node
+if ``element`` is not specified. For objects, this function returns the number
+of keys. For arrays, it returns the number of elements. For everything else, 0.
+
+$Function BOOL is_valid(PRIV_TASK)
+
+Is this valid JSON?
+
+$Function BOOL is_error(PRIV_TASK)
+
+Is this invalid JSON?
+
+$Function BOOL is_object(PRIV_TASK, [STRING element])
+
+Check whether or not the JSON node described by ``element`` is an object. If
+``element`` is not specified, check the root JSON node.
+
+$Function BOOL is_array(PRIV_TASK, [STRING element])
+
+Check whether or not the JSON node described by ``element`` is an array. If
+``element`` is not specified, check the root JSON node.
+
+$Function BOOL is_string(PRIV_TASK, [STRING element])
+
+Check whether or not the JSON node described by ``element`` is a string. If
+``element`` is not specified, check the root JSON node.
+
+$Function BOOL is_number(PRIV_TASK, [STRING element])
+
+Check whether or not the JSON node described by ``element`` is a number. If
+``element`` is not specified, check the root JSON node.
+
+$Function BOOL is_true(PRIV_TASK, [STRING element])
+
+Check whether or not the JSON node described by ``element`` is a true value. If
+``element`` is not specified, check the root JSON node.
+
+$Function BOOL is_false(PRIV_TASK, [STRING element])
+
+Check whether or not the JSON node described by ``element`` is a false value. If
+``element`` is not specified, check the root JSON node.
+
+$Function BOOL is_null(PRIV_TASK, [STRING element])
+
+Check whether or not the JSON node described by ``element`` is a null value. If
+``element`` is not specified, check the root JSON node.
+
+$Function STRING stringify(STRING value, BOOL quoted = 1)
+
+Encode value into a JSON safe string
+
+$Function VOID reset(PRIV_TASK)
+
+Reset the internal state.
+
+AVAILABILITY
+============
+
+The ``json`` VMOD is available in Varnish Enterprise version ``6.0.6r6`` and later.

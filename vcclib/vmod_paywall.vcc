@@ -1,0 +1,18 @@
+# auto_docs = false
+$Module paywall 3 "Varnish Plus Paywall Module"
+$License
+
+$Function STRING clean_tuples(STRING, TIME)
+$Function BOOL id_exists(STRING, STRING)
+$Function INT tuple_count(STRING)
+$Function TIME tuple_expiry(STRING)
+$Function STRING add_tuple(STRING, STRING, TIME)
+$Function STRING make_tuples(STRING, TIME, STRING, STRING)
+$Function BOOL authorize(STRING, TIME, STRING)
+$Function BOOL denied(STRING, TIME, STRING)
+$Function TIME monthly(TIME, INT, INT, INT, BOOL)
+$Function TIME weekly(TIME, INT, INT, INT, BOOL)
+$Function TIME daily(TIME, INT, INT, BOOL)
+$Function BOOL re_match(STRING, STRING)
+$Function STRING regsub(STRING, STRING, STRING)
+$Function STRING regsuball(STRING, STRING, STRING)

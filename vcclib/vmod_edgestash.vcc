@@ -1,0 +1,391 @@
+$Module edgestash 3 "Edgestash"
+$License
+
+DESCRIPTION
+===========
+
+Edgestash is a realtime templating engine built inside of Varnish Enterprise.
+Edgestash allows for JSON data to be composed into a response using Mustache syntax,
+E.g.: ``{{variable}}``. Each response can be assigned its own JSON object for truly
+dynamic responses. JSON can either be fetched from a backend or generated via
+VCL and any number of JSONs can be assigned to a template.
+
+An Edgestash template is fetched and compiled into response optimized byte code
+and then stored into cache. This byte code is then executed on delivery,
+efficiently streaming the response to the client using a zero-parse
+and zero-copy algorithm. JSON is also stored into cache as a fast search index.
+
+Edgestash currently supports the full Mustache spec plus expressions and variables.
+
+To dynamically insert Edgestash tags into content, see [XBody](https://docs.varnish-software.com/varnish-enterprise/vmods/xbody/).
+
+This API applies to Varnish Enterprise 6.0 and higher.
+
+[Edgestash 4.1 API](https://docs.varnish-software.com/varnish-enterprise/vmods/edgestash-4/)
+
+EXAMPLES
+========
+
+VCL Example
+-----------
+
+Join a template with JSON:
+
+::
+
+  vcl 4.0;
+
+  import edgestash;
+
+  backend default
+  {
+    .host = "backend.example.com";
+    .port = "80";
+  }
+
+  sub vcl_backend_response
+  {
+    if (bereq.url ~ "\.json$") {
+      edgestash.index_json();
+    } else if (bereq.url ~ "/edgestash/.*\.txt$") {
+      edgestash.parse_response();
+    }
+  }
+
+  sub vcl_deliver
+  {
+    # Pair /edgestash/template.txt with /edgestash/template.json
+    if (req.url ~ "/edgestash/.*\.txt$" && edgestash.is_edgestash()) {
+      edgestash.add_json_url(regsub(req.url, "\.txt$", ".json"));
+      edgestash.execute();
+    }
+
+    if (edgestash.is_edgestash() || edgestash.is_json()) {
+      set resp.http.X-edgestash = edgestash.version();
+    }
+  }
+
+Edgestash Examples
+------------------
+
+Filter a list and produce JSON output:
+
+::
+
+  [
+  {{#.}}
+    "{{value}}"
+    {{^$last}},{{/$last}}
+  {{/}}
+  ]
+
+
+Print a list with formatting:
+
+::
+
+  {{#.}}
+  {{# $first}}
+    <!-- Print header here -->
+  {{/}}
+  {{#($pos % 2f) == 0f}}
+    <span class="even">
+  {{/}}
+  {{#($pos % 2f) != 0f}}
+    <span class="odd">
+  {{/}}
+    {{value}}
+      </span>
+    {{# $last}}
+      <!-- Print footer here -->
+    {{/}}
+  {{/}}
+  {{^.}}
+    No values found
+  {{/}}
+
+
+Detect no JSON:
+
+::
+
+  {{#$type}}
+  JSON detected
+  ...
+  {{/}}
+  {{^$type}}
+  No JSON detected
+  {{/}}
+
+Mixing Edgestash with another mustache template:
+
+::
+
+  Edgestash variable 1: {{var1}}
+
+  {{=${ }=}}
+
+  Untouched: {{var}}
+  Edgestash variable 2: ${var2}
+
+Edgestash Syntax
+================
+
+``{{variable}}``
+--------------
+
+Variable or expression. Substitutes in the JSON value of ``variable``.
+HTML is escaped, JSON is unescaped, E.g.:
+
+-  ``<``  turns into  ``&lt;``
+-  ``>``  turns into  ``&gt;``
+-  ``\"`` turns into  ``"``
+
+``{{ & variable}}``
+-----------------
+
+Unescaped variable. Substitutes in the raw JSON value of ``variable``.
+``{{{variable}}}`` syntax is NOT supported. Variable supports dotted object and array syntax.
+HTML is untouched, JSON is untouched. E.g.:
+
+-  ``<``  is left as  ``<``
+-  ``>``  is left as  ``>``
+-  ``\"`` is left as  ``\"``
+
+``{{ # section}} {{ / section}}``
+-------------------------------
+
+A section block. This can be either a variable or an expression.
+If the value of ``section`` is not falsy,
+the section is executed, otherwise it is skipped. If
+the value is an object, it is used as context for the
+section. If the value is a non-empty array, the section
+is repeated once for each element in the array and used
+as context (if the element is an object). If the value is
+a root object, all root JSON includes are iterated
+(E.g.: ``{{ # . }}``). Falsy values:
+
+-  ``[]``, ``false``, ``null``
+
+Note: Closing section can be left as ``{{/}}``.
+
+``{{ ^ section}} {{ / section}}``
+-------------------------------
+
+An inverted section block. If the value of ``section`` is
+falsy, the section is executed, otherwise it is skipped.
+
+Falsy values:
+-  ``[]``, ``false``, ``null``
+
+Note: Closing section can be left as ``{{/}}``.
+
+``{{ ! comment}}``
+----------------
+
+Comment, these are ignored and removed. May contain newlines.
+
+``{{ > /url}}``
+-------------
+
+Partial, these are includes. The partial is executed back
+through VCL with an esi_level + 1. If the partial is a
+template, the current JSON context is used (assuming
+no JSON was explicitly set for this template).
+
+If a URL contains a scheme and host, the host is passed as
+``req.http.Host`` when executing back through Varnish.
+
+E.g.:
+-  ``{{> http://example.com/site/templates/user.es}}``
+
+``{{=sd ed=}}``
+-------------
+
+Change the Edgestash command delimiter to the value of ``sd`` and ``ed``.
+Custom delimiter can not contain whitespace or the equal sign.
+
+Notes:
+
+* Preceding and trailing whitespace is allowed inside of all command syntax.
+  E.g.: ``{{ $ abc }}`` is equal to ``{{$abc}}``
+
+* If the variable is not found, the variable is substituted with an empty string, unless overridden.
+  If there is a section context, the variable is searched for in each parent until the root is hit.
+  If multiple JSON files are used, files are searched in added order until the variable is found.
+
+* JSON is strictly parsed in full accordance to the official spec (json.org).
+  Invalid JSON is equivalent to a falsy value with ``$type`` as ``null``.
+
+* If an Edgestash parsing error is encountered (unterminated variable, unterminated section, etc.),
+  the document is treated as plain text and templating will not happen.
+
+Variables and Expressions
+=========================
+
+``variable``
+----------
+
+String. A JSON variable. Variables support dotted object and array syntax. E.g.:
+
+* ``{{ variable }}`` - The ``variable`` value from the current JSON context.
+* ``{{ . }}`` - The current context.
+* ``{{ [0] }}`` - The first element of the current array context.
+* ``{{ name.begin }}`` - The ``begin`` value from the ``name`` object. If it doesn't exist, the value ``name.begin``.
+* ``{{ locations[2].country }}`` - The ``country`` value from the 3nd element (0 based index) of the ``locations`` array.
+
+``$first``
+--------
+
+Boolean. ``true`` if the current section context is the first element of an array,
+otherwise ``false``. If the current section context is not an array or does not exist,
+value defaults to ``true``.
+
+``$last``
+-------
+
+Boolean. ``true`` if the current section context is the last element of an array,
+otherwise ``false``. If the current section context is not an array or does not exist,
+value defaults to ``true``.
+
+``$type``
+-------
+
+String. The JSON type of the current context. Possible values: ``"object"``, ``"array"``, ``"string"``,
+``"number"``, ``"true"``, ``"false"``, ``"null"``. If there is no JSON context, the value is equivalent to ``null``.
+
+``$pos``
+------
+
+Number. If in an array context, the element position, 0 based. The first element has a value of ``0``
+and the last element element has a value of ``$size - 1``. If there is no JSON context, defaults to ``0``.
+
+``$size``
+-------
+
+Number. The size of the current context. Only valid for objects and arrays. All other types have a size of ``0``.
+
+``"string"``
+----------
+
+String. A string value to be used in an expression.
+
+``123.4f``
+--------
+
+Number. A number value to be used in an expression. ``d`` notation is also supported.
+All numbers are treated as 64bit Javascript doubles.
+
+``==`` ``!=``
+---------
+
+Boolean operator. Equality. Types must be equal for an ``==`` expression to be true.
+
+``&&`` ``||`` ``!``
+-------------
+
+Logical AND, OR, and NOT operators. Returns a boolean value.
+
+``>`` ``>=`` ``<`` ``<=``
+-----------------
+
+Relational operators. Do a numeric comparison in an expression.
+
+``+`` ``-`` ``*`` ``/``
+---------------
+
+Arithmetical operators. Common numerical calculations.
+
+``%``
+---
+
+Modulus operator. Returns the remainder after a division.
+
+``(`` ``)``
+-------
+
+Expression. Use parentheses to enforce logic order.
+
+Note: Preceding and trailing whitespace is required around expression operators.
+E.g.: ``{{#($pos % 2f) == 0f}}`` is correct. ``{{#($pos%2f)==0f}}`` is incorrect.
+
+
+API
+===
+
+$Event init_function
+
+$Function VOID parse_response()
+$Restrict vcl_backend_response
+
+Parse an Edgestash template into bytecode. Can only be used in ``sub vcl_backend_response``.
+
+$Function VOID index_json()
+$Restrict vcl_backend_response
+
+Parse a JSON response. Optional. It enables storage of a fast JSON search index.
+If not invoked, JSON will be parsed on delivery, resulting in slower Edgestash assembly.
+Can only be used in ``sub vcl_backend_response``.
+
+$Function VOID add_json_url(STRING json_url, STRING json_host = "", BOOL xbody = 0)
+$Restrict vcl_deliver
+
+Include a JSON URL for Edgestash templating. Can only be used in ``sub vcl_deliver``.
+JSON URL will execute back through VCL with one higher (+1) ``esi_level``.
+Multiple JSON fetches will happen in parallel.
+Use ``index_json()`` on this URL to enable storage of a fast JSON search index.
+If this URL is JSON generated from an Edgestash template, use ``parse_response()``.
+JSON will be searched and used in the order they are added, including ``add_json()``.
+
+$Function VOID add_json_url_csv(STRING json_urls, STRING prefix = "",
+    STRING delimiter = ",", STRING json_host = "", BOOL xbody = 0)
+$Restrict vcl_deliver
+
+Parse a comma separated list of URLs and call ``add_json_url()`` for each.
+JSONs can be iterated using the following Edgestash syntax:  ``{{ # . }}``
+
+$Function VOID add_json(STRING json_blob)
+$Restrict vcl_deliver
+
+Include a JSON string for Edgestash templating. Can only be used in ``sub vcl_deliver``.
+JSON will be searched and used in the order they are added, including ``add_json_url()``.
+
+$Function VOID execute(BOOL do_gzip = 1)
+$Restrict vcl_deliver
+
+Execute an Edgestash template. Only valid for responses which
+have been parsed with ``parse_response()``. Partial includes
+will execute back through VCL with one higher (+1) ``esi_level``.
+Can only be used in ``sub vcl_deliver``.
+
+$Function VOID set_delimiter(STRING start, STRING end, STRING quote_char = "")
+$Restrict vcl_backend_response
+
+Set the initial Edgestash command delimiters. Can only be used in ``sub vcl_backend_response``.
+
+$Function STRING get_sdelimiter(STRING quote_char = "")
+$Restrict backend
+
+Get the starting delimiter.
+
+$Function STRING get_edelimiter(STRING quote_char = "")
+$Restrict backend
+
+Get the ending delimiter.
+
+$Function BOOL is_edgestash()
+
+Checks to see if ``parse_response()`` was called on this object and was successful in generating bytecode.
+
+$Function BOOL is_json()
+
+Checks to see if ``index_json()`` was called on this object and was successful in generating an index.
+
+$Function STRING version()
+
+Get the Edgestash implementation version.
+
+AVAILABILITY
+============
+
+The ``edgestash`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

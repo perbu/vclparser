@@ -1,0 +1,156 @@
+$Module nodes 3 "Nodes"
+$ABI strict
+$License
+
+DESCRIPTION
+===========
+
+The ``nodes`` vmod lets you use configuration files to define
+backends in your VCL. Compatible vmods can subscribe to a ``nodes``
+configuration groups and get updates each time the file content changes.
+
+The file format used to define the backends is similar to the INI file
+format, it has the following syntax:
+
+::
+
+  # this is a comment
+
+  [Europe]
+  First = 1.2.3.4:9090
+  Second = 9.9.9.9:6081
+  Third = example.com
+
+  [US]
+  Alpha = http://[1::2]
+  Beta = 8.8.8.8
+
+Each entry corresponds to a backend name, followed by an '=' character
+and then the backend host definition which can be either an IPv4, IPv6,
+or a hostname resolving to at most one IPv4 and one IPv6 addresses.
+
+A port can optionally be specified by appending :PORT to the address.
+
+Backends that do not specify a port, and start with ``https`` or
+``http`` get their port automatically assigned to 443 or 80 respectively.
+
+If none of them is specified, the port used is the value that was set with
+``set_default_port`` function, which defaults to 80.
+
+Similarly, backends declared with ``https`` will get their ``.ssl`` attribute
+automatically set to 1.
+
+Comments start with the '#' character and are ignored similarly to blank lines.
+
+The file can optionally contain sections which are declared between '[' and ']'
+characters. The section name to which the backend belongs gets prepended to the 
+backend name with ``_`` as a separator. For the previous example, the backend 
+name of ``First`` will be ``Europe_First`` and ``Alpha`` will be ``US_Alpha``.
+When sections are used, every entry must belong to a section.
+
+It is possible to declare a director that only takes into account backends from
+one specific section by specifying the section name as a ``group`` argument to
+the ``config_group`` constructor.
+
+A failure to read or parse the configuration file will not fail the VCL loading,
+but the subscribed directors will not be notified about the file content change
+if the file was already loaded, or no backend will be added to the director if
+the file is corrupt since the beggining. Failures are logged to vsl and can be
+found using ``varnishlog -g raw -q "vxid == 0" -i Error``.
+
+Here is an example VCL showing how the vmod can be used with vmod udo as subscriber:
+
+::
+
+  vcl 4.1;
+
+  import nodes;
+  import udo;
+
+  backend default none;
+
+  sub vcl_init {
+    new conf = nodes.config_group("/path/to/nodes.conf");
+    new dir = udo.director(hash);
+    dir.subscribe(conf.get_tag());
+  }
+
+  sub vcl_backend_fetch {
+    set bereq.backend = dir.backend();
+  }
+
+API
+===
+
+$Event vmod_event
+
+$Object config_group(STRING path, [STRING group])
+
+``config_group`` is a vcl object that represents a configuration file.
+It is constructed by passing the path to the configuration file containing
+your backends declaration.
+
+An optional argument ``group`` can be specified in order to only take into
+account backend declarations under the section name specified as an argument.
+When no ``group`` argument is specified, all the backend declarations are taken
+into account.
+
+$Method STRING .get_tag()
+
+Used to retrieve the tag associated with the ``config_group``. It is used by
+vmods that wish to subscribe to this ``config_group`` and get notified about
+changes happening to the configuration file.
+
+$Function VOID set_default_backend_template(BACKEND backend)
+
+Sets a default backend template that is used by all ``config_groups`` created
+after this call. This backend will be used as a basis when creating a ``nodes``
+backend, and all its attributes except `host`, `port`, `probe`, and `path` will
+be inherited.
+
+::
+
+  backend template_backend {
+    .host = "0.0.0.0";
+    .connect_timeout = 10s;
+    .ssl = 1;
+    .certificate = "example";
+  }
+
+  sub vcl_init {
+    nodes.set_default_backend_template(template_backend);
+  }
+
+$Function VOID set_default_probe_template(PROBE probe)
+
+Sets a default probe template that is used by all ``config_groups`` created
+after this call. All backends crearted after this call will have this probe
+assigned to them:
+
+::
+
+  probe template_probe {
+    .url = "/path";
+    .interval = 5s;
+  }
+
+  sub vcl_init {
+    nodes.set_default_probe_template(template_probe);
+  }
+
+
+$Function VOID set_default_port(STRING port)
+Sets a default port that is used by all ``config_groups`` created
+after this call when no port is specified in the backend declaration.
+
+::
+
+  sub vcl_init {
+    nodes.set_default_port("80");
+  }
+
+
+AVAILABILITY
+============
+
+The ``nodes`` VMOD is available in Varnish Enterprise version ``6.0.14r6`` and later.

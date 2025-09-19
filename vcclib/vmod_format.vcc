@@ -1,0 +1,166 @@
+#
+# Copyright (c) 2020 Varnish Software AS
+# All rights reserved.
+#
+# Author: Steven Wojcik <swojcik@varnish-software.com>
+#
+
+$Module format 3 "Format"
+$License
+
+DESCRIPTION
+===========
+
+The ``format`` vmod brings formatted strings to VCL for easy string building.
+This can be used for templating, formatting, and removing the need for large,
+hard to read, and / or ugly string concatenation. This VMOD uses the ANSI C ``printf``
+format with ordered arguments. Additionally formatting can be specified
+with [Edgestash syntax](https://docs.varnish-software.com/varnish-enterprise/vmods/edgestash/#edgestash-syntax) and a JSON object.
+
+Format string options
+---------------------
+
+The format strings uses the ANSI C ``printf`` format. A format string has two parts.
+Plain unformatted characters and formatted arguments. Formatted arguments start
+with ``%`` and end with a specifier. Optionally flags, width, precision, and size can be added.
+
+The order is as follows:
+
+::
+
+  %[flags][width][precision][length]specifier
+
+There are four types of specifiers: integers, floating point numbers, characters, and strings.
+
+The following specifiers are supported:
+
+* Integer: ``d``, ``i``, ``o``, ``u``, ``x``, ``X``
+* Float: ``a``, ``A``, ``e``, ``E``, ``f``, ``F``, ``g``, ``G``
+* Character: ``c``
+* String: ``s``
+
+The following additional options are supported:
+
+* Flags: ``-``, ``+``, ``(space)``, ``#``, ``0``, ``'``
+* Width: ``(number)``, ``*``
+* Precision: ``.(number)``, ``.*``
+* Length: ``h``, ``hh``, ``l``, ``ll``, ``j``, ``z``, ``t``
+
+When using ``*`` or ``.*`` a width or precision must be added to the ``add`` function.
+
+EXAMPLES
+========
+
+Build a JSON object:
+
+::
+
+  sub vcl_deliver {
+    format.set({"{ "key":"%s","something":%d}"});
+    format.add_string(req.http.value);
+    format.add_int(resp.status);
+    set resp.http.json = format.get();
+  }
+
+Sign an authoritative header:
+
+::
+
+  sub vcl_recv {
+    format.set("%s\n%s\n%s\n");
+    format.add_string(req.method);
+    format.add_string(req.url);
+    format.add_string(req.http.Date);
+    set req.http.auth = crypto.hmac(sha256, "secret", format.get());
+  }
+
+Quickly build a string in one function:
+
+::
+
+  sub vcl_synth {
+    set resp.body = format.quick("ERROR: %s\nREASON: %s\n",
+    resp.status, resp.reason);
+    return (deliver);
+  }
+
+API
+===
+
+There are two ways to produce a formatted string.
+The first way is by building the formatted string by setting the format string with ``set()``,
+followed by adding ordered arguments with ``add_int``, ``add_float``, ``add_char``, and ``add_string``.
+Once all the arguments have been added, the formatted string can be produced with ``get()``.
+Arguments added out of order, or too few/many arguments will cause an error.
+Adding a width or precision in the ``add`` functions without a variable width or precision in the format string will result in an error.
+Missing the width or precision in the ``add`` functions when the argument expects a variable width will result in an error.
+
+The second way to produce a format string is with an inline function where the
+format and the arguments are in the same function. This is done with ``quick()`` and ``edgestash()``.
+
+$Function VOID set(PRIV_TASK task, STRING fmt)
+$Restrict client backend
+
+Set a ``printf`` like format to be able to format a string. Finish formatting by
+calling ``get()``. Arguments must be added with the ``add_*()`` functions.
+Arguments must be added in order.
+All ``printf`` functionality is supported except for ``%p``, ``%n`` and ``%m``.
+Additionally flags, width, precision, and length can be used.
+
+$Function VOID add_string(PRIV_TASK task, STRING value, [INT width], [INT precision], BOOL show_null = 1)
+$Restrict client backend
+
+Add a string argument with an optional width and precision.
+When ``value`` doesn't exist and ``show_null`` is ``true``, ``(null)`` will be added,
+otherwise an empty string is used.
+
+$Function VOID add_int(PRIV_TASK task, INT value, [INT width], [INT precision])
+$Restrict client backend
+
+Add an integer argument with an optional width and precision.
+
+$Function VOID add_float(PRIV_TASK task, REAL value, [INT width], [INT precision])
+$Restrict client backend
+
+Add a floating point argument with an optional width and precision.
+
+$Function VOID add_char(PRIV_TASK task, INT value, [INT width], [INT precision])
+$Restrict client backend
+
+Add a character argument with an optional width and precision.
+
+$Function STRING get(PRIV_TASK task)
+$Restrict client backend
+
+Return the formatted string.
+
+$Function VOID reset(PRIV_TASK task)
+$Restrict client backend
+
+Reset the state started with ``set()``
+
+$Function STRING quick(PRIV_TASK task, STRING fmt, STRING value1, [STRING value2],
+  [STRING value3],  [STRING value4],  [STRING value5],  [STRING value6],
+  [STRING value7],  [STRING value8],  [STRING value9],  [STRING value10],
+  [STRING value11], [STRING value12], [STRING value13], [STRING value14],
+  [STRING value15], [STRING value16], [STRING value17], [STRING value18],
+  [STRING value19], [STRING value20], [STRING value21], [STRING value22],
+  [STRING value23], [STRING value24], [STRING value25], [STRING value26],
+  [STRING value27], [STRING value28], [STRING value29], [STRING value30],
+  BOOL show_null = 1)
+$Restrict client backend
+
+This function is a quick way to return a formatted string without needing
+to call ``set()`` and ``get()``. Can only use string arguments.
+
+$Function STRING edgestash(PRIV_CALL call, STRING template, STRING json_string, [STRING sdelimiter], [STRING edelimiter], BOOL cache = 1)
+
+Get a formatted string from an Edgestash template and a json.
+The boolean ``cache`` indicates if the template should be cached.
+If there is already a template in cache, it will indicate if the cached template should be used.
+If ``false``, the template can be changed.
+
+AVAILABILITY
+============
+
+The ``format`` VMOD is available in Varnish Enterprise version ``6.0.7r1`` and later.

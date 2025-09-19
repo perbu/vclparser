@@ -1,0 +1,387 @@
+$Module kvstore 3 "Key value storage (kvstore)"
+$License
+
+DESCRIPTION
+===========
+
+The ``kvstore`` vmod allows for high performance key value storage with optional TTLs.
+
+This API applies to Varnish Enterprise 6.0 and higher.
+
+For the older ``kvstore`` API please refer to the [kvstore 4.x API](https://docs.varnish-software.com/varnish-enterprise/vmods/kvstore-4/).
+
+Reloading from file
+-------------------
+
+``init_file()`` and ``init_conf()`` can be used to regularly sync data
+from file into a ``kvstore``.  These functions can be safely used while threads
+are accessing the ``kvstore`` being initialized. When used,
+threads will not block and will have access
+to the previous instance of the ``kvstore`` while the new ``kvstore`` is being built
+from file. When ready, threads will be directed to the new ``kvstore`` and the
+previous instance will be safely cleaned up.
+
+Note that data from the previous instance will not carry over to the new
+instance.
+
+Memory and performance
+----------------------
+
+``kvstore`` has a memory overhead of 100 bytes per bucket and 100 bytes per
+key plus the actual key and value size. So for 1 million keys with a average 1KB
+key and value size stored in 100,000 buckets, the memory usage is approximately:
+
+::
+
+  100000 buckets * 100 bytes = 10MB
+  1000000 keys * 100 bytes = 100MB
+  1000000 keys * 1KB size = 1GB
+
+  TOTAL = 1.11GB
+
+On a 4 core Intel Core i7 with an SSD, the above ``kvstore`` takes 1.25s to load
+from file and has an average key read time of 600ns.
+
+On the same system, a ``kvstore`` with 1 million keys, 100k buckets, 70% readers,
+and 30% writers has a throughput of 3 millions operations per second.
+
+Key length, value length, and overall ``kvstore`` size is only bounded by
+available memory.
+
+Buckets are implemented using red-black trees. The performance complexity of
+``kvstore`` is:
+
+``O(log(size/buckets))``
+
+When using TTLs, expired keys are only removed when they are landed on during a
+``get()`` or ``set()`` operation or when explicitly deleted. To avoid any risk
+of unbounded growth, the ``compact()`` call can explicitly discard expired keys.
+
+EXAMPLES
+========
+
+Variables
+---------
+
+Storing variables into ``kvstore``:
+
+::
+
+  vcl 4.0;
+
+  import kvstore;
+
+  sub vcl_init
+  {
+    new kvs = kvstore.init();
+
+    kvs.set("alpha", "one");
+    kvs.set("beta", "two");
+  }
+
+  sub vcl_recv
+  {
+    set req.http.alpha = kvs.get("alpha", "error");
+    set req.http.beta = kvs.get("beta", "error");
+  }
+
+CSV File
+--------
+
+Loading a CSV file into a ``kvstore``:
+
+::
+
+  vcl 4.0;
+
+  import kvstore;
+  import std;
+
+  sub vcl_init
+  {
+    new csv = kvstore.init();
+
+    // Load plain comma separated data
+    if (csv.init_file("/some/path/data.csv", ",") < 0) {
+      std.syslog(3, "Varnish kvstore ERROR: couldn't load /some/path/data.csv");
+      return(fail);
+    }
+  }
+
+  sub vcl_recv
+  {
+    // Reload data
+    if (req.method == "REFRESH") {
+      set req.http.kvinit = csv.init_file("/some/path/data.csv", ",");
+      if (req.http.kvinit == "-1") {
+        return(synth(500, "-1"));
+      } else {
+        return(synth(200, req.http.kvinit));
+      }
+    }
+
+    set req.http.somekey = csv.get("somekey", "error");
+  }
+
+Value Caching
+-------------
+
+Using ``kvstore`` to cache a value:
+
+::
+
+  vcl 4.0;
+
+  import kvstore;
+
+  sub vcl_init
+  {
+    new kvcache = kvstore.init();
+  }
+
+  sub vcl_recv
+  {
+    // Lookup "somekey" in cache
+    set req.http.cachevalue = kvcache.get("somekey", "");
+
+    if(req.http.cachevalue == "") {
+      // Store "somevalue" for 10 seconds
+      set req.http.cachevalue = "somevalue";
+      kvcache.set("somekey", req.http.cachevalue, 10s);
+    }
+  }
+
+Synchronization
+---------------
+
+Using ``kvstore`` to synchronize an ``if`` statement:
+
+::
+
+  vcl 4.0;
+
+  import kvstore;
+  import std;
+
+  sub vcl_init
+  {
+    new sync = kvstore.init();
+  }
+
+  sub vcl_recv
+  {
+    // This block will only be taken once per url every 10 minutes
+    if (sync.counter(req.url, 1, 10m) == 1) {
+      std.log("URL called: " + req.url);
+    }
+  }
+
+Varnishstat
+-----------
+
+Logging ``kvstore`` counter values to ``varnishstat``:
+
+::
+
+  vcl 4.0;
+
+  import kvstore;
+
+  sub vcl_init
+  {
+    new vsc = kvstore.init();
+  }
+
+  sub vcl_deliver
+  {
+    // Count all media responses and log it in varnishstat
+    if (resp.http.Content-Type ~ "audio|image|video") {
+      vsc.counter("media_responses", 1, varnishstat = true);
+    }
+  }
+
+API
+===
+
+$Event init_function
+$Object init(PRIV_VCL, INT buckets = 250, ENUM {STATIC, GLOBAL, REQUEST} scope = GLOBAL)
+
+Initializes a ``kvstore``. Can be used to re-initialize an active ``kvstore``.
+The resulting ``kvstore`` is empty.
+This can be used as both a constructor and a method.
+
+$Method VOID .init(INT buckets = 0, BOOL scrub = 0)
+
+This initializes a ``kvstore``. If ``buckets`` is non-zero, the number of buckets is
+changed. If ``scrub`` is ``true``, memory for the stored data prior to the call
+is wiped.
+
+$Method INT .init_file(STRING path, STRING delimiter, INT buckets = 0)
+
+Equivalent to ``init()``, but initializes from a file. Can be used to rebuild
+an active ``kvstore``.  Modifications to the ``kvstore`` are not synced back to
+the file.
+
+The delimiter is the string used to separate the key and the value. Only the
+first occurrence of the delimiter is used as the key value separator.
+
+
+::
+
+  foo==bar
+
+If the delimiter is ``=``, then there will be a key named foo with the value ``=bar``.
+This is because only the first ``=`` is interpreted as a delimiter.
+
+If the delimiter is not found or is empty, the whole line is treated as a
+key with an empty value.
+
+$Method INT .init_conf(STRING path, INT buckets = 0)
+
+Equivalent to ``init()``, but initializes from a configuration file. Can be
+used to rebuild an active ``kvstore``.  Modifications to the ``kvstore`` are not
+synced back to the file.  A configuration file uses ini file
+format. Comments start with ``#``, whitespace is stripped, keys and values are
+separated with an ``=`` (equal) sign, and section names are surrounded with ``[ ]``
+and are prepended to key names with ``_`` as a separator.
+
+$Method STRING .get(STRING key, STRING default = 0)
+
+This method returns the value associated with ``key`` in the ``kvstore``, or
+``default`` if ``key`` was not found.
+
+$Method STRING .get_any(STRING keys, STRING default = 0)
+
+This method returns the value associated with the first key found among a list
+of ``keys`` in the ``kvstore``, or ``default`` if none of the ``keys`` were
+found. The list of keys is comma-delimited string.
+
+$Method VOID .set(STRING key, STRING value, DURATION ttl = 0)
+
+This method sets the value associated with ``key`` in the ``kvstore`` with
+an optional TTL.
+
+$Method INT .gauge(STRING key, INT value, DURATION ttl = 0, BOOL varnishstat = 0, STRING comment = "")
+
+This creates a key and sets its value, or overwrites if the key exists.
+
+If ``varnishstat`` is ``true``, the value of this counter will be logged in
+``varnishstat`` using the pattern ``KVSTORE.object_name.vcl_name.key`` for the
+field name.
+
+When ``varnishstat`` is set to ``true``, ``key`` and ``comment`` must only contain
+valid JSON string characters, otherwise a warning is printed in VSL and ``varnishstat``
+is forced to ``false``.
+
+$Method INT .counter(STRING key, INT count, DURATION ttl = 0, BOOL varnishstat = 0,
+    STRING comment = "", BOOL auto = 0)
+
+This creates a counter for the key and adds count to it; the new value is returned.
+The initial value of a non-existing counter is always 0. If a counter expires
+or is deleted, its value will be reset to 0.  Operations on this counter are
+atomic and can be safely used for synchronization.
+
+Note: If ``ttl`` is greater than ``0s``, this is the TTL for the counter (nearest
+second). After the TTL duration, the counter will reset. If it is ``0s``, the
+counter is stored forever.
+
+If ``varnishstat`` is ``true``, the value of this counter will be logged in
+``varnishstat`` using the pattern ``KVSTORE.object_name.vcl_name.key`` for the
+field name.
+The ``comment`` parameter will dictate the description provided to ``varnishstat``.
+
+When ``varnishstat`` is set to ``true``, ``key`` and ``comment`` must only contain
+valid JSON string characters, otherwise a warning is printed in VSL and ``varnishstat``
+is forced to ``false``.
+
+If ``auto`` is ``true``, the value is automatically decremented by the same
+amount at the end of the operation. Note that, in that case, no ``ttl`` can be
+provided and the ``kvstore`` must not have ``REQUEST`` scope.
+
+$Method BOOL .limit(STRING key, INT max, INT count = 1)
+
+This increments or creates a counter key. If the increment gets the counter above
+``max``, the counter is decremented by the same amount and ``false`` is
+returned. Otherwise, ``true`` is returned.
+
+$Method BACKEND .get_backend(STRING key, BACKEND default = 0)
+
+This method returns the backend associated with ``key`` in the ``kvstore``. If
+it's not found, ``default`` is returned.
+
+$Method VOID .set_backend(STRING key, BACKEND value, DURATION ttl = 0)
+
+This method stores a backend in the ``kvstore`` with an optional TTL. Not safe
+to use with dynamic backends.
+
+$Method VOID .lock(STRING key)
+
+This sets a key as being a lock and acquires this lock. If the lock is still held
+at the end of the operation, it is automatically released.
+
+This method is only available for a kvstore of STATIC scope, therefore
+care should be taken when picking a key, as using a key used for another
+purpose than storing a lock will trigger a VCL failure.
+
+$Method VOID .unlock(STRING key)
+
+This unlocks a key locked using ``.lock()``.
+Attempting to unlock a key that is not a lock or a lock that is not held
+will trigger a VCL failure.
+
+$Method VOID .delete(STRING key)
+
+This method deletes the content associated with ``key`` in the ``kvstore``.
+
+$Method INT .size()
+
+This returns the current number of keys within the ``kvstore``, including
+expired keys.
+
+$Method INT .compact()
+
+This operation removes expired keys from the ``kvstore`` and returns the number of keys
+removed. It is synchronous and may have a significant impact
+on a large ``kvstore``, including for other consumers of the ``kvstore``.
+
+$Method BOOL .contains(STRING key)
+
+This returns ``true`` if the key exists and is not expired, and returns ``false`` if the
+key does not exist or is expired. Note that if the key is expired, it
+is deleted from the ``kvstore``.
+
+Scopes and lifetimes
+--------------------
+
+A ``kvstore`` can be configured with one of three scopes. Each of
+these scopes define different lifetimes and sharing rules.
+
+* GLOBAL
+
+Values in a GLOBAL kvstore will have a lifetime equal to that of the
+VCL it was loaded in. Access to values is shared across request
+transactions, i.e. you will see the same value when referenced from
+separate request transactions and edits will be visible to other
+requests.
+
+This is the default scope.
+
+* REQUEST
+
+Changes to values in a REQUEST kvstore will be cleaned up when the
+request terminates. Access is limited to that single request.
+
+If a value is set in vcl_init this will be treated as a default,
+visible to all requests. Any edits will have its visibility restricted
+to the request that did the edit.
+
+* STATIC
+
+Values in a STATIC kvstore will have a lifetime equal to the
+loading/unloading of the VMOD. All access is shared across VCLs and
+request transactions.
+
+AVAILABILITY
+============
+
+The ``kvstore`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

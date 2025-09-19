@@ -1,0 +1,152 @@
+# auto_docs = false
+$Module memcached 3 "Varnish memcached module"
+$License
+$Event init_function
+
+$Function VOID servers(PRIV_VCL, STRING)
+$Restrict vcl_init
+
+Description
+        Set the memcached parameters for requests handled by this VCL.
+
+        Note, the old style of a comma separated server list is no longer
+        supported.
+
+        Syntax to specify a server: "--SERVER=ip:port"
+
+        See http://docs.libmemcached.org/libmemcached_configuration.html
+        for all supported options.
+
+        Please note that if you supply an invalid parameter string,
+        Varnish will fail to start.
+
+        This will create a connection pool for all VCL threads to share from.
+        Each active or available VCL will have its own connection pool.
+
+        If no --POOL-MAX parameter is specified, a pool will be created with
+        a maximum of 40 connection.
+
+        Calling this function twice will result in undefined behavior.
+Example
+        ::
+
+                # 2 memcached hosts
+                memcached.servers("--SERVER=hostA --SERVER=hostB:1234");
+
+                # advanced connection options
+                memcached.servers("--SERVER=10.1.1.14 --BINARY-PROTOCOL --POOL-MAX=10 --CONNECT-TIMEOUT=50 --RETRY-TIMEOUT=3");
+
+$Function VOID error_string(PRIV_VCL, STRING)
+$Restrict vcl_init
+
+Description
+        Set the string that is returned on a get() error.
+
+        The default value is an empty string.
+
+        Using this function outside of vcl_init will result in undefined
+        behavior.
+Example
+        ::
+
+                memcached.error_string("_ERROR");
+
+$Function VOID pool_timeout_msec(PRIV_VCL, INT)
+$Restrict vcl_init
+
+Description
+        Set the maximum amount of time to wait for a connection, in
+        milliseconds, if the entire connection pool is in use.
+
+        The default value is 3000.
+
+        Using this function outside of vcl_init will result in undefined
+        behavior.
+Example
+        ::
+
+                # set the pool timeout of 10 seconds
+                memcached.pool_timeout_msec(10000);
+
+$Function VOID set(PRIV_VCL, STRING, STRING, INT, INT)
+
+Description
+        Set key to value, with an expiration time and flags.
+Example
+        ::
+
+                # Set "key" to "Hello world" with a 100s expiration.
+                memcached.set("key", "Hello world", 100, 0);
+
+$Function STRING get(PRIV_VCL, STRING)
+
+Description
+        Retrieve key from memcached and return the value.
+
+        On error, the value of error_string() is returned.
+Example
+        ::
+
+                set resp.http.value = memcached.get("key");
+
+$Function INT incr(PRIV_VCL, STRING, INT)
+
+Description
+        Increment key by offset and return the new value.
+
+        If the key does not exist or an error occurs, -1 is returned.
+Example
+        ::
+
+                # Increment "key" by 10 and return the new value.
+                set resp.http.value = memcached.incr("key", 10);
+
+$Function INT decr(PRIV_VCL, STRING, INT)
+
+Description
+        Decrement key by offset and return the new value.
+
+        If the key does not exist or an error occurs, -1 is returned.
+Example
+        ::
+
+                # Decrement "key" by 8 and return the new value.
+                set resp.http.value = memcached.decr("key", 8);
+
+$Function INT incr_set(PRIV_VCL, STRING, INT, INT, INT)
+
+Description
+        Increment key by offset and return the new value. If key is not
+        set, key will be set to initial with an expiration time.
+
+        This is only available when using the binary protocol.
+
+        If an error occurs, -1 is returned.
+Example
+        ::
+
+                # Increment "key" by 1 if set, otherwise set it to 10
+                # with no expiration.
+                set resp.http.value = memcached.incr_set("key", 1, 10, 0);
+
+$Function INT decr_set(PRIV_VCL, STRING, INT, INT, INT)
+
+Description
+        Decrement key by offset and return the new value. If key is not
+        set, key will be set to initial with an expiration time.
+
+        This is only available when using the binary protocol.
+
+        If an error occurs, -1 is returned.
+Example
+        ::
+
+                # Decrement "key" by 1 if set, otherwise set it to 10
+                # with no expiration.
+                set resp.http.value = memcached.decr_set("key", 1, 10, 0);
+
+SEE ALSO
+========
+
+* http://memcached.org/
+* http://libmemcached.org/

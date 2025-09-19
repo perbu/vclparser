@@ -1,0 +1,245 @@
+$Module slicer 3 "Slicer"
+$ABI strict
+$License
+
+DESCRIPTION
+===========
+
+The ``slicer`` vmod lets you enable caching of partial responses.
+
+Instead of asking the backend for the full response, this enables
+splitting the object into smaller pieces, with Varnish issuing Range
+requests to the backend.
+
+The range fetched will be based on the client's Range header, ensuring
+we only fetch what is necessary in order to satisfy the client's
+requested range.
+
+Segment meta objects and segments
+---------------------------------
+
+The initial fetch where slicing is enabled will result in what we refer
+to as a segment meta object. This object will not store any response
+body bytes, and is merely used as a structure for cache lookup and
+verification of future range requests.
+
+Hitting a segment meta object will trigger a special delivery mode
+that issues subrequests on its behalf. Each of these subrequests will
+ask for a specific range of the response. The segments will be
+stitched together on delivery, presented as a single contiguous
+response to the client.
+
+Each subrequest will get a full execution of the VCL. In
+``varnishlog`` this will be presented as a set of linked
+subrequest. Executing varnishlog with the ``-g request`` option will
+present the top-level request, all subrequests and any fetches
+logically grouped together.
+
+Each segment subrequest will also contribute to ``varnishstat``
+counters: A single client request may lead to a number of cache hits
+and misses, all depending on which segments are currently in cache.
+
+
+Modes of operation
+------------------
+
+The Slicer VMOD has two modes of operation: It can be invoked from
+either ``sub vcl_backend_fetch`` or from ``sub vcl_backend_response``.
+
+The ``sub vcl_backend_fetch`` mode has the potential for slightly better
+latency, however it is operating with limited knowledge when enabled.
+
+vcl_backend_fetch
+~~~~~~~~~~~~~~~~~
+
+When invoked from ``sub vcl_backend_fetch``, the Slicer VMOD will turn the GET
+request into a HEAD. If we then find that the response is eligible for
+segmented fetch, we will issue separate requests for the relevant
+parts. Since the initial request was a HEAD the connection can be
+reused as usual for a future backend connection.
+
+::
+
+	import slicer;
+
+	sub vcl_backend_fetch {
+		slicer.enable();
+	}
+
+In the event that we later in the processing find that this particular
+response cannot be used, the fetch will result in a 503 error.
+
+Recovering from a failed ``enable()`` can in this case be
+accomplished via a retry in ``sub vcl_backend_error``. The following VCL uses
+``slicer.failed()`` to show a possible VCL solution
+
+::
+
+	sub vcl_backend_fetch {
+		if (!slicer.failed()) {
+			slicer.enable(size = 100KB);
+		}
+	}
+
+	sub vcl_backend_error {
+		if (slicer.failed()) {
+			return (retry);
+		}
+	}
+
+This VCL will first attempt slicing and then do a retry with slicing
+disabled.
+
+vcl_backend_response
+~~~~~~~~~~~~~~~~~~~~
+
+When invoked from ``sub vcl_backend_response``, the Slicer VMOD will inspect
+the response headers to see if it is eligible for segmented
+caching. If successful, the backend connection will be closed without
+receiving the response body bytes.
+
+The key advantage of enabling the slicer in ``sub vcl_backend_response`` is
+that we have the full response header set available to us, which not
+only lets us know immediately if the object is a candidate for
+slicing, but also offers the VCL user more information in deciding
+whether a particular object should be sliced.
+
+::
+
+	import slicer;
+
+	sub vcl_backend_response {
+		if (!slicer.enable(10M)) {
+			return (fail);
+		}
+	}
+
+Exception handling is done explicitly in the VCL. In the example above
+failure to enable slicing is handled via a ``return (fail))``, which
+will result in a 503.
+
+An alternative error handling in the event of failure is to treat it
+as a pass to avoid caching of a full-sized response. If the objective
+is to also limit the consumption of transient memory, we recommend
+enabling the ``transit_buffer`` feature, which will limit the amount
+of read ahead and thus buffer size required for a pass.
+
+::
+
+	import slicer;
+
+	sub vcl_backend_response {
+		if (!slicer.enable()) {
+			set beresp.transit_buffer = 5M;
+			return (pass);
+		}
+	}
+
+
+
+Segmented caching requirements
+------------------------------
+
+There are a few preconditions that need to be satisfied. For a response
+to be eligible for slicing, the following requirements apply:
+
+Response conditions:
+
+- It MUST NOT contain a ``Content-Encoding`` header.
+- It MUST contain a ``Content-Length`` header.
+- It MUST contain either a ``Last-Modified`` or an ``ETag`` header.
+
+Request conditions:
+
+The following conditions pertaining to the request will prevent slicing
+from being enabled.
+
+- Request bodies not allowed.
+- The request was processed as a PASS (including "Hit-For-Miss",
+  "Hit-For-Pass" and VCL ``return (pass)``). For passed requests, a
+  Range header from the client will be maintained and it can thus do
+  Range requests to the backend just fine without help from the slicer.
+
+Segment lifetime and invalidation
+---------------------------------
+
+The lifetime of a single segment strictly follows the lifetime of the
+meta object. The TTL of the meta object when it was first inserted
+will apply to all segments, i.e. all segments belonging to a response
+will expire at the same time.
+
+This also applies when it comes to invalidation: An invalidation of a
+segment meta object will also wipe all of its segments. Any form of
+invalidation is supported (e.g. ban, purge, ykey).
+
+VHA6 considerations
+-------------------
+
+Replication of sliced objects is currently not supported and is
+explicitly disabled.
+
+We may implement this in a future release.
+
+MSE considerations
+------------------
+
+The Slicer VMOD fully supports the Varnish Massive Storage Engine,
+also in persisted mode. Slicer can be enabled with an already
+populated persisted MSE store, without any need for reinitializing the
+MSE configuration.
+
+For the case where Slicer has been enabled, followed by a downgrade to
+a previous non-Slicer-enabled Varnish version, some manual steps need
+to be taken.
+
+For this case we will end up with segment meta objects and partial
+response objects in our cache, which the older Varnish version will
+not be able to make sense of. The result of this is that Varnish will
+serve empty responses for the requests that would have been previously
+handled by the Slicer.
+
+To remedy this, the following steps are required in the event of a
+downgrade where one wishes to maintain the MSE persisted store.
+
+::
+
+	$ sudo varnishadm 'ban obj.http.slicer-meta ~ .'
+	$ sudo varnishadm 'ban obj.http.slicer-sub ~ .'
+
+API
+===
+
+$Function BOOL enable(BYTES size = 5242880)
+$Restrict vcl_backend_fetch vcl_backend_response
+
+Enables segmented fetch. Varnish will fetch at most ``size``
+bytes per fetch. If no size is provided, a default of 5MB will be used.
+
+Accessible from ``sub vcl_backend_fetch`` and ``sub vcl_backend_response``.
+
+$Function BOOL failed()
+$Restrict backend
+
+Indicates if the slicer was previously attempted enabled and
+failed. Otherwise returns false.  This can be used for
+implementing VCL error handling. See example above.
+
+$Function BOOL is_top()
+$Restrict vcl_backend_response vcl_deliver vcl_hit vcl_vha_internal
+
+Tells us if the ongoing transaction is a top-level segmented
+request. This is true if a previous call to enable() for this
+request succeeded and if we are now initiating a segmented fetch.
+
+Accessible from ``sub vcl_deliver`` and ``sub vcl_backend_response``.
+
+$Function BOOL is_sub()
+
+Tells us if the ongoing transaction is a partial fetch subrequest.
+Accessible from all VCL subroutines.
+
+AVAILABILITY
+============
+
+The ``slicer`` VMOD is available in Varnish Enterprise version ``6.0.8r6`` and later.
+

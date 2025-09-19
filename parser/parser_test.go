@@ -345,3 +345,70 @@ func checkParserErrors(t *testing.T, p *Parser) {
 	}
 	t.FailNow()
 }
+
+func TestNewStatement(t *testing.T) {
+	input := `vcl 4.0;
+
+sub vcl_init {
+    new cluster = foo();
+}`
+
+	l := lexer.New(input, "test.vcl")
+	p := New(l)
+	program := p.ParseProgram()
+
+	checkParserErrors(t, p)
+
+	if len(program.Declarations) != 1 {
+		t.Fatalf("program.Declarations does not contain 1 declaration. got=%d",
+			len(program.Declarations))
+	}
+
+	subDecl, ok := program.Declarations[0].(*ast.SubDecl)
+	if !ok {
+		t.Fatalf("program.Declarations[0] is not *ast.SubDecl. got=%T",
+			program.Declarations[0])
+	}
+
+	if subDecl.Name != "vcl_init" {
+		t.Errorf("subDecl.Name = %q, want %q", subDecl.Name, "vcl_init")
+	}
+
+	if len(subDecl.Body.Statements) != 1 {
+		t.Fatalf("subDecl.Body.Statements does not contain 1 statement. got=%d",
+			len(subDecl.Body.Statements))
+	}
+
+	newStmt, ok := subDecl.Body.Statements[0].(*ast.NewStatement)
+	if !ok {
+		t.Fatalf("subDecl.Body.Statements[0] is not *ast.NewStatement. got=%T",
+			subDecl.Body.Statements[0])
+	}
+
+	// Check the variable name
+	nameIdent, ok := newStmt.Name.(*ast.Identifier)
+	if !ok {
+		t.Fatalf("newStmt.Name is not *ast.Identifier. got=%T", newStmt.Name)
+	}
+
+	if nameIdent.Name != "cluster" {
+		t.Errorf("nameIdent.Name = %q, want %q", nameIdent.Name, "cluster")
+	}
+
+	// Check the constructor call
+	constructorCall, ok := newStmt.Constructor.(*ast.CallExpression)
+	if !ok {
+		t.Fatalf("newStmt.Constructor is not *ast.CallExpression. got=%T", newStmt.Constructor)
+	}
+
+	// Check that it's a simple function call (foo)
+	functionIdent, ok := constructorCall.Function.(*ast.Identifier)
+	if !ok {
+		t.Fatalf("constructorCall.Function is not *ast.Identifier. got=%T",
+			constructorCall.Function)
+	}
+
+	if functionIdent.Name != "foo" {
+		t.Errorf("functionIdent.Name = %q, want %q", functionIdent.Name, "foo")
+	}
+}

@@ -1,0 +1,293 @@
+#
+# Copyright (c) 2017 Varnish Software AS
+#
+# Author: Guillaume Quintard <guillaume@varnish-software.com>
+
+$Module rewrite 3 "Rewrite"
+$License
+
+DESCRIPTION
+===========
+
+The ``rewrite`` vmod aims to reduce the amount of VCL code dedicated to url and
+headers manipulation. The usual way of handling things in VCL is a long list of
+if-else clauses:
+
+::
+
+  sub vcl_recv {
+    if (req.url ~ "pattern1") {
+      set req.url = regsub(req.url, "regex1", "substitute1");
+    } else if (req.url ~ "pattern2") {
+      set req.url = regsub(req.url, "regex2", "substitute2");
+    ...
+  }
+
+Using ``vmod_rewrite``, the VCL boils down to:
+
+::
+
+  import rewrite;
+
+  sub vcl_init {
+    new rs = rewrite.ruleset("/path/to/file.rules");
+  }
+
+  sub vcl_recv {
+    set req.url = rs.match_rewrite(req.url);
+  }
+
+with ``file.rules`` containing:
+
+::
+
+  "regex1" "substitute1"
+  "regex2" "substitute2"
+  ...
+
+This is specially useful to clean URL normalization code as well as redirection
+generation. Thanks to the object-oriented approach, you can create multiple
+rulesets, eg. one for each task, and keep your VCL code clean and isolated.
+
+API
+===
+
+$Object ruleset(STRING path=0, STRING string=0, INT min_fields = 2,
+  ENUM {any, regex, prefix, suffix, exact, glob, glob_path, glob_dot} type = "regex",
+  ENUM {quoted, blank, auto, braces} field_separator = "quoted")
+
+Parse the file indicated by ``path`` or contained in ``string``  and
+create a new rules object. This loads all the rewrite rules described in
+the file.
+
+The file lists all the rules, one per line, composed of a series of columns named fields,
+with the following format (except if ``type=any``):
+
+::
+
+  PATTERN    [SUBSTITUTION]
+
+If ``type=any``, a first field is inserted to give the type for that line:
+
+::
+
+  TYPE    PATTERN    [SUBSTITUTION]
+
+The pattern field and the optional substitution fields are quoted strings.
+The TYPE field is not quoted. Each field is separated by white-space.
+Pattern is the regular expression (regex) to match and substitution
+is the string to rewrite (or replace) any matches with. Empty lines and those starting with "#" are ignored.
+
+Substitutions are optional, and the reason for that is that patterns can be used alone with the ``match()`` function.
+
+``TYPE`` (in the rule file) and ``type`` (as function argument) can be:
+
+- ``regex``: Pattern is matched as a regular expression.
+- ``prefix``: Pattern is a string that tries to match the beginning of the target.
+- ``suffix``: Pattern is a string that tries to match the end of the target.
+- ``exact``: Pattern is a string and tries to match the full string.
+- ``glob``: Pattern is matched as a wildcard (``*`` matches any group of characters)
+- ``glob_path``: Same as ``glob``, but ``*`` doesn't match slashes (useful to
+  match paths).
+- ``glob_dots``: Same as ``glob``, but ``*`` doesn't match dots (useful to match
+  IP addresses).
+- ``any``: use the first field in the rule file to decide (can't be used
+  in the rule file).
+
+``min_fields`` dictate how many strings each line should contain (not including
+TYPE), if that minimum isn't reached, the call will fail and the VCL won't load.
+
+``field_separator`` specifies how the strings are quoted:
+
+- ``quoted``: double-quotes delimit a string and are not included in said string.
+- ``blank``: string starts with its first non-whitespace character, and end with
+  its last.
+- ``braces``: Braces (``{`` and ``}``) delimit a string, and the outermost
+  braces are not included in said string. The string itself can include braces,
+  as long as the number of opening and closing braces is balanced. Braces
+  escaped with ``\`` are not counted towards the braces balance.
+- ``auto``: each word in the ruleset can use either ``quoted`` (starts with
+  double-quotes), ``braces`` (starts with an opening brace), or blank (starts
+  with anything else).
+
+This method is called in ``sub vcl_init`` and you can create as many objects as you
+need:
+
+::
+
+  sub vcl_init {
+    new redirect = rewrite.ruleset("/path/to/redirect.rules");
+    new normalize = rewrite.ruleset(string = {"
+      # this is a comment
+      pattern1        substitute1
+
+      (?i)PaTtERn2    substitute2
+      pattern([0-9]*) substitute\1
+      json            {{"key1":"value1", "key2":"value2"}}
+      "}, field_separator = auto);
+  }
+
+$Method VOID .add_rules(STRING path=0, STRING string=0,
+  ENUM {any, regex, prefix, suffix, exact, glob, glob_path, glob_dot} type = "regex",
+  ENUM {quoted, blank, auto, braces} field_separator = "quoted")
+$Restrict vcl_init
+
+Add rules to an existing ruleset. This is a convenience for split-VCL setups
+where rules need to be centralized in a single ruleset, but initialized in
+multiple places to be co-located with related logic.
+
+This function can only be called from ``sub vcl_init``. Just like ruleset
+constructors, ``path`` and ``string`` arguments are mutual-exclusive.  When
+rules are added in multiple places, they are then treated in the same order
+they were added. It is possible to both specify rules in a ruleset constructor
+and then add more rules.
+
+$Method STRING .match_rewrite(STRING term, INT field = 2,
+  ENUM {regsub, regsuball, only_matching} mode = "regsuball")
+
+This is a convenience function combining the ``.match()`` and ``.rewrite()``
+methods:
+
+::
+
+  redirect.match_rewrite(req.url, field = 3, mode = regsuball);
+
+is functionally equivalent to:
+
+::
+
+  redirect.match(req.url);
+  redirect.rewrite(field = 3, mode = regsuball);
+
+You can use it to apply the first matching rewrite rule to a string:
+
+::
+
+  import rewrite;
+
+  sub vcl_init {
+    new rs = rewrite.ruleset(string = {"
+      "^(api|www).example.com$"       "example.com"
+      "^img(|1|2|3).example.com$"     "img.example.com"
+      "temp.example.com"              "test.example.com"
+    "});
+  }
+
+  sub vcl_recv {
+    # normalize the host
+    set req.url = rs.match_rewrite(req.url);
+  }
+
+$Method BOOL .match(STRING term)
+
+Returns ``true`` if a rule in the ruleset matched the string argument, ``false``
+otherwise.
+
+Example:
+
+::
+
+  import rewrite;
+
+  sub vcl_init {
+    new rs = rewrite.ruleset(string = {"
+      "^/admin/"
+      "^/purge/"
+      "^/private"
+    "}, min_fields = 1);
+  }
+
+  sub vcl_recv {
+    if (rs.match(req.url)) {
+      return (synth(405, "Restricted"));
+    }
+  }
+
+$Method STRING .rewrite(INT field = 2, ENUM {regsub, regsuball, only_matching} mode = "regsuball")
+
+``.rewrite()`` is called after ``.match()``, and applies the previously matched
+rule, skipping the lookup operation.
+
+By default, the first substitute string (index 2 of the rule definition) is
+used, but you can specify a different ``field`` if needed. If the field doesn't
+exist, the string is not rewritten.
+
+``mode`` dictates how the string should be rewritten:
+
+- regsub: replace only the first match found
+- regsuball: replace all matches
+- only_matching: only output the rewritten (first) match, discarding
+  both the prefix and suffix. It's the same a the ``--only-matching``
+  option of GNU grep.
+
+For example, considering this rule::
+
+::
+
+  "bar" "qux"
+
+and the string "/foo/bar/bar":
+
+- regsub will output "/foo/qux/bar"
+- regsuball will output "/foo/qux/qux"
+- only_matching will output "qux"
+
+You can use this function to retrieve multiple values associated to one rule:
+
+::
+
+  import std;
+  import rewrite;
+
+  sub vcl_init {
+    new rs = rewrite.ruleset(string = {"
+      # pattern       ttl     grace   keep
+      "\.(js|css)"    "1m"    "10m"   "1d"
+      "\.(jpg|png)"   "1w"    "1w"    "10w"
+    "});
+  }
+
+  sub vcl_backend_response {
+    # if there's a match, convert text to duration
+    if (rs.match(bereq.url)) {
+      set beresp.ttl   = std.duration(rs.rewrite(0, mode = only_matching), 0s);
+      set beresp.grace = std.duration(rs.rewrite(1, mode = only_matching), 0s);
+      set beresp.keep  = std.duration(rs.rewrite(2, mode = only_matching), 0s);
+    }
+  }
+
+$Method STRING .field(INT field)
+
+``.field()`` must be called after a successful ``.match()``, it returns the
+corresponding field by number from the matched rule.
+
+For example, considering this VCL:
+
+::
+
+    import rewrite;
+
+    sub vcl_init {
+        new rs = rewrite.ruleset(string = """
+            "foo" "bar" "baz"
+            "qux" "quxx"
+        """);
+    }
+
+    sub vcl_recv {
+        if (rs.match(req.url)) {
+            set req.http.field = rs.field(2);
+        }
+    }
+
+A request with a URL containing "foo" would add a header "Field: bar" to the
+request.
+
+$Method STRING .replace(STRING, INT field = 2, ENUM {regsub, regsuball, only_matching} mode = "regsuball")
+
+``.replace()`` is deprecated. Please use ``.match_rewrite()`` instead.
+
+AVAILABILITY
+============
+
+The ``rewrite`` VMOD is available in Varnish Enterprise version ``6.0.0r0`` and later.

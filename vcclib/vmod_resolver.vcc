@@ -1,0 +1,170 @@
+$Module resolver 3 "Reverse DNS (resolver)"
+$ABI strict
+$License
+
+DESCRIPTION
+===========
+
+The ``resolver`` vmod lets you resolve the domain name of an IP. The resolution
+procedure works by performing a reverse DNS lookup on the IP, and verifying the
+resulting domain name with a forward DNS lookup. This resolution procedure
+follows recommendations from search engines like Google and Bing for identity
+verification of web crawlers with dynamic IPs.
+
+This VMOD comes bundled with a veribot VCL file, which provides functionality
+for domain-based access control. You may opt to use the veribot VCL instead of
+interacting with the resolver API directly.
+
+Domain name resolution
+----------------------
+
+The resolution procedure starts with a reverse DNS lookup, to obtain the domain
+name of an IP. If this lookup fails (due to timeout, no domain found, etc.), the
+procedure returns with failure. If the reverse lookup results in a fully
+qualified domain name, the resolution procedure can continue.
+
+The IP is then forward confirmed with a forward DNS lookup on the fully
+qualified domain name, which can result in more than one IP address. If none of
+these addresses match the original client address, or if the DNS lookup fails
+for any reason, the procedure returns with failure. If one of the addresses are
+a match with the original IP, the client identity is forward confirmed, and the
+procedure returns with success.
+
+If a domain name resolution returns with success, a fully qualified domain name
+will be retrievable through the resolver API. If a domain name resolution
+returns with failure, a failure reason will be retrievable through the resolver
+API. Only the last resolution result is cached internally in the VMOD.
+
+Veribot VCL integration
+-----------------------
+
+A file ``veribot.vcl`` provides a VCL subroutine you can use instead of
+interacting with the resolver API directly. This VCL file implements
+domain-based access control and resolution caching by combining the
+functionality of resolver and other VMODs.
+
+The veribot VCL can be integrated with your VCL subroutines by adding the
+following statement to the top of your VCL file:
+
+::
+
+  include "veribot.vcl";
+
+Creating a user agent filter
+----------------------------
+
+To avoid unnecessary client checks, clients can be filtered out based on their
+User-Agent. The veribot VCL creates a ruleset ``vb_ua_filter`` using the rewrite
+VMOD, to which one or more regular expressions can be added in the following
+way:
+
+::
+
+  sub vcl_init {
+    vb_ua_filter.add_rules(string = {"
+      "(?i)(google|bing)bot"
+      "(?i)slurp"
+    "});
+  }
+
+This creates a User-Agent filter, and will cause the veribot VCL to ignore all
+clients without matching User-Agents.
+
+Creating Domain Access Rules
+----------------------------
+
+Clients that pass through the User-Agent filter will be checked against a set of
+domain access rules. A domain access rule has two fields; a domain name suffix
+and an access indicator. The veribot VCL creates a ruleset ``vb_domain_rules``
+using the rewrite VMOD, to which domain access rules can be added in the
+following way:
+
+::
+
+  sub vcl_init {
+    vb_domain_rules.add_rules(string = {"
+      ".googlebot.com" "allow"
+      ".google.com" "allow"
+      ".bingbot.com" "allow"
+      ".slurp.yahoo.com" "allow"
+      ".fakebot.com" "deny"
+    "});
+  }
+
+The rules in this ruleset will be matched against the fully qualified domain
+name of the client according to the rewrite VMOD suffix-matching policies. If a
+match is found, a header is set to contain the access indicator string.
+
+Checking a client
+-----------------
+
+The veribot VCL does not automatically check clients against the access rules.
+To check a client, you must call the following subroutine in your VCL code:
+
+::
+
+  sub vcl_recv {
+    call vb_check_client;
+  }
+
+This subroutine will perform the client check, and provides output in the
+following headers:
+
+* ``req.http.vb-domain``:
+
+  Contains the fully qualified domain name of a client. Will be set if the
+  client domain name could be resolved and verified, or if a previously
+  verified resolution of the client domain name was found in cache.
+
+* ``req.http.vb-access``:
+
+  Contains the access indicator of a client. Will be set if a the client
+  domain name matched any domain access rule.
+
+* ``req.http.vb-error``:
+
+  Contains a failure reason for the subroutine. Will be set if the client
+  does not pass the User-Agent filter, the resolution fails, or no domain
+  access rules match the client domain.
+
+API
+===
+
+$Function BOOL resolve(PRIV_TASK priv_task, [IP ip])
+$Restrict client backend
+
+Resolves and verifies the client IP or the IP provided as an optional
+argument. The domain name is obtained with a reverse DNS lookup and
+verified with a forward DNS lookup. If both lookups succeed, and the
+forward DNS lookup matches the original IP, the resolution will succeed.
+Otherwise, the resolution will fail.
+
+The following example shows how to resolve the fully qualified domain
+name of the IP and log the result:
+
+::
+
+  import std;
+  import resolver;
+  sub vcl_recv {
+    if (resolver.resolve()) {
+      std.log("Resolver domain: " + resolver.domain());
+    } else {
+      std.log("Resolver error: " + resolver.error());
+    }
+  }
+
+$Function STRING domain(PRIV_TASK)
+
+Returns the fully qualified domain name from the most recent call to
+``resolver.resolve()``.
+
+$Function STRING error(PRIV_TASK)
+
+Returns the failure reason from the most recent call to
+``resolver.resolve()``.
+
+AVAILABILITY
+============
+
+The ``resolver`` VMOD is available in Varnish Enterprise version ``6.0.6r8`` and later.
