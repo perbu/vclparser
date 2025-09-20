@@ -207,8 +207,7 @@ func (v *VMODValidator) validateObjectMethodCall(memberExpr *ast.MemberExpressio
 		return
 	}
 
-	// For now, we'll need to track the object's module and type
-	// This would require extending the Symbol struct to store more metadata
+	// TODO: Track the object's module and type by extending the Symbol struct to store more metadata
 	// For this implementation, we'll assume the object is valid if it's in the symbol table
 }
 

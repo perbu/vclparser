@@ -68,7 +68,30 @@ func (p *Parser) parseExpression() ast.Expression {
 	return p.parseExpressionWithPrecedence(LOWEST)
 }
 
-// parseExpressionWithPrecedence parses expressions with given minimum precedence
+// parseExpressionWithPrecedence implements a Pratt parser (top-down operator precedence parser)
+// using the precedence climbing algorithm. This approach elegantly handles operator precedence
+// without deep recursion or backtracking.
+//
+// The algorithm works by:
+// 1. Parse a prefix expression (operand, unary operator, etc.)
+// 2. Enter a loop that continues while the next operator has higher precedence than our minimum
+// 3. Parse the infix expression (consuming the operator and right operand)
+// 4. The right operand parsing respects precedence through recursive calls
+//
+// Example parsing "a + b * c":
+// - Start with precedence=LOWEST, parse "a" as left operand
+// - See "+", its precedence (TERM) > LOWEST, so enter loop
+// - Parse infix: parseInfixExpression creates BinaryExpression(a, +, right)
+// - To parse right side of +, call parseExpressionWithPrecedence(TERM+1)
+// - Parse "b", see "*", its precedence (FACTOR) > TERM+1, so enter nested loop
+// - Result: BinaryExpression(a, +, BinaryExpression(b, *, c))
+//
+// The precedence parameter acts as "left-binding power" - operators with higher
+// precedence than this value will be consumed by this call, while lower precedence
+// operators are left for parent calls to handle.
+//
+// Termination conditions check for syntactic boundaries where expressions end:
+// semicolons (statement end), parentheses/braces (grouping end), commas (argument separator).
 func (p *Parser) parseExpressionWithPrecedence(precedence int) ast.Expression {
 	left := p.parsePrefixExpression()
 	if left == nil {
