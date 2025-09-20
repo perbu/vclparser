@@ -436,10 +436,12 @@ func (p *Parser) parseParameterTokens() (Parameter, error) {
 	// Check for default value
 	if p.currentToken.Type == EQUALS {
 		p.nextToken()
-		if p.currentToken.Type == STRING || p.currentToken.Type == IDENT || p.currentToken.Type == NUMBER {
+		if p.currentToken.Type == STRING || p.currentToken.Type == IDENT || p.currentToken.Type == NUMBER || p.currentToken.Type == BOOL_LIT {
 			param.DefaultValue = p.currentToken.Literal
 			param.Optional = true
 			p.nextToken()
+		} else {
+			return param, fmt.Errorf("expected default value after '=', got %s", p.currentToken.Type)
 		}
 	}
 

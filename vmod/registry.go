@@ -36,8 +36,8 @@ func (r *Registry) LoadVCCDirectory(dir string) error {
 		}
 
 		if err := r.LoadVCCFile(path); err != nil {
-			// Log error but continue processing other files
-			fmt.Printf("Warning: failed to load VCC file %s: %v\n", path, err)
+			// Return error immediately instead of just logging warning
+			return fmt.Errorf("failed to load VCC file %s: %v", path, err)
 		}
 
 		return nil

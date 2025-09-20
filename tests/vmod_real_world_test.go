@@ -284,9 +284,9 @@ backend default {
 sub vcl_recv {
     if (req.url == "/?Action=ListUsers&Version=2010-05-08") {
         if (s3.verify(
-            access_key_id = "AKIDEXAMPLE",
-            secret_key = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-            clock_skew = -1s)) {
+            "AKIDEXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            -1s)) {
             return (pass);
         }
     }
@@ -301,18 +301,18 @@ import s3;
 sub vcl_recv {
     if (req.url == "/wrong-key") {
         if (s3.verify(
-            access_key_id = "AKIDEXAMPLE",
-            secret_key = "thisIsTheWrongSecretKey12345",
-            clock_skew = -1s)) {
+            "AKIDEXAMPLE",
+            "thisIsTheWrongSecretKey12345",
+            -1s)) {
             return (pass);
         }
     }
 
     if (req.url == "/clock-skew") {
         if (s3.verify(
-            access_key_id = "AKIDEXAMPLE",
-            secret_key = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-            clock_skew = 15m)) {
+            "AKIDEXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            15m)) {
             return (pass);
         }
     }

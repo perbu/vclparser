@@ -33,6 +33,7 @@ const (
 	TypeHTTP       VCCType = "HTTP"
 	TypeStevedore  VCCType = "STEVEDORE"
 	TypePrivTop    VCCType = "PRIV_TOP"
+	TypeBereq      VCCType = "BEREQ"
 )
 
 // Enum represents an enum definition in VCC
@@ -342,6 +343,8 @@ func ParseVCCType(typeStr string) (VCCType, *Enum, error) {
 		return TypeStevedore, nil, nil
 	case "PRIV_TOP":
 		return TypePrivTop, nil, nil
+	case "BEREQ":
+		return TypeBereq, nil, nil
 	default:
 		return VCCType(typeStr), nil, fmt.Errorf("unknown VCC type: %s", typeStr)
 	}

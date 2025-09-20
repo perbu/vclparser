@@ -469,6 +469,10 @@ func (v *VMODValidator) inferExpressionType(expr ast.Expression) vcc.VCCType {
 			return returnType
 		}
 		return vcc.TypeString // Default assumption
+	case *ast.UnaryExpression:
+		// For unary expressions, infer the type of the operand
+		// This handles cases like "-1s" where the whole expression should be treated as the operand's type
+		return v.inferExpressionType(e.Operand)
 	default:
 		return vcc.TypeString // Default assumption
 	}
@@ -507,6 +511,10 @@ func (v *VMODValidator) inferExpressionTypeWithContext(expr ast.Expression, expe
 			return returnType
 		}
 		return vcc.TypeString // Default assumption
+	case *ast.UnaryExpression:
+		// For unary expressions, infer the type of the operand with context
+		// This handles cases like "-1s" where the whole expression should be treated as the operand's type
+		return v.inferExpressionTypeWithContext(e.Operand, expectedType)
 	default:
 		return vcc.TypeString // Default assumption
 	}
