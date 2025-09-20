@@ -212,26 +212,20 @@ func (v *VMODValidator) validateObjectMethodCall(memberExpr *ast.MemberExpressio
 	// For this implementation, we'll assume the object is valid if it's in the symbol table
 }
 
-// buildCompleteArgumentList combines positional and named arguments into a complete argument list
-func (v *VMODValidator) buildCompleteArgumentList(function *vcc.Function, positionalArgs []ast.Expression, namedArgs map[string]ast.Expression) ([]ast.Expression, error) {
-	if function == nil {
-		return positionalArgs, nil // Fallback if no function definition available
-	}
-
-	// Create a result slice with the same capacity as the function parameters
-	result := make([]ast.Expression, len(function.Parameters))
-	parameterUsed := make([]bool, len(function.Parameters))
-
-	// Phase 1: Fill in positional arguments
+// fillPositionalArgs fills the result slice with positional arguments and marks them as used
+func (v *VMODValidator) fillPositionalArgs(result []ast.Expression, parameterUsed []bool, function *vcc.Function, positionalArgs []ast.Expression) error {
 	for i, arg := range positionalArgs {
 		if i >= len(function.Parameters) {
-			return nil, fmt.Errorf("too many positional arguments: got %d, function accepts at most %d", len(positionalArgs), len(function.Parameters))
+			return fmt.Errorf("too many positional arguments: got %d, function accepts at most %d", len(positionalArgs), len(function.Parameters))
 		}
 		result[i] = arg
 		parameterUsed[i] = true
 	}
+	return nil
+}
 
-	// Phase 2: Fill in named arguments
+// fillNamedArgs maps named arguments to their correct parameter positions
+func (v *VMODValidator) fillNamedArgs(result []ast.Expression, parameterUsed []bool, function *vcc.Function, namedArgs map[string]ast.Expression) error {
 	for argName, argValue := range namedArgs {
 		// Find the parameter by name
 		paramIndex := -1
@@ -243,26 +237,56 @@ func (v *VMODValidator) buildCompleteArgumentList(function *vcc.Function, positi
 		}
 
 		if paramIndex == -1 {
-			return nil, fmt.Errorf("unknown argument '%s'", argName)
+			return fmt.Errorf("unknown argument '%s'", argName)
 		}
 
 		if parameterUsed[paramIndex] {
-			return nil, fmt.Errorf("argument '%s' already provided as positional argument", argName)
+			return fmt.Errorf("argument '%s' already provided as positional argument", argName)
 		}
 
 		result[paramIndex] = argValue
 		parameterUsed[paramIndex] = true
 	}
+	return nil
+}
 
-	// Phase 3: Check for missing required parameters and apply defaults
+// applyDefaultArgs checks for missing required parameters and handles defaults
+func (v *VMODValidator) applyDefaultArgs(result []ast.Expression, parameterUsed []bool, function *vcc.Function) error {
 	for i, param := range function.Parameters {
 		if !parameterUsed[i] {
 			if !param.Optional && param.DefaultValue == "" {
-				return nil, fmt.Errorf("missing required argument '%s'", param.Name)
+				return fmt.Errorf("missing required argument '%s'", param.Name)
 			}
 			// For optional parameters without provided values, we could insert default expressions
 			// but for now we'll just leave them nil and let the existing validation handle it
 		}
+	}
+	return nil
+}
+
+// buildCompleteArgumentList combines positional and named arguments into a complete argument list
+func (v *VMODValidator) buildCompleteArgumentList(function *vcc.Function, positionalArgs []ast.Expression, namedArgs map[string]ast.Expression) ([]ast.Expression, error) {
+	if function == nil {
+		return positionalArgs, nil // Fallback if no function definition available
+	}
+
+	// Create a result slice with the same capacity as the function parameters
+	result := make([]ast.Expression, len(function.Parameters))
+	parameterUsed := make([]bool, len(function.Parameters))
+
+	// Phase 1: Fill in positional arguments
+	if err := v.fillPositionalArgs(result, parameterUsed, function, positionalArgs); err != nil {
+		return nil, err
+	}
+
+	// Phase 2: Fill in named arguments
+	if err := v.fillNamedArgs(result, parameterUsed, function, namedArgs); err != nil {
+		return nil, err
+	}
+
+	// Phase 3: Check for missing required parameters and apply defaults
+	if err := v.applyDefaultArgs(result, parameterUsed, function); err != nil {
+		return nil, err
 	}
 
 	// Don't trim the result - we need to maintain positional mapping
@@ -370,10 +394,31 @@ func (v *VMODValidator) extractArgumentTypes(args []ast.Expression) []vcc.VCCTyp
 	return types
 }
 
-// extractArgumentTypesWithContext extracts VCC types from AST expressions with parameter context
-func (v *VMODValidator) extractArgumentTypesWithContext(moduleName, functionName string, args []ast.Expression) []vcc.VCCType {
+// extractArgumentTypesWithParameters extracts VCC types from AST expressions using provided parameter definitions
+func (v *VMODValidator) extractArgumentTypesWithParameters(args []ast.Expression, parameters []vcc.Parameter) []vcc.VCCType {
 	var types []vcc.VCCType
 
+	for i, arg := range args {
+		var expectedType vcc.VCCType
+		if i < len(parameters) {
+			expectedType = parameters[i].Type
+		}
+
+		// Handle nil arguments (for optional parameters)
+		if arg == nil {
+			// For optional parameters, use the expected type
+			types = append(types, expectedType)
+		} else {
+			vccType := v.inferExpressionType(arg, expectedType)
+			types = append(types, vccType)
+		}
+	}
+
+	return types
+}
+
+// extractArgumentTypesWithContext extracts VCC types from AST expressions with parameter context
+func (v *VMODValidator) extractArgumentTypesWithContext(moduleName, functionName string, args []ast.Expression) []vcc.VCCType {
 	// Look up function to get expected parameter types
 	function, err := v.registry.GetFunction(moduleName, functionName)
 	if err != nil {
@@ -381,29 +426,11 @@ func (v *VMODValidator) extractArgumentTypesWithContext(moduleName, functionName
 		return v.extractArgumentTypes(args)
 	}
 
-	for i, arg := range args {
-		var expectedType vcc.VCCType
-		if i < len(function.Parameters) {
-			expectedType = function.Parameters[i].Type
-		}
-
-		// Handle nil arguments (for optional parameters)
-		if arg == nil {
-			// For optional parameters, use the expected type
-			types = append(types, expectedType)
-		} else {
-			vccType := v.inferExpressionTypeWithContext(arg, expectedType)
-			types = append(types, vccType)
-		}
-	}
-
-	return types
+	return v.extractArgumentTypesWithParameters(args, function.Parameters)
 }
 
 // extractArgumentTypesWithObjectContext extracts VCC types from AST expressions with object constructor context
 func (v *VMODValidator) extractArgumentTypesWithObjectContext(moduleName, objectName string, args []ast.Expression) []vcc.VCCType {
-	var types []vcc.VCCType
-
 	// Look up object to get expected constructor parameter types
 	object, err := v.registry.GetObject(moduleName, objectName)
 	if err != nil {
@@ -411,72 +438,24 @@ func (v *VMODValidator) extractArgumentTypesWithObjectContext(moduleName, object
 		return v.extractArgumentTypes(args)
 	}
 
-	for i, arg := range args {
-		var expectedType vcc.VCCType
-		if i < len(object.Constructor) {
-			expectedType = object.Constructor[i].Type
-		}
-
-		// Handle nil arguments (for optional parameters)
-		if arg == nil {
-			// For optional parameters, use the expected type
-			types = append(types, expectedType)
-		} else {
-			vccType := v.inferExpressionTypeWithContext(arg, expectedType)
-			types = append(types, vccType)
-		}
-	}
-
-	return types
+	return v.extractArgumentTypesWithParameters(args, object.Constructor)
 }
 
 // inferExpressionType infers the VCC type of an expression
-func (v *VMODValidator) inferExpressionType(expr ast.Expression) vcc.VCCType {
-	switch e := expr.(type) {
-	case *ast.StringLiteral:
-		return vcc.TypeString
-	case *ast.IntegerLiteral:
-		return vcc.TypeInt
-	case *ast.FloatLiteral:
-		return vcc.TypeReal
-	case *ast.BooleanLiteral:
-		return vcc.TypeBool
-	case *ast.TimeExpression:
-		return vcc.TypeDuration
-	case *ast.Identifier:
-		// Look up identifier in symbol table
-		symbol := v.symbolTable.Lookup(e.Name)
-		if symbol != nil {
-			return v.convertSymbolTypeToVCCType(symbol.Type)
-		}
-		return vcc.TypeString // Default assumption
-	case *ast.MemberExpression:
-		// For member expressions, try to infer the type
-		return vcc.TypeString // Default assumption
-	case *ast.CallExpression:
-		// For call expressions, try to look up the return type
-		if returnType := v.inferCallExpressionReturnType(e); returnType != "" {
-			return returnType
-		}
-		return vcc.TypeString // Default assumption
-	case *ast.UnaryExpression:
-		// For unary expressions, infer the type of the operand
-		// This handles cases like "-1s" where the whole expression should be treated as the operand's type
-		return v.inferExpressionType(e.Operand)
-	default:
-		return vcc.TypeString // Default assumption
+// If expectedType is provided, it enables enhanced type inference with context
+func (v *VMODValidator) inferExpressionType(expr ast.Expression, expectedType ...vcc.VCCType) vcc.VCCType {
+	var expected vcc.VCCType
+	if len(expectedType) > 0 {
+		expected = expectedType[0]
 	}
-}
 
-// inferExpressionTypeWithContext infers the VCC type of an expression with expected type context
-func (v *VMODValidator) inferExpressionTypeWithContext(expr ast.Expression, expectedType vcc.VCCType) vcc.VCCType {
 	switch e := expr.(type) {
 	case *ast.StringLiteral:
 		return vcc.TypeString
 	case *ast.IntegerLiteral:
-		// Check if we can coerce INT to the expected type
-		if v.isTypeCompatible(vcc.TypeInt, expectedType) {
-			return expectedType
+		// If we have expected type context, check if we can coerce INT to the expected type
+		if expected != "" && v.isTypeCompatible(vcc.TypeInt, expected) {
+			return expected
 		}
 		return vcc.TypeInt
 	case *ast.FloatLiteral:
@@ -492,11 +471,11 @@ func (v *VMODValidator) inferExpressionTypeWithContext(expr ast.Expression, expe
 			return v.convertSymbolTypeToVCCType(symbol.Type)
 		}
 		// If expected type is BOOL and this is a boolean literal identifier, treat it as bool
-		if expectedType == vcc.TypeBool && (e.Name == "true" || e.Name == "false") {
+		if expected == vcc.TypeBool && (e.Name == "true" || e.Name == "false") {
 			return vcc.TypeBool
 		}
 		// If expected type is ENUM and this is a bare identifier, treat it as enum
-		if expectedType == vcc.TypeEnum {
+		if expected == vcc.TypeEnum {
 			return vcc.TypeEnum
 		}
 		return vcc.TypeString // Default assumption
@@ -513,9 +492,12 @@ func (v *VMODValidator) inferExpressionTypeWithContext(expr ast.Expression, expe
 		}
 		return vcc.TypeString // Default assumption
 	case *ast.UnaryExpression:
-		// For unary expressions, infer the type of the operand with context
+		// For unary expressions, infer the type of the operand with context if available
 		// This handles cases like "-1s" where the whole expression should be treated as the operand's type
-		return v.inferExpressionTypeWithContext(e.Operand, expectedType)
+		if expected != "" {
+			return v.inferExpressionType(e.Operand, expected)
+		}
+		return v.inferExpressionType(e.Operand)
 	default:
 		return vcc.TypeString // Default assumption
 	}
