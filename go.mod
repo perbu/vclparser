@@ -1,4 +1,4 @@
-module github.com/varnish/vclparser
+module github.com/perbu/vclparser
 
 go 1.21
 
