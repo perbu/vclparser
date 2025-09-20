@@ -156,7 +156,7 @@ func (st *SymbolTable) CurrentScope() string {
 // defineBuiltins defines built-in VCL variables and functions
 func (st *SymbolTable) defineBuiltins() {
 	// Built-in HTTP objects
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "req",
 		Kind:     SymbolVariable,
 		Type:     HTTP,
@@ -165,7 +165,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"recv", "pipe", "pass", "hash", "purge", "miss", "hit", "deliver", "synth"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "bereq",
 		Kind:     SymbolVariable,
 		Type:     HTTP,
@@ -174,7 +174,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"backend", "backend_fetch", "backend_response", "backend_error"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "resp",
 		Kind:     SymbolVariable,
 		Type:     HTTP,
@@ -183,7 +183,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"deliver", "synth"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "beresp",
 		Kind:     SymbolVariable,
 		Type:     HTTP,
@@ -193,7 +193,7 @@ func (st *SymbolTable) defineBuiltins() {
 	})
 
 	// Built-in request variables
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "req.method",
 		Kind:     SymbolVariable,
 		Type:     String,
@@ -202,7 +202,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"recv", "pipe", "pass", "hash", "purge", "miss", "hit", "deliver", "synth"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "req.url",
 		Kind:     SymbolVariable,
 		Type:     String,
@@ -211,7 +211,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"recv", "pipe", "pass", "hash", "purge", "miss", "hit", "deliver", "synth"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "req.proto",
 		Kind:     SymbolVariable,
 		Type:     String,
@@ -220,7 +220,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"recv", "pipe", "pass", "hash", "purge", "miss", "hit", "deliver", "synth"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:      "req.http",
 		Kind:      SymbolVariable,
 		Type:      Header,
@@ -231,7 +231,7 @@ func (st *SymbolTable) defineBuiltins() {
 	})
 
 	// Built-in response variables
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "resp.status",
 		Kind:     SymbolVariable,
 		Type:     Int,
@@ -240,7 +240,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"deliver", "synth"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "resp.reason",
 		Kind:     SymbolVariable,
 		Type:     String,
@@ -249,7 +249,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"deliver", "synth"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:      "resp.http",
 		Kind:      SymbolVariable,
 		Type:      Header,
@@ -260,7 +260,7 @@ func (st *SymbolTable) defineBuiltins() {
 	})
 
 	// Built-in backend response variables
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "beresp.status",
 		Kind:     SymbolVariable,
 		Type:     Int,
@@ -269,7 +269,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"backend_response", "backend_error"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "beresp.reason",
 		Kind:     SymbolVariable,
 		Type:     String,
@@ -278,7 +278,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"backend_response", "backend_error"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:      "beresp.http",
 		Kind:      SymbolVariable,
 		Type:      Header,
@@ -289,7 +289,7 @@ func (st *SymbolTable) defineBuiltins() {
 	})
 
 	// Built-in object variables
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "obj.status",
 		Kind:     SymbolVariable,
 		Type:     Int,
@@ -297,7 +297,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"hit", "deliver"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "obj.reason",
 		Kind:     SymbolVariable,
 		Type:     String,
@@ -305,7 +305,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"hit", "deliver"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "obj.http",
 		Kind:     SymbolVariable,
 		Type:     Header,
@@ -314,7 +314,7 @@ func (st *SymbolTable) defineBuiltins() {
 	})
 
 	// Built-in client variables
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "client.ip",
 		Kind:     SymbolVariable,
 		Type:     IP,
@@ -323,7 +323,7 @@ func (st *SymbolTable) defineBuiltins() {
 	})
 
 	// Built-in server variables
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "server.ip",
 		Kind:     SymbolVariable,
 		Type:     IP,
@@ -331,7 +331,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods:  []string{"recv", "pipe", "pass", "hash", "purge", "miss", "hit", "deliver", "synth", "backend_fetch", "backend_response", "backend_error"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "server.hostname",
 		Kind:     SymbolVariable,
 		Type:     String,
@@ -340,7 +340,7 @@ func (st *SymbolTable) defineBuiltins() {
 	})
 
 	// Built-in time variables
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name:     "now",
 		Kind:     SymbolVariable,
 		Type:     Time,
@@ -349,7 +349,7 @@ func (st *SymbolTable) defineBuiltins() {
 	})
 
 	// Built-in functions
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name: "hash_data",
 		Kind: SymbolFunction,
 		Type: &FunctionType{
@@ -359,7 +359,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods: []string{"hash"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name: "regsub",
 		Kind: SymbolFunction,
 		Type: &FunctionType{
@@ -369,7 +369,7 @@ func (st *SymbolTable) defineBuiltins() {
 		Methods: []string{"recv", "pipe", "pass", "hash", "purge", "miss", "hit", "deliver", "synth", "backend_fetch", "backend_response", "backend_error"},
 	})
 
-	st.Define(&Symbol{
+	_ = st.Define(&Symbol{
 		Name: "regsuball",
 		Kind: SymbolFunction,
 		Type: &FunctionType{

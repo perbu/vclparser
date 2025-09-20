@@ -116,7 +116,11 @@ func TestVCCLibIndividualFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create temp directory: %v", err)
 			}
-			defer os.RemoveAll(tmpDir)
+			defer func() {
+				if err := os.RemoveAll(tmpDir); err != nil {
+					t.Logf("Failed to remove temp directory: %v", err)
+				}
+			}()
 
 			// Copy the VCC file to the temp directory
 			content, err := os.ReadFile(vccFile)

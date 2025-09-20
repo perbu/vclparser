@@ -16,7 +16,11 @@ func TestRegistryWithRealWorldVMODs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	// Test comprehensive crypto VMOD definition
 	cryptoVCC := `$Module crypto 3 "Cryptographic functions module"
@@ -392,7 +396,11 @@ func TestRegistryBuiltinModules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	stdVCC := `$Module std 3 "Standard library"
 $ABI strict
@@ -448,7 +456,11 @@ func TestRegistryIntegrationClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	testVCC := `$Module test 3 "Test module"
 $ABI strict

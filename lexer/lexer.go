@@ -49,14 +49,6 @@ func (l *Lexer) peekChar() byte {
 	return l.input[l.readPos]
 }
 
-// peekChar2 returns the character two positions ahead
-func (l *Lexer) peekChar2() byte {
-	if l.readPos+1 >= len(l.input) {
-		return 0
-	}
-	return l.input[l.readPos+1]
-}
-
 // currentPosition returns the current position
 func (l *Lexer) currentPosition() Position {
 	return Position{

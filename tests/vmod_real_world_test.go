@@ -21,7 +21,11 @@ func setupRealWorldVMODs(t *testing.T) *vmod.Registry {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(tmpDir) })
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	})
 
 	// Crypto VMOD
 	cryptoVCC := `$Module crypto 3 "Cryptographic functions"

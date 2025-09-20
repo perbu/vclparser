@@ -22,7 +22,11 @@ func setupTestRegistry(t *testing.T) *vmod.Registry {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(tmpDir) })
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	})
 
 	// Create std.vcc
 	stdVCC := `$Module std 3 "Standard library"

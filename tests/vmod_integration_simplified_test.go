@@ -21,7 +21,11 @@ func TestSimplifiedVMODIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	// Create VCC files with known working syntax
 	cryptoVCC := `$Module crypto 3 "Cryptographic functions"
@@ -274,7 +278,11 @@ func TestVMODPatterns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	// Create comprehensive VMODs that cover the patterns in vmod-vcl.md
 	vhaVCC := `$Module vha 3 "Varnish High Availability"

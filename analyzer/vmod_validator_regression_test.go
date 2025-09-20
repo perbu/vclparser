@@ -22,7 +22,11 @@ func TestNamedArgumentMappingRegression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(tmpDir) })
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	})
 
 	// Create utils.vcc
 	utilsVCC := `$Module utils 3 "Utility functions for VCL"
@@ -183,7 +187,11 @@ func TestOptionalParameterGaps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(tmpDir) })
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	})
 
 	// Create test.vcc with complex optional parameter patterns
 	testVCC := `$Module test 1 "Test module for optional parameter gaps"

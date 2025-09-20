@@ -59,10 +59,8 @@ func ParseWithVMODValidation(input, filename string) (*ast.Program, []string, er
 	}
 
 	// Initialize VMOD registry with default VCC files
-	if err := vmod.LoadDefaultVCCFiles(); err != nil {
-		// Log warning but continue - not all environments have VCC files
-		// fmt.Printf("Warning: could not load default VCC files: %v\n", err)
-	}
+	// Ignore errors - not all environments have VCC files
+	_ = vmod.LoadDefaultVCCFiles()
 
 	// Return the program and empty validation errors
 	// The validation will be handled by the analyzer package

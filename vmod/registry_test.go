@@ -32,13 +32,19 @@ $Method STRING .method2(INT param)`
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Logf("Failed to remove temp file: %v", err)
+		}
+	}()
 
 	_, err = tmpFile.WriteString(vccContent)
 	if err != nil {
 		t.Fatalf("Failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	// Load the VCC file
 	err = registry.LoadVCCFile(tmpFile.Name())
@@ -127,13 +133,19 @@ $Method BACKEND .backend()`
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Logf("Failed to remove temp file: %v", err)
+		}
+	}()
 
 	_, err = tmpFile.WriteString(vccContent)
 	if err != nil {
 		t.Fatalf("Failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	err = registry.LoadVCCFile(tmpFile.Name())
 	if err != nil {
@@ -198,7 +210,11 @@ func TestRegistryLoadDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	// Create multiple VCC files
 	vccFiles := map[string]string{
@@ -258,13 +274,19 @@ $Event event1`
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Logf("Failed to remove temp file: %v", err)
+		}
+	}()
 
 	_, err = tmpFile.WriteString(vccContent)
 	if err != nil {
 		t.Fatalf("Failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	err = registry.LoadVCCFile(tmpFile.Name())
 	if err != nil {
@@ -314,13 +336,19 @@ $Function STRING toupper(STRING_LIST s)`
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Logf("Failed to remove temp file: %v", err)
+		}
+	}()
 
 	_, err = tmpFile.WriteString(vccContent)
 	if err != nil {
 		t.Fatalf("Failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	err = registry.LoadVCCFile(tmpFile.Name())
 	if err != nil {
@@ -360,7 +388,11 @@ $Object round_robin()`
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	stdFile := filepath.Join(tmpDir, "std.vcc")
 	err = os.WriteFile(stdFile, []byte(vccStd), 0644)

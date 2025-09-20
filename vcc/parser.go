@@ -520,24 +520,6 @@ func (p *Parser) parseMethodSignatureTokens(method *Method) error {
 	return nil
 }
 
-// parseParameters parses parameter list string
-func (p *Parser) parseParameters(paramStr string) ([]Parameter, error) {
-	var parameters []Parameter
-
-	// Split by commas, but handle ENUMs with braces
-	parts := p.splitParameters(paramStr)
-
-	for _, part := range parts {
-		param, err := p.parseParameter(strings.TrimSpace(part))
-		if err != nil {
-			return nil, err
-		}
-		parameters = append(parameters, param)
-	}
-
-	return parameters, nil
-}
-
 // parseParameter parses a single parameter definition
 func (p *Parser) parseParameter(paramStr string) (Parameter, error) {
 	// Handle: [TYPE name=default] or TYPE name=default or TYPE name or ENUM{...} name=default

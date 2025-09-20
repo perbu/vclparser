@@ -57,14 +57,7 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 		}
 
 		statement := p.parseStatement()
-		if statement != nil {
-			stmt.Statements = append(stmt.Statements, statement)
-		} else {
-			// Skip to next semicolon or brace to recover from error
-			for !p.currentTokenIs(lexer.SEMICOLON) && !p.currentTokenIs(lexer.RBRACE) && !p.currentTokenIs(lexer.EOF) {
-				p.nextToken()
-			}
-		}
+		stmt.Statements = append(stmt.Statements, statement)
 
 		p.nextToken()
 	}

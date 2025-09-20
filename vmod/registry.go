@@ -50,7 +50,9 @@ func (r *Registry) LoadVCCFile(filename string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open VCC file %s: %v", filename, err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close() // Ignore error in defer
+	}()
 
 	parser := vcc.NewParser(file)
 	module, err := parser.Parse()

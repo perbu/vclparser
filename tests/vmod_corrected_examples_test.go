@@ -21,7 +21,11 @@ func TestCorrectedVMODExamples(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	// Use actual VCC definitions based on real vcclib files
 	cryptoVCC := `$Module crypto 3 "Cryptographic functions"
@@ -261,7 +265,11 @@ func TestVMODValidationIsWorking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	// Simple test VMOD with known types
 	testVCC := `$Module testmod 3 "Test module"
