@@ -155,6 +155,43 @@ func (st *SymbolTable) CurrentScope() string {
 
 // defineBuiltins defines built-in VCL variables and functions
 func (st *SymbolTable) defineBuiltins() {
+	// Built-in HTTP objects
+	st.Define(&Symbol{
+		Name:     "req",
+		Kind:     SymbolVariable,
+		Type:     HTTP,
+		Readable: true,
+		Writable: false,
+		Methods:  []string{"recv", "pipe", "pass", "hash", "purge", "miss", "hit", "deliver", "synth"},
+	})
+
+	st.Define(&Symbol{
+		Name:     "bereq",
+		Kind:     SymbolVariable,
+		Type:     HTTP,
+		Readable: true,
+		Writable: false,
+		Methods:  []string{"backend", "backend_fetch", "backend_response", "backend_error"},
+	})
+
+	st.Define(&Symbol{
+		Name:     "resp",
+		Kind:     SymbolVariable,
+		Type:     HTTP,
+		Readable: true,
+		Writable: false,
+		Methods:  []string{"deliver", "synth"},
+	})
+
+	st.Define(&Symbol{
+		Name:     "beresp",
+		Kind:     SymbolVariable,
+		Type:     HTTP,
+		Readable: true,
+		Writable: false,
+		Methods:  []string{"backend_response", "backend_error"},
+	})
+
 	// Built-in request variables
 	st.Define(&Symbol{
 		Name:     "req.method",

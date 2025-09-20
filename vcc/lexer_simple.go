@@ -7,6 +7,121 @@ import (
 	"unicode"
 )
 
+// TokenType represents the type of VCC token
+type TokenType int
+
+const (
+	// Special tokens
+	EOF TokenType = iota
+	ILLEGAL
+	COMMENT
+
+	// VCC directives
+	MODULE   // $Module
+	FUNCTION // $Function
+	OBJECT   // $Object
+	METHOD   // $Method
+	EVENT    // $Event
+	RESTRICT // $Restrict
+	ABI      // $ABI
+	LICENSE  // $License
+
+	// Literals
+	IDENT    // identifiers, type names
+	STRING   // string literals
+	NUMBER   // numeric literals
+	BOOL_LIT // true/false
+
+	// Delimiters
+	LPAREN    // (
+	RPAREN    // )
+	LBRACE    // {
+	RBRACE    // }
+	LBRACKET  // [
+	RBRACKET  // ]
+	COMMA     // ,
+	EQUALS    // =
+	DOT       // .
+	SEMICOLON // ;
+
+	// Keywords
+	DESCRIPTION // DESCRIPTION
+	EXAMPLE     // Example
+	DEFAULT     // DEFAULT
+)
+
+// Token represents a lexical token
+type Token struct {
+	Type    TokenType
+	Literal string
+	Line    int
+	Column  int
+}
+
+// String returns the string representation of a TokenType
+func (t TokenType) String() string {
+	switch t {
+	case EOF:
+		return "EOF"
+	case ILLEGAL:
+		return "ILLEGAL"
+	case COMMENT:
+		return "COMMENT"
+	case MODULE:
+		return "MODULE"
+	case FUNCTION:
+		return "FUNCTION"
+	case OBJECT:
+		return "OBJECT"
+	case METHOD:
+		return "METHOD"
+	case EVENT:
+		return "EVENT"
+	case RESTRICT:
+		return "RESTRICT"
+	case ABI:
+		return "ABI"
+	case LICENSE:
+		return "LICENSE"
+	case IDENT:
+		return "IDENT"
+	case STRING:
+		return "STRING"
+	case NUMBER:
+		return "NUMBER"
+	case BOOL_LIT:
+		return "BOOL_LIT"
+	case LPAREN:
+		return "LPAREN"
+	case RPAREN:
+		return "RPAREN"
+	case LBRACE:
+		return "LBRACE"
+	case RBRACE:
+		return "RBRACE"
+	case LBRACKET:
+		return "LBRACKET"
+	case RBRACKET:
+		return "RBRACKET"
+	case COMMA:
+		return "COMMA"
+	case EQUALS:
+		return "EQUALS"
+	case DOT:
+		return "DOT"
+	case SEMICOLON:
+		return "SEMICOLON"
+	case DESCRIPTION:
+		return "DESCRIPTION"
+	case EXAMPLE:
+		return "EXAMPLE"
+	case DEFAULT:
+		return "DEFAULT"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 // SimpleLexer is a simpler, more robust VCC lexer
 type SimpleLexer struct {
 	input       *bufio.Scanner

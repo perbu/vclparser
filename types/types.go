@@ -46,6 +46,7 @@ var (
 	Module   = &BasicType{Name: "MODULE"}
 	Object   = &BasicType{Name: "OBJECT"}
 	Bytes    = &BasicType{Name: "BYTES"}
+	HTTP     = &BasicType{Name: "HTTP"}
 )
 
 // HeaderType represents header variables

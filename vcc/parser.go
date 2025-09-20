@@ -3,7 +3,6 @@ package vcc
 import (
 	"fmt"
 	"io"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -324,6 +323,33 @@ func (p *Parser) parseDescription() (string, error) {
 	return description.String(), nil
 }
 
+// parseParameterList parses a parameter list inside parentheses
+func (p *Parser) parseParameterList() ([]Parameter, error) {
+	var parameters []Parameter
+
+	if p.currentToken.Type == LPAREN {
+		p.nextToken() // consume (
+
+		for p.currentToken.Type != RPAREN && p.currentToken.Type != EOF {
+			param, err := p.parseParameterTokens()
+			if err != nil {
+				return nil, err
+			}
+			parameters = append(parameters, param)
+
+			if p.currentToken.Type == COMMA {
+				p.nextToken() // consume comma
+			}
+		}
+
+		if p.currentToken.Type == RPAREN {
+			p.nextToken() // consume )
+		}
+	}
+
+	return parameters, nil
+}
+
 // parseFunctionSignatureTokens parses function signature from tokens
 func (p *Parser) parseFunctionSignatureTokens(function *Function) error {
 	// Parse return type
@@ -345,24 +371,9 @@ func (p *Parser) parseFunctionSignatureTokens(function *Function) error {
 	p.nextToken()
 
 	// Parse parameters
-	if p.currentToken.Type == LPAREN {
-		p.nextToken() // consume (
-
-		for p.currentToken.Type != RPAREN && p.currentToken.Type != EOF {
-			param, err := p.parseParameterTokens()
-			if err != nil {
-				return fmt.Errorf("invalid parameter: %v", err)
-			}
-			function.Parameters = append(function.Parameters, param)
-
-			if p.currentToken.Type == COMMA {
-				p.nextToken() // consume comma
-			}
-		}
-
-		if p.currentToken.Type == RPAREN {
-			p.nextToken() // consume )
-		}
+	function.Parameters, err = p.parseParameterList()
+	if err != nil {
+		return fmt.Errorf("invalid parameters: %v", err)
 	}
 
 	return nil
@@ -458,37 +469,6 @@ func (p *Parser) parseParameterTokens() (Parameter, error) {
 	return param, nil
 }
 
-// parseFunctionSignature parses a function signature string
-func (p *Parser) parseFunctionSignature(function *Function, signature string) error {
-	// Parse: RETURN_TYPE name(PARAM_TYPE param, ...)
-	re := regexp.MustCompile(`^\s*(\w+(?:\s*\{[^}]*\})?)\s+(\w+)\s*\(([^)]*)\)\s*$`)
-	matches := re.FindStringSubmatch(signature)
-
-	if len(matches) != 4 {
-		return fmt.Errorf("invalid function signature: %s", signature)
-	}
-
-	// Parse return type
-	returnType, _, err := ParseVCCType(matches[1])
-	if err != nil {
-		return fmt.Errorf("invalid return type in function signature: %v", err)
-	}
-	function.ReturnType = returnType
-
-	// Parse function name
-	function.Name = matches[2]
-
-	// Parse parameters
-	if params := strings.TrimSpace(matches[3]); params != "" {
-		function.Parameters, err = p.parseParameters(params)
-		if err != nil {
-			return fmt.Errorf("invalid parameters in function signature: %v", err)
-		}
-	}
-
-	return nil
-}
-
 // parseObjectSignatureTokens parses object signature from tokens
 func (p *Parser) parseObjectSignatureTokens(object *Object) error {
 	// Parse object name
@@ -499,49 +479,10 @@ func (p *Parser) parseObjectSignatureTokens(object *Object) error {
 	p.nextToken()
 
 	// Parse constructor parameters
-	if p.currentToken.Type == LPAREN {
-		p.nextToken() // consume (
-
-		for p.currentToken.Type != RPAREN && p.currentToken.Type != EOF {
-			param, err := p.parseParameterTokens()
-			if err != nil {
-				return fmt.Errorf("invalid constructor parameter: %v", err)
-			}
-			object.Constructor = append(object.Constructor, param)
-
-			if p.currentToken.Type == COMMA {
-				p.nextToken() // consume comma
-			}
-		}
-
-		if p.currentToken.Type == RPAREN {
-			p.nextToken() // consume )
-		}
-	}
-
-	return nil
-}
-
-// parseObjectSignature parses an object signature string
-func (p *Parser) parseObjectSignature(object *Object, signature string) error {
-	// Parse: name(PARAM_TYPE param, ...)
-	re := regexp.MustCompile(`^\s*(\w+)\s*\(([^)]*)\)\s*$`)
-	matches := re.FindStringSubmatch(signature)
-
-	if len(matches) != 3 {
-		return fmt.Errorf("invalid object signature: %s", signature)
-	}
-
-	// Parse object name
-	object.Name = matches[1]
-
-	// Parse constructor parameters
-	if params := strings.TrimSpace(matches[2]); params != "" {
-		var err error
-		object.Constructor, err = p.parseParameters(params)
-		if err != nil {
-			return fmt.Errorf("invalid constructor parameters: %v", err)
-		}
+	var err error
+	object.Constructor, err = p.parseParameterList()
+	if err != nil {
+		return fmt.Errorf("invalid constructor parameters: %v", err)
 	}
 
 	return nil
@@ -571,55 +512,9 @@ func (p *Parser) parseMethodSignatureTokens(method *Method) error {
 	p.nextToken()
 
 	// Parse parameters
-	if p.currentToken.Type == LPAREN {
-		p.nextToken() // consume (
-
-		for p.currentToken.Type != RPAREN && p.currentToken.Type != EOF {
-			param, err := p.parseParameterTokens()
-			if err != nil {
-				return fmt.Errorf("invalid parameter: %v", err)
-			}
-			method.Parameters = append(method.Parameters, param)
-
-			if p.currentToken.Type == COMMA {
-				p.nextToken() // consume comma
-			}
-		}
-
-		if p.currentToken.Type == RPAREN {
-			p.nextToken() // consume )
-		}
-	}
-
-	return nil
-}
-
-// parseMethodSignature parses a method signature string
-func (p *Parser) parseMethodSignature(method *Method, signature string) error {
-	// Parse: RETURN_TYPE .name(PARAM_TYPE param, ...)
-	re := regexp.MustCompile(`^\s*(\w+(?:\s*\{[^}]*\})?)\s+\.(\w+)\s*\(([^)]*)\)\s*$`)
-	matches := re.FindStringSubmatch(signature)
-
-	if len(matches) != 4 {
-		return fmt.Errorf("invalid method signature: %s", signature)
-	}
-
-	// Parse return type
-	returnType, _, err := ParseVCCType(matches[1])
+	method.Parameters, err = p.parseParameterList()
 	if err != nil {
-		return fmt.Errorf("invalid return type in method signature: %v", err)
-	}
-	method.ReturnType = returnType
-
-	// Parse method name
-	method.Name = matches[2]
-
-	// Parse parameters
-	if params := strings.TrimSpace(matches[3]); params != "" {
-		method.Parameters, err = p.parseParameters(params)
-		if err != nil {
-			return fmt.Errorf("invalid parameters in method signature: %v", err)
-		}
+		return fmt.Errorf("invalid parameters: %v", err)
 	}
 
 	return nil

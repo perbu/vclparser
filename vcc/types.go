@@ -36,6 +36,40 @@ const (
 	TypeBereq      VCCType = "BEREQ"
 )
 
+// IsCompatibleType checks if two VCC types are compatible
+func IsCompatibleType(actual, expected VCCType) bool {
+	if actual == expected {
+		return true
+	}
+
+	// Allow INT to REAL coercion (common in VCL)
+	if expected == TypeReal && actual == TypeInt {
+		return true
+	}
+
+	// Allow INT to BOOL coercion (common in C-style languages: 1=true, 0=false)
+	if expected == TypeBool && actual == TypeInt {
+		return true
+	}
+
+	// HTTP objects are compatible with their specific types
+	if actual == TypeHTTP && (expected == TypeBereq || expected == "REQ" || expected == "RESP" || expected == "BERESP") {
+		return true
+	}
+
+	// STRING_LIST can accept STRING
+	if expected == TypeStringList && actual == TypeString {
+		return true
+	}
+
+	// STRANDS can accept STRING or STRING_LIST
+	if expected == TypeStrands && (actual == TypeString || actual == TypeStringList) {
+		return true
+	}
+
+	return false
+}
+
 // Enum represents an enum definition in VCC
 type Enum struct {
 	Values       []string
@@ -231,74 +265,17 @@ func (o *Object) ValidateConstruction(args []VCCType) error {
 
 // isCompatibleType checks if two types are compatible
 func (f *Function) isCompatibleType(actual, expected VCCType) bool {
-	if actual == expected {
-		return true
-	}
-
-	// Allow INT to REAL coercion (common in VCL)
-	if expected == TypeReal && actual == TypeInt {
-		return true
-	}
-
-	// STRING_LIST can accept STRING
-	if expected == TypeStringList && actual == TypeString {
-		return true
-	}
-
-	// STRANDS can accept STRING or STRING_LIST
-	if expected == TypeStrands && (actual == TypeString || actual == TypeStringList) {
-		return true
-	}
-
-	return false
+	return IsCompatibleType(actual, expected)
 }
 
 // isCompatibleType checks if two types are compatible for methods
 func (m *Method) isCompatibleType(actual, expected VCCType) bool {
-	if actual == expected {
-		return true
-	}
-
-	// Allow INT to REAL coercion (common in VCL)
-	if expected == TypeReal && actual == TypeInt {
-		return true
-	}
-
-	// STRING_LIST can accept STRING
-	if expected == TypeStringList && actual == TypeString {
-		return true
-	}
-
-	// STRANDS can accept STRING or STRING_LIST
-	if expected == TypeStrands && (actual == TypeString || actual == TypeStringList) {
-		return true
-	}
-
-	return false
+	return IsCompatibleType(actual, expected)
 }
 
 // isCompatibleType checks if two types are compatible for object constructors
 func (o *Object) isCompatibleType(actual, expected VCCType) bool {
-	if actual == expected {
-		return true
-	}
-
-	// Allow INT to REAL coercion (common in VCL)
-	if expected == TypeReal && actual == TypeInt {
-		return true
-	}
-
-	// STRING_LIST can accept STRING
-	if expected == TypeStringList && actual == TypeString {
-		return true
-	}
-
-	// STRANDS can accept STRING or STRING_LIST
-	if expected == TypeStrands && (actual == TypeString || actual == TypeStringList) {
-		return true
-	}
-
-	return false
+	return IsCompatibleType(actual, expected)
 }
 
 // ParseVCCType parses a VCC type string, handling complex types like ENUM

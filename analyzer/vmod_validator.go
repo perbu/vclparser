@@ -12,6 +12,7 @@ import (
 
 // VMODValidator validates VMOD usage in VCL code
 type VMODValidator struct {
+	ast.BaseVisitor
 	registry      *vmod.Registry
 	symbolTable   *types.SymbolTable
 	errors        []string
@@ -30,65 +31,42 @@ func NewVMODValidator(registry *vmod.Registry, symbolTable *types.SymbolTable) *
 // Validate validates VMOD usage in an AST node
 func (v *VMODValidator) Validate(node ast.Node) []string {
 	v.errors = []string{}
-	v.visit(node)
+	ast.Accept(node, v)
 	return v.errors
 }
 
-// visit recursively visits AST nodes
-func (v *VMODValidator) visit(node ast.Node) {
-	if node == nil {
-		return
-	}
-
-	switch n := node.(type) {
-	case *ast.Program:
-		v.visitProgram(n)
-	case *ast.ImportDecl:
-		v.validateImport(n)
-	case *ast.CallExpression:
-		v.validateCallExpression(n)
-	case *ast.MemberExpression:
-		v.validateMemberExpression(n)
-	case *ast.SubDecl:
-		v.visitSubroutine(n)
-	case *ast.NewStatement:
-		v.validateNewStatement(n)
-	default:
-		// Visit children for other node types
-		v.visitChildren(node)
-	}
-}
-
-// visitProgram validates a program node
-func (v *VMODValidator) visitProgram(program *ast.Program) {
+// VisitProgram implements ast.Visitor
+func (v *VMODValidator) VisitProgram(program *ast.Program) interface{} {
 	for _, decl := range program.Declarations {
-		v.visit(decl)
+		ast.Accept(decl, v)
 	}
+	return nil
 }
 
-// visitSubroutine validates a subroutine
-func (v *VMODValidator) visitSubroutine(sub *ast.SubDecl) {
+// VisitSubDecl implements ast.Visitor
+func (v *VMODValidator) VisitSubDecl(sub *ast.SubDecl) interface{} {
 	// Set current method context for restriction validation
 	oldMethod := v.currentMethod
 	v.currentMethod = sub.Name
 	defer func() { v.currentMethod = oldMethod }()
 
 	for _, stmt := range sub.Body.Statements {
-		v.visit(stmt)
+		ast.Accept(stmt, v)
 	}
+	return nil
 }
 
-// validateImport validates an import declaration
-func (v *VMODValidator) validateImport(importDecl *ast.ImportDecl) {
+// VisitImportDecl implements ast.Visitor
+func (v *VMODValidator) VisitImportDecl(importDecl *ast.ImportDecl) interface{} {
 	if err := v.registry.ValidateImport(importDecl.Module); err != nil {
 		v.addError(fmt.Sprintf("import validation failed: %v", err))
-		return
+		return nil
 	}
 
 	// Add module to symbol table
 	if err := v.symbolTable.DefineModule(importDecl.Module); err != nil {
 		v.addError(fmt.Sprintf("failed to register module %s: %v", importDecl.Module, err))
-		return
+		return nil
 	}
 
 	// Add VMOD functions to symbol table
@@ -102,15 +80,22 @@ func (v *VMODValidator) validateImport(importDecl *ast.ImportDecl) {
 			}
 		}
 	}
+	return nil
 }
 
-// validateCallExpression validates function calls
-func (v *VMODValidator) validateCallExpression(callExpr *ast.CallExpression) {
+// VisitCallExpression implements ast.Visitor
+func (v *VMODValidator) VisitCallExpression(callExpr *ast.CallExpression) interface{} {
 	memberExpr, ok := callExpr.Function.(*ast.MemberExpression)
 	if !ok {
-		// Not a VMOD call, skip
-		v.visitChildren(callExpr)
-		return
+		// Not a VMOD call, visit children normally
+		ast.Accept(callExpr.Function, v)
+		for _, arg := range callExpr.Arguments {
+			ast.Accept(arg, v)
+		}
+		for _, arg := range callExpr.NamedArguments {
+			ast.Accept(arg, v)
+		}
+		return nil
 	}
 
 	// Check if this is a VMOD function call or object method call
@@ -132,20 +117,22 @@ func (v *VMODValidator) validateCallExpression(callExpr *ast.CallExpression) {
 
 	// Visit positional arguments
 	for _, arg := range callExpr.Arguments {
-		v.visit(arg)
+		ast.Accept(arg, v)
 	}
 
 	// Visit named arguments
 	for _, arg := range callExpr.NamedArguments {
-		v.visit(arg)
+		ast.Accept(arg, v)
 	}
+	return nil
 }
 
-// validateMemberExpression validates member access
-func (v *VMODValidator) validateMemberExpression(memberExpr *ast.MemberExpression) {
+// VisitMemberExpression implements ast.Visitor
+func (v *VMODValidator) VisitMemberExpression(memberExpr *ast.MemberExpression) interface{} {
 	// Visit children
-	v.visit(memberExpr.Object)
-	v.visit(memberExpr.Property)
+	ast.Accept(memberExpr.Object, v)
+	ast.Accept(memberExpr.Property, v)
+	return nil
 }
 
 // validateModuleFunctionCall validates a module function call
@@ -284,38 +271,39 @@ func (v *VMODValidator) buildCompleteArgumentList(function *vcc.Function, positi
 }
 
 // validateNewStatement validates a VMOD object instantiation statement
-func (v *VMODValidator) validateNewStatement(newStmt *ast.NewStatement) {
+// VisitNewStatement implements ast.Visitor
+func (v *VMODValidator) VisitNewStatement(newStmt *ast.NewStatement) interface{} {
 	// Extract variable name being assigned
 	varName, ok := newStmt.Name.(*ast.Identifier)
 	if !ok {
 		v.addError("new statement: variable name must be an identifier")
-		return
+		return nil
 	}
 
 	// Extract VMOD constructor call
 	constructorCall, ok := newStmt.Constructor.(*ast.CallExpression)
 	if !ok {
 		v.addError("new statement: constructor must be a function call")
-		return
+		return nil
 	}
 
 	// Extract module.object() call
 	memberExpr, ok := constructorCall.Function.(*ast.MemberExpression)
 	if !ok {
 		v.addError("new statement: constructor must be a module.object() call")
-		return
+		return nil
 	}
 
 	moduleIdent, ok := memberExpr.Object.(*ast.Identifier)
 	if !ok {
 		v.addError("new statement: module name must be an identifier")
-		return
+		return nil
 	}
 
 	objectIdent, ok := memberExpr.Property.(*ast.Identifier)
 	if !ok {
 		v.addError("new statement: object name must be an identifier")
-		return
+		return nil
 	}
 
 	moduleName := moduleIdent.Name
@@ -324,26 +312,27 @@ func (v *VMODValidator) validateNewStatement(newStmt *ast.NewStatement) {
 	// Check if module is imported
 	if !v.symbolTable.IsModuleImported(moduleName) {
 		v.addError(fmt.Sprintf("module %s is not imported", moduleName))
-		return
+		return nil
 	}
 
 	// Validate object construction with enhanced type inference
 	argTypes := v.extractArgumentTypesWithObjectContext(moduleName, objectName, constructorCall.Arguments)
 	if err := v.registry.ValidateObjectConstruction(moduleName, objectName, argTypes); err != nil {
 		v.addError(fmt.Sprintf("VMOD object construction validation failed: %v", err))
-		return
+		return nil
 	}
 
 	// Register the object instance in the symbol table
 	if err := v.symbolTable.DefineVMODObject(varName.Name, moduleName, objectName); err != nil {
 		v.addError(fmt.Sprintf("failed to register VMOD object %s: %v", varName.Name, err))
-		return
+		return nil
 	}
 
 	// Visit constructor arguments for nested validation
 	for _, arg := range constructorCall.Arguments {
-		v.visit(arg)
+		ast.Accept(arg, v)
 	}
+	return nil
 }
 
 // validateFunctionRestrictions validates function usage restrictions
@@ -637,6 +626,8 @@ func (v *VMODValidator) convertSymbolTypeToVCCType(symbolType types.Type) vcc.VC
 		return vcc.TypeTime
 	case types.Void:
 		return vcc.TypeVoid
+	case types.HTTP:
+		return vcc.TypeHTTP
 	default:
 		return vcc.TypeString // Default
 	}
@@ -695,51 +686,68 @@ func (v *VMODValidator) inferObjectMethodReturnType(memberExpr *ast.MemberExpres
 	return method.ReturnType
 }
 
-// visitChildren visits all children of a node
-func (v *VMODValidator) visitChildren(node ast.Node) {
-	switch n := node.(type) {
-	case *ast.Program:
-		for _, decl := range n.Declarations {
-			v.visit(decl)
-		}
-	case *ast.BlockStatement:
-		for _, stmt := range n.Statements {
-			v.visit(stmt)
-		}
-	case *ast.IfStatement:
-		v.visit(n.Condition)
-		v.visit(n.Then)
-		if n.Else != nil {
-			v.visit(n.Else)
-		}
-	case *ast.SetStatement:
-		v.visit(n.Variable)
-		v.visit(n.Value)
-	case *ast.UnsetStatement:
-		v.visit(n.Variable)
-	case *ast.ReturnStatement:
-		if n.Action != nil {
-			v.visit(n.Action)
-		}
-	case *ast.CallStatement:
-		v.visit(n.Function)
-	case *ast.BinaryExpression:
-		v.visit(n.Left)
-		v.visit(n.Right)
-	case *ast.UnaryExpression:
-		v.visit(n.Operand)
-	case *ast.CallExpression:
-		v.visit(n.Function)
-		for _, arg := range n.Arguments {
-			v.visit(arg)
-		}
-	case *ast.MemberExpression:
-		v.visit(n.Object)
-		v.visit(n.Property)
-	case *ast.NewStatement:
-		v.visit(n.Name)
-		v.visit(n.Constructor)
+// VisitBlockStatement implements ast.Visitor
+func (v *VMODValidator) VisitBlockStatement(node *ast.BlockStatement) interface{} {
+	for _, stmt := range node.Statements {
+		ast.Accept(stmt, v)
 	}
+	return nil
+}
+
+// VisitExpressionStatement implements ast.Visitor
+func (v *VMODValidator) VisitExpressionStatement(node *ast.ExpressionStatement) interface{} {
+	ast.Accept(node.Expression, v)
+	return nil
+}
+
+// VisitIfStatement implements ast.Visitor
+func (v *VMODValidator) VisitIfStatement(node *ast.IfStatement) interface{} {
+	ast.Accept(node.Condition, v)
+	ast.Accept(node.Then, v)
+	if node.Else != nil {
+		ast.Accept(node.Else, v)
+	}
+	return nil
+}
+
+// VisitSetStatement implements ast.Visitor
+func (v *VMODValidator) VisitSetStatement(node *ast.SetStatement) interface{} {
+	ast.Accept(node.Variable, v)
+	ast.Accept(node.Value, v)
+	return nil
+}
+
+// VisitUnsetStatement implements ast.Visitor
+func (v *VMODValidator) VisitUnsetStatement(node *ast.UnsetStatement) interface{} {
+	ast.Accept(node.Variable, v)
+	return nil
+}
+
+// VisitReturnStatement implements ast.Visitor
+func (v *VMODValidator) VisitReturnStatement(node *ast.ReturnStatement) interface{} {
+	if node.Action != nil {
+		ast.Accept(node.Action, v)
+	}
+	return nil
+}
+
+// VisitCallStatement implements ast.Visitor
+func (v *VMODValidator) VisitCallStatement(node *ast.CallStatement) interface{} {
+	ast.Accept(node.Function, v)
+	return nil
+}
+
+// VisitBinaryExpression implements ast.Visitor
+func (v *VMODValidator) VisitBinaryExpression(node *ast.BinaryExpression) interface{} {
+	ast.Accept(node.Left, v)
+	ast.Accept(node.Right, v)
+	return nil
+}
+
+// VisitUnaryExpression implements ast.Visitor
+func (v *VMODValidator) VisitUnaryExpression(node *ast.UnaryExpression) interface{} {
+	ast.Accept(node.Operand, v)
+	return nil
 }
 
 // addError adds a validation error
