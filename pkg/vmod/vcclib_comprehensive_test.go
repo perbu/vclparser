@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/varnish/vclparser"
+	"github.com/perbu/vclparser"
 )
 
 // TestVCCLibAllFiles tests that all VCC files in vcclib directory can be parsed

@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	ast2 "github.com/varnish/vclparser/pkg/ast"
-	"github.com/varnish/vclparser/pkg/lexer"
-	"github.com/varnish/vclparser/pkg/parser"
-	types2 "github.com/varnish/vclparser/pkg/types"
-	"github.com/varnish/vclparser/pkg/vcc"
-	"github.com/varnish/vclparser/pkg/vmod"
+	ast2 "github.com/perbu/vclparser/pkg/ast"
+	"github.com/perbu/vclparser/pkg/lexer"
+	"github.com/perbu/vclparser/pkg/parser"
+	types2 "github.com/perbu/vclparser/pkg/types"
+	"github.com/perbu/vclparser/pkg/vcc"
+	"github.com/perbu/vclparser/pkg/vmod"
 )
 
 func setupTestRegistry(t *testing.T) *vmod.Registry {

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/varnish/vclparser/pkg/parser"
+	"github.com/perbu/vclparser/pkg/parser"
 )
 
 // TestAllTestdataVCLFiles tests that all VCL files in testdata/ can be parsed successfully

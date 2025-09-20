@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"github.com/varnish/vclparser/pkg/ast"
-	"github.com/varnish/vclparser/pkg/lexer"
+	"github.com/perbu/vclparser/pkg/ast"
+	"github.com/perbu/vclparser/pkg/lexer"
 )
 
 // parseBackendDecl parses a backend declaration

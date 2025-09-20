@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/varnish/vclparser/pkg/analyzer"
-	"github.com/varnish/vclparser/pkg/ast"
-	"github.com/varnish/vclparser/pkg/vmod"
+	"github.com/perbu/vclparser/pkg/analyzer"
+	"github.com/perbu/vclparser/pkg/ast"
+	"github.com/perbu/vclparser/pkg/vmod"
 )
 
 // Integration test for VMOD validation functionality

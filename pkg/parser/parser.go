@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/varnish/vclparser/pkg/ast"
-	lexer2 "github.com/varnish/vclparser/pkg/lexer"
+	"github.com/perbu/vclparser/pkg/ast"
+	lexer2 "github.com/perbu/vclparser/pkg/lexer"
 )
 
 // Parser implements a recursive descent parser for VCL

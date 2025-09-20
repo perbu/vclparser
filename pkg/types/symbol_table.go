@@ -3,7 +3,7 @@ package types
 import (
 	"fmt"
 
-	"github.com/varnish/vclparser/pkg/lexer"
+	"github.com/perbu/vclparser/pkg/lexer"
 )
 
 // SymbolKind represents the kind of symbol

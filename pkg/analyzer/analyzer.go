@@ -3,10 +3,10 @@ package analyzer
 import (
 	"fmt"
 
-	"github.com/varnish/vclparser/pkg/ast"
-	"github.com/varnish/vclparser/pkg/parser"
-	"github.com/varnish/vclparser/pkg/types"
-	"github.com/varnish/vclparser/pkg/vmod"
+	"github.com/perbu/vclparser/pkg/ast"
+	"github.com/perbu/vclparser/pkg/parser"
+	"github.com/perbu/vclparser/pkg/types"
+	"github.com/perbu/vclparser/pkg/vmod"
 )
 
 // Analyzer performs semantic analysis on VCL AST

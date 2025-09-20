@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"testing"
 
-	ast2 "github.com/varnish/vclparser/pkg/ast"
-	"github.com/varnish/vclparser/pkg/lexer"
+	ast2 "github.com/perbu/vclparser/pkg/ast"
+	"github.com/perbu/vclparser/pkg/lexer"
 )
 
 // TestInlineProbeObjectLiteral tests parsing of inline probe definitions within backend declarations

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/varnish/vclparser"
-	vcc2 "github.com/varnish/vclparser/pkg/vcc"
+	"github.com/perbu/vclparser"
+	vcc2 "github.com/perbu/vclparser/pkg/vcc"
 )
 
 // Registry manages VMOD definitions loaded from VCC files

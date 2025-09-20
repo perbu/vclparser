@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/varnish/vclparser/pkg/analyzer"
-	"github.com/varnish/vclparser/pkg/lexer"
-	"github.com/varnish/vclparser/pkg/parser"
-	"github.com/varnish/vclparser/pkg/types"
-	"github.com/varnish/vclparser/pkg/vmod"
+	"github.com/perbu/vclparser/pkg/analyzer"
+	"github.com/perbu/vclparser/pkg/lexer"
+	"github.com/perbu/vclparser/pkg/parser"
+	"github.com/perbu/vclparser/pkg/types"
+	"github.com/perbu/vclparser/pkg/vmod"
 )
 
 // setupRealWorldVMODs creates VCC files for VMODs found in vmod-vcl.md
