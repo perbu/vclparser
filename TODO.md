@@ -2,12 +2,16 @@
 
 Parses VCL files into an AST. Can be given VCC files to validate VMOD usage.
 
-## Missing Features
+## Recently Completed Features (2025)
 
-### Return Statement Action Keywords
-- Parser requires parentheses around return actions, but VCL allows bare keywords
-- Example: `return lookup;` fails (should work alongside `return (lookup);`)
-- Keywords: `lookup`, `hash`, `pass`, `pipe`, `purge`, `synth`, `deliver`, `restart`
+### ✅ Return Statement Action Keywords (Fixed)
+- Parser now supports both parenthesized and naked return statements
+- Examples: Both `return lookup;` and `return (lookup);` work correctly
+- All valid VCL return action keywords supported: `lookup`, `hash`, `pass`, `pipe`, `purge`, `synth`, `deliver`, `restart`, `fetch`, `miss`, `hit`, `abandon`, `retry`, `error`, `ok`, `fail`, `vcl`
+- Comprehensive test coverage added in `parser/return_actions_test.go`
+- Full backward compatibility maintained
+
+## Missing Features
 
 ## Future Enhancements
 

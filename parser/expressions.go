@@ -99,7 +99,7 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 	case lexer.HASH_KW, lexer.PASS_KW, lexer.PIPE_KW, lexer.FETCH_KW,
 		lexer.HIT_KW, lexer.MISS_KW, lexer.DELIVER_KW, lexer.PURGE_KW,
 		lexer.SYNTH_KW, lexer.ABANDON_KW, lexer.RETRY_KW, lexer.OK_KW, lexer.FAIL_KW,
-		lexer.ERROR_KW, lexer.RESTART_KW, lexer.ACL_KW:
+		lexer.ERROR_KW, lexer.RESTART_KW, lexer.ACL_KW, lexer.LOOKUP_KW, lexer.VCL_KW:
 		return &ast.Identifier{
 			BaseNode: ast.BaseNode{
 				StartPos: p.currentToken.Start,
