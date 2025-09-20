@@ -38,6 +38,8 @@ const (
 	RPAREN    // )
 	LBRACE    // {
 	RBRACE    // }
+	LBRACKET  // [
+	RBRACKET  // ]
 	COMMA     // ,
 	EQUALS    // =
 	DOT       // .
@@ -103,6 +105,10 @@ func (tt TokenType) String() string {
 		return "LBRACE"
 	case RBRACE:
 		return "RBRACE"
+	case LBRACKET:
+		return "LBRACKET"
+	case RBRACKET:
+		return "RBRACKET"
 	case COMMA:
 		return "COMMA"
 	case EQUALS:
@@ -203,6 +209,12 @@ func (l *Lexer) readToken() {
 		l.advance()
 	case '}':
 		l.peekToken = Token{Type: RBRACE, Literal: "}", Line: l.line, Column: startColumn}
+		l.advance()
+	case '[':
+		l.peekToken = Token{Type: LBRACKET, Literal: "[", Line: l.line, Column: startColumn}
+		l.advance()
+	case ']':
+		l.peekToken = Token{Type: RBRACKET, Literal: "]", Line: l.line, Column: startColumn}
 		l.advance()
 	case ',':
 		l.peekToken = Token{Type: COMMA, Literal: ",", Line: l.line, Column: startColumn}

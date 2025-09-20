@@ -372,6 +372,14 @@ func (p *Parser) parseFunctionSignatureTokens(function *Function) error {
 func (p *Parser) parseParameterTokens() (Parameter, error) {
 	var param Parameter
 
+	// Check for optional parameter syntax with square brackets
+	hasOpenBracket := false
+	if p.currentToken.Type == LBRACKET {
+		param.Optional = true
+		hasOpenBracket = true
+		p.nextToken() // consume [
+	}
+
 	// Parse type (might be ENUM{...})
 	if p.currentToken.Type == IDENT && p.currentToken.Literal == "ENUM" {
 		// Handle ENUM type
@@ -409,13 +417,20 @@ func (p *Parser) parseParameterTokens() (Parameter, error) {
 		param.Enum = enum
 		p.nextToken()
 	} else {
-		return param, fmt.Errorf("expected parameter type")
+		return param, fmt.Errorf("expected parameter type at line %d:%d, got %s",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Type)
 	}
 
 	// Parse parameter name (optional in some VCC files)
 	if p.currentToken.Type == IDENT && p.currentToken.Literal != "," {
 		param.Name = p.currentToken.Literal
 		p.nextToken()
+	}
+
+	// For optional parameters, check if we hit the closing bracket immediately after the name
+	if hasOpenBracket && p.currentToken.Type == RBRACKET {
+		p.nextToken() // consume ]
+		return param, nil
 	}
 
 	// Check for default value
@@ -425,6 +440,16 @@ func (p *Parser) parseParameterTokens() (Parameter, error) {
 			param.DefaultValue = p.currentToken.Literal
 			param.Optional = true
 			p.nextToken()
+		}
+	}
+
+	// Consume closing bracket if we had an opening bracket
+	if hasOpenBracket {
+		if p.currentToken.Type == RBRACKET {
+			p.nextToken() // consume ]
+		} else {
+			return param, fmt.Errorf("expected closing bracket ']' for optional parameter at line %d:%d, got %s",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type)
 		}
 	}
 
@@ -618,16 +643,23 @@ func (p *Parser) parseParameters(paramStr string) ([]Parameter, error) {
 
 // parseParameter parses a single parameter definition
 func (p *Parser) parseParameter(paramStr string) (Parameter, error) {
-	// Handle: TYPE name=default or TYPE name or ENUM{...} name=default
+	// Handle: [TYPE name=default] or TYPE name=default or TYPE name or ENUM{...} name=default
 
 	var param Parameter
+
+	// Check for optional parameter syntax with square brackets
+	paramStr = strings.TrimSpace(paramStr)
+	if strings.HasPrefix(paramStr, "[") && strings.HasSuffix(paramStr, "]") {
+		param.Optional = true
+		paramStr = strings.TrimSpace(paramStr[1 : len(paramStr)-1])
+	}
 
 	// Check for default value
 	parts := strings.SplitN(paramStr, "=", 2)
 	if len(parts) == 2 {
-		param.DefaultValue = strings.Trim(parts[1], `"`)
+		param.DefaultValue = strings.TrimSpace(strings.Trim(parts[1], `"`))
 		param.Optional = true
-		paramStr = parts[0]
+		paramStr = strings.TrimSpace(parts[0])
 	}
 
 	// Split type and name
@@ -673,11 +705,12 @@ func (p *Parser) parseParameter(paramStr string) (Parameter, error) {
 	return param, nil
 }
 
-// splitParameters splits parameter string respecting braces
+// splitParameters splits parameter string respecting braces and brackets
 func (p *Parser) splitParameters(paramStr string) []string {
 	var parts []string
 	var current strings.Builder
 	braceCount := 0
+	bracketCount := 0
 
 	for _, char := range paramStr {
 		switch char {
@@ -687,8 +720,14 @@ func (p *Parser) splitParameters(paramStr string) []string {
 		case '}':
 			braceCount--
 			current.WriteRune(char)
+		case '[':
+			bracketCount++
+			current.WriteRune(char)
+		case ']':
+			bracketCount--
+			current.WriteRune(char)
 		case ',':
-			if braceCount == 0 {
+			if braceCount == 0 && bracketCount == 0 {
 				parts = append(parts, current.String())
 				current.Reset()
 			} else {

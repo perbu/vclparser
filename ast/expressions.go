@@ -21,11 +21,18 @@ type UnaryExpression struct {
 func (ue *UnaryExpression) String() string  { return "UnaryExpression(" + ue.Operator + ")" }
 func (ue *UnaryExpression) expressionNode() {}
 
+// NamedArgument represents a named argument in a function call
+type NamedArgument struct {
+	Name  string
+	Value Expression
+}
+
 // CallExpression represents a function call
 type CallExpression struct {
 	BaseNode
-	Function  Expression
-	Arguments []Expression
+	Function       Expression
+	Arguments      []Expression          // Positional arguments
+	NamedArguments map[string]Expression // Named arguments: parameter_name -> value
 }
 
 func (ce *CallExpression) String() string  { return "CallExpression" }
@@ -59,17 +66,6 @@ type ParenthesizedExpression struct {
 
 func (pe *ParenthesizedExpression) String() string  { return "ParenthesizedExpression" }
 func (pe *ParenthesizedExpression) expressionNode() {}
-
-// ConditionalExpression represents a ternary conditional expression
-type ConditionalExpression struct {
-	BaseNode
-	Test       Expression
-	Consequent Expression
-	Alternate  Expression
-}
-
-func (ce *ConditionalExpression) String() string  { return "ConditionalExpression" }
-func (ce *ConditionalExpression) expressionNode() {}
 
 // RegexMatchExpression represents regex matching (~, !~)
 type RegexMatchExpression struct {

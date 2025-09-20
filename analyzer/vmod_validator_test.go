@@ -387,6 +387,11 @@ func TestInferExpressionType(t *testing.T) {
 			expr:     &ast.Identifier{Name: "req.method"},
 			expected: "STRING", // Default assumption
 		},
+		{
+			name:     "time expression",
+			expr:     &ast.TimeExpression{Value: "30s"},
+			expected: "DURATION",
+		},
 	}
 
 	for _, test := range tests {

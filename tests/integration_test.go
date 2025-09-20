@@ -386,7 +386,11 @@ sub vcl_backend_response {
 sub vcl_deliver {
     # Add response headers
     set resp.http.X-Served-By = "Varnish";
-    set resp.http.X-Cache = obj.hits > 0 ? "HIT" : "MISS";
+    if (obj.hits > 0) {
+        set resp.http.X-Cache = "HIT";
+    } else {
+        set resp.http.X-Cache = "MISS";
+    }
 }`
 
 	// Setup minimal VCC files for this test

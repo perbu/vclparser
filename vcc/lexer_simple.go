@@ -49,6 +49,8 @@ func (l *SimpleLexer) NextToken() Token {
 			return l.readComment()
 		case '"':
 			return l.readString()
+		case '\'':
+			return l.readString()
 		case '(':
 			l.advance()
 			return Token{Type: LPAREN, Literal: "(", Line: l.line, Column: startColumn}
@@ -61,6 +63,12 @@ func (l *SimpleLexer) NextToken() Token {
 		case '}':
 			l.advance()
 			return Token{Type: RBRACE, Literal: "}", Line: l.line, Column: startColumn}
+		case '[':
+			l.advance()
+			return Token{Type: LBRACKET, Literal: "[", Line: l.line, Column: startColumn}
+		case ']':
+			l.advance()
+			return Token{Type: RBRACKET, Literal: "]", Line: l.line, Column: startColumn}
 		case ',':
 			l.advance()
 			return Token{Type: COMMA, Literal: ",", Line: l.line, Column: startColumn}
@@ -76,7 +84,7 @@ func (l *SimpleLexer) NextToken() Token {
 		default:
 			if unicode.IsLetter(rune(ch)) || ch == '_' {
 				return l.readIdentifier()
-			} else if unicode.IsDigit(rune(ch)) {
+			} else if unicode.IsDigit(rune(ch)) || ch == '-' {
 				return l.readNumber()
 			} else {
 				l.advance()
@@ -150,10 +158,11 @@ func (l *SimpleLexer) readComment() Token {
 // readString reads a quoted string literal
 func (l *SimpleLexer) readString() Token {
 	startColumn := l.column
-	l.advance() // skip opening quote
+	quoteChar := l.currentChar() // remember which quote type we're using
+	l.advance()                  // skip opening quote
 
 	var value strings.Builder
-	for l.position < len(l.currentLine) && l.currentChar() != '"' {
+	for l.position < len(l.currentLine) && l.currentChar() != quoteChar {
 		if l.currentChar() == '\\' {
 			l.advance()
 			if l.position < len(l.currentLine) {
@@ -166,7 +175,7 @@ func (l *SimpleLexer) readString() Token {
 		}
 	}
 
-	if l.position < len(l.currentLine) && l.currentChar() == '"' {
+	if l.position < len(l.currentLine) && l.currentChar() == quoteChar {
 		l.advance() // skip closing quote
 	}
 
@@ -192,6 +201,11 @@ func (l *SimpleLexer) readIdentifier() Token {
 func (l *SimpleLexer) readNumber() Token {
 	startColumn := l.column
 	startPos := l.position
+
+	// Handle optional minus sign
+	if l.currentChar() == '-' {
+		l.advance()
+	}
 
 	for l.position < len(l.currentLine) && (unicode.IsDigit(rune(l.currentChar())) || l.currentChar() == '.') {
 		l.advance()

@@ -30,7 +30,6 @@ type Visitor interface {
 	VisitMemberExpression(*MemberExpression) interface{}
 	VisitIndexExpression(*IndexExpression) interface{}
 	VisitParenthesizedExpression(*ParenthesizedExpression) interface{}
-	VisitConditionalExpression(*ConditionalExpression) interface{}
 	VisitRegexMatchExpression(*RegexMatchExpression) interface{}
 	VisitAssignmentExpression(*AssignmentExpression) interface{}
 	VisitUpdateExpression(*UpdateExpression) interface{}
@@ -105,8 +104,6 @@ func Accept(node Node, visitor Visitor) interface{} {
 		return visitor.VisitIndexExpression(n)
 	case *ParenthesizedExpression:
 		return visitor.VisitParenthesizedExpression(n)
-	case *ConditionalExpression:
-		return visitor.VisitConditionalExpression(n)
 	case *RegexMatchExpression:
 		return visitor.VisitRegexMatchExpression(n)
 	case *AssignmentExpression:
@@ -172,9 +169,6 @@ func (bv *BaseVisitor) VisitCallExpression(node *CallExpression) interface{}    
 func (bv *BaseVisitor) VisitMemberExpression(node *MemberExpression) interface{}       { return nil }
 func (bv *BaseVisitor) VisitIndexExpression(node *IndexExpression) interface{}         { return nil }
 func (bv *BaseVisitor) VisitParenthesizedExpression(node *ParenthesizedExpression) interface{} {
-	return nil
-}
-func (bv *BaseVisitor) VisitConditionalExpression(node *ConditionalExpression) interface{} {
 	return nil
 }
 func (bv *BaseVisitor) VisitRegexMatchExpression(node *RegexMatchExpression) interface{} {

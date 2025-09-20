@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -113,6 +114,10 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 		}
 		return p.parseIntegerLiteral()
 	case lexer.FNUM:
+		// Check if this float number is followed by a time unit (like "1.5s")
+		if p.isNumberFollowedByTimeUnit() {
+			return p.parseTimeExpressionFromNumber()
+		}
 		return p.parseFloatLiteral()
 	case lexer.CSTR:
 		return p.parseStringLiteral()
@@ -303,7 +308,8 @@ func (p *Parser) parseCallExpression(fn ast.Expression) *ast.CallExpression {
 		BaseNode: ast.BaseNode{
 			StartPos: fn.Start(),
 		},
-		Function: fn,
+		Function:       fn,
+		NamedArguments: make(map[string]ast.Expression),
 	}
 
 	p.nextToken() // move to '('
@@ -312,24 +318,63 @@ func (p *Parser) parseCallExpression(fn ast.Expression) *ast.CallExpression {
 	if !p.peekTokenIs(lexer.RPAREN) {
 		p.nextToken() // move past '(' to the first argument's token
 
-		// Parse the first argument
-		arg := p.parseExpression()
-		if arg == nil {
-			p.addError("failed to parse function argument")
-			return nil
-		}
-		expr.Arguments = append(expr.Arguments, arg)
+		// Phase 1: Parse positional arguments until we see "name =" pattern
+		for !p.currentTokenIs(lexer.RPAREN) {
+			// Check if this is the start of named arguments (ID followed by =)
+			if p.isNamedArgument() {
+				break
+			}
 
-		// Parse subsequent arguments separated by commas
-		for p.peekTokenIs(lexer.COMMA) {
-			p.nextToken() // move to ','
-			p.nextToken() // move past ','
+			// Parse positional argument
 			arg := p.parseExpression()
 			if arg == nil {
 				p.addError("failed to parse function argument")
 				return nil
 			}
 			expr.Arguments = append(expr.Arguments, arg)
+
+			// Break if we hit closing paren or check for comma
+			if p.peekTokenIs(lexer.RPAREN) {
+				break
+			}
+			if !p.peekTokenIs(lexer.COMMA) {
+				p.addError("expected ',' or ')' after function argument")
+				return nil
+			}
+			p.nextToken() // move to ','
+			p.nextToken() // move past ','
+		}
+
+		// Phase 2: Parse named arguments
+		for p.currentTokenIs(lexer.ID) && p.peekTokenIs(lexer.ASSIGN) {
+			// Parse named argument
+			argName := p.currentToken.Value
+			p.nextToken() // move to '='
+			p.nextToken() // move past '='
+
+			// Check for duplicate named argument
+			if _, exists := expr.NamedArguments[argName]; exists {
+				p.addError(fmt.Sprintf("argument '%s' already used", argName))
+				return nil
+			}
+
+			arg := p.parseExpression()
+			if arg == nil {
+				p.addError("failed to parse named argument value")
+				return nil
+			}
+			expr.NamedArguments[argName] = arg
+
+			// Break if we hit closing paren or check for comma
+			if p.peekTokenIs(lexer.RPAREN) {
+				break
+			}
+			if !p.peekTokenIs(lexer.COMMA) {
+				p.addError("expected ',' or ')' after named argument")
+				return nil
+			}
+			p.nextToken() // move to ','
+			p.nextToken() // move past ','
 		}
 	}
 
@@ -461,9 +506,10 @@ func (p *Parser) parseIPExpression() *ast.IPExpression {
 
 // Helper functions to detect literal types
 
-// isNumberFollowedByTimeUnit checks if current CNUM token is followed by a time unit
+// isNumberFollowedByTimeUnit checks if current CNUM/FNUM token is followed by a time unit
 func (p *Parser) isNumberFollowedByTimeUnit() bool {
-	if p.currentToken.Type != lexer.CNUM {
+	// Support both integer and float numbers
+	if p.currentToken.Type != lexer.CNUM && p.currentToken.Type != lexer.FNUM {
 		return false
 	}
 
@@ -472,14 +518,8 @@ func (p *Parser) isNumberFollowedByTimeUnit() bool {
 		return false
 	}
 
-	// Check for common time/duration suffixes
-	timeUnits := []string{"s", "m", "h", "d", "w", "ms", "us", "ns"}
-	for _, unit := range timeUnits {
-		if p.peekToken.Value == unit {
-			return true
-		}
-	}
-	return false
+	// Use the new duration validation utility
+	return IsDurationUnit(p.peekToken.Value)
 }
 
 // parseTimeExpressionFromNumber parses time expressions from number + unit (e.g., "30" + "s")
@@ -507,14 +547,8 @@ func (p *Parser) isTimeOrDurationLiteral() bool {
 		return false
 	}
 
-	// Check for common time/duration suffixes
-	suffixes := []string{"s", "m", "h", "d", "w", "ms", "us", "ns"}
-	for _, suffix := range suffixes {
-		if strings.HasSuffix(value, suffix) {
-			return true
-		}
-	}
-	return false
+	// Use the new duration validation utility to check for complete duration strings
+	return ValidateDurationString(value)
 }
 
 // isIPLiteral checks if current token looks like an IP address
@@ -537,4 +571,9 @@ func (p *Parser) isIPLiteral() bool {
 
 	// Simple check for IPv6 (contains colons)
 	return strings.Contains(value, ":")
+}
+
+// isNamedArgument checks if current token is the start of a named argument (ID followed by =)
+func (p *Parser) isNamedArgument() bool {
+	return p.currentTokenIs(lexer.ID) && p.peekTokenIs(lexer.ASSIGN)
 }

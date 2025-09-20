@@ -30,8 +30,8 @@ sub test {
 sub test {
 	xbody.regsub("\Steven", "Andrew", max = std.integer(bereq.http.max, 0));
 }`,
-			wantErr:     true, // Named parameters not yet supported
-			description: "std.integer() used in named parameter - LIMITATION: named params not supported",
+			wantErr:     false, // Named parameters now supported!
+			description: "std.integer() used in named parameter - named params now working",
 		},
 		{
 			name: "Simple nested call - function as argument",

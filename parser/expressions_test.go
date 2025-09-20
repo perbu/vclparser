@@ -238,3 +238,194 @@ func TestExpressionStatementEnd(t *testing.T) {
 		})
 	}
 }
+
+func TestDurationParsing(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string // Expected duration value
+		wantErr  bool
+	}{
+		{
+			name:     "integer seconds",
+			input:    `vcl 4.0; sub test { set req.ttl = 30s; }`,
+			expected: "30s",
+			wantErr:  false,
+		},
+		{
+			name:     "float seconds",
+			input:    `vcl 4.0; sub test { set req.ttl = 1.5s; }`,
+			expected: "1.5s",
+			wantErr:  false,
+		},
+		{
+			name:     "minutes",
+			input:    `vcl 4.0; sub test { set req.ttl = 5m; }`,
+			expected: "5m",
+			wantErr:  false,
+		},
+		{
+			name:     "hours",
+			input:    `vcl 4.0; sub test { set req.ttl = 2h; }`,
+			expected: "2h",
+			wantErr:  false,
+		},
+		{
+			name:     "days",
+			input:    `vcl 4.0; sub test { set req.ttl = 7d; }`,
+			expected: "7d",
+			wantErr:  false,
+		},
+		{
+			name:     "weeks",
+			input:    `vcl 4.0; sub test { set req.ttl = 2w; }`,
+			expected: "2w",
+			wantErr:  false,
+		},
+		{
+			name:     "milliseconds",
+			input:    `vcl 4.0; sub test { set req.ttl = 500ms; }`,
+			expected: "500ms",
+			wantErr:  false,
+		},
+		{
+			name:     "years",
+			input:    `vcl 4.0; sub test { set req.ttl = 1y; }`,
+			expected: "1y",
+			wantErr:  false,
+		},
+		{
+			name:     "zero duration",
+			input:    `vcl 4.0; sub test { set req.ttl = 0s; }`,
+			expected: "0s",
+			wantErr:  false,
+		},
+		{
+			name:     "float minutes",
+			input:    `vcl 4.0; sub test { set req.ttl = 2.5m; }`,
+			expected: "2.5m",
+			wantErr:  false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			l := lexer.New(test.input, "test.vcl")
+			p := New(l, test.input, "test.vcl")
+			program := p.ParseProgram()
+
+			if test.wantErr {
+				if len(p.errors) == 0 {
+					t.Errorf("Expected parsing error but got none")
+				}
+				return
+			}
+
+			checkParserErrors(t, p)
+
+			// Navigate to the assignment expression
+			subDecl := program.Declarations[0].(*ast.SubDecl)
+			setStmt := subDecl.Body.Statements[0].(*ast.SetStatement)
+
+			// Check that the value is parsed as a TimeExpression
+			timeExpr, ok := setStmt.Value.(*ast.TimeExpression)
+			if !ok {
+				t.Errorf("Expected TimeExpression, got %T", setStmt.Value)
+				return
+			}
+
+			if timeExpr.Value != test.expected {
+				t.Errorf("Expected duration value %q, got %q", test.expected, timeExpr.Value)
+			}
+		})
+	}
+}
+
+func TestDurationInFunctionCalls(t *testing.T) {
+	// Test that durations work correctly when passed as function arguments
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+		wantErr  bool
+	}{
+		{
+			name:     "duration as function argument",
+			input:    `vcl 4.0; import s3; sub test { s3.verify("key", "secret", 1s); }`,
+			expected: "1s",
+			wantErr:  false,
+		},
+		{
+			name:     "float duration as function argument",
+			input:    `vcl 4.0; import std; sub test { std.cache(1.5h); }`,
+			expected: "1.5h",
+			wantErr:  false,
+		},
+		{
+			name:     "simple function with duration",
+			input:    `vcl 4.0; sub test { func(30s); }`,
+			expected: "30s",
+			wantErr:  false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			l := lexer.New(test.input, "test.vcl")
+			p := New(l, test.input, "test.vcl")
+			program := p.ParseProgram()
+
+			if test.wantErr {
+				if len(p.errors) == 0 {
+					t.Errorf("Expected parsing error but got none")
+				}
+				return
+			}
+
+			checkParserErrors(t, p)
+
+			// Navigate to the function call expression
+			var subDecl *ast.SubDecl
+			if len(program.Declarations) > 1 {
+				// Has import statement, sub is second declaration
+				subDecl = program.Declarations[1].(*ast.SubDecl)
+			} else {
+				// No import, sub is first declaration
+				subDecl = program.Declarations[0].(*ast.SubDecl)
+			}
+			exprStmt := subDecl.Body.Statements[0].(*ast.ExpressionStatement)
+			callExpr := exprStmt.Expression.(*ast.CallExpression)
+
+			// Check that we have the expected arguments
+			if len(callExpr.Arguments) == 0 {
+				t.Errorf("Expected at least one argument in function call")
+				return
+			}
+
+			// Find the TimeExpression argument (could be any position)
+			var timeExpr *ast.TimeExpression
+			var found bool
+			for i, arg := range callExpr.Arguments {
+				if te, ok := arg.(*ast.TimeExpression); ok {
+					timeExpr = te
+					found = true
+					t.Logf("Found TimeExpression at argument position %d", i)
+					break
+				}
+			}
+
+			if !found {
+				// Log all argument types for debugging
+				for i, arg := range callExpr.Arguments {
+					t.Logf("Argument %d: %T with value: %+v", i, arg, arg)
+				}
+				t.Errorf("Expected at least one TimeExpression argument, but found none")
+				return
+			}
+
+			if timeExpr.Value != test.expected {
+				t.Errorf("Expected duration value %q, got %q", test.expected, timeExpr.Value)
+			}
+		})
+	}
+}
