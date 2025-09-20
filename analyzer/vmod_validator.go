@@ -278,19 +278,8 @@ func (v *VMODValidator) buildCompleteArgumentList(function *vcc.Function, positi
 		}
 	}
 
-	// Trim result to only include provided arguments (remove trailing nils)
-	lastProvidedIndex := -1
-	for i := len(result) - 1; i >= 0; i-- {
-		if result[i] != nil {
-			lastProvidedIndex = i
-			break
-		}
-	}
-
-	if lastProvidedIndex >= 0 {
-		return result[:lastProvidedIndex+1], nil
-	}
-
+	// Don't trim the result - we need to maintain positional mapping
+	// The validation logic should handle nil arguments for optional parameters
 	return result, nil
 }
 
@@ -409,8 +398,14 @@ func (v *VMODValidator) extractArgumentTypesWithContext(moduleName, functionName
 			expectedType = function.Parameters[i].Type
 		}
 
-		vccType := v.inferExpressionTypeWithContext(arg, expectedType)
-		types = append(types, vccType)
+		// Handle nil arguments (for optional parameters)
+		if arg == nil {
+			// For optional parameters, use the expected type
+			types = append(types, expectedType)
+		} else {
+			vccType := v.inferExpressionTypeWithContext(arg, expectedType)
+			types = append(types, vccType)
+		}
 	}
 
 	return types
@@ -433,8 +428,14 @@ func (v *VMODValidator) extractArgumentTypesWithObjectContext(moduleName, object
 			expectedType = object.Constructor[i].Type
 		}
 
-		vccType := v.inferExpressionTypeWithContext(arg, expectedType)
-		types = append(types, vccType)
+		// Handle nil arguments (for optional parameters)
+		if arg == nil {
+			// For optional parameters, use the expected type
+			types = append(types, expectedType)
+		} else {
+			vccType := v.inferExpressionTypeWithContext(arg, expectedType)
+			types = append(types, vccType)
+		}
 	}
 
 	return types
@@ -484,6 +485,10 @@ func (v *VMODValidator) inferExpressionTypeWithContext(expr ast.Expression, expe
 	case *ast.StringLiteral:
 		return vcc.TypeString
 	case *ast.IntegerLiteral:
+		// Check if we can coerce INT to the expected type
+		if v.isTypeCompatible(vcc.TypeInt, expectedType) {
+			return expectedType
+		}
 		return vcc.TypeInt
 	case *ast.FloatLiteral:
 		return vcc.TypeReal
@@ -503,7 +508,10 @@ func (v *VMODValidator) inferExpressionTypeWithContext(expr ast.Expression, expe
 		}
 		return vcc.TypeString // Default assumption
 	case *ast.MemberExpression:
-		// For member expressions, try to infer the type
+		// Try to infer method return type for VMOD objects
+		if returnType := v.inferObjectMethodReturnType(e); returnType != "" {
+			return returnType
+		}
 		return vcc.TypeString // Default assumption
 	case *ast.CallExpression:
 		// For call expressions, try to look up the return type
@@ -613,6 +621,54 @@ func (v *VMODValidator) convertSymbolTypeToVCCType(symbolType types.Type) vcc.VC
 	default:
 		return vcc.TypeString // Default
 	}
+}
+
+// isTypeCompatible checks if a given type can be coerced to the expected type
+func (v *VMODValidator) isTypeCompatible(got, expected vcc.VCCType) bool {
+	// Exact match
+	if got == expected {
+		return true
+	}
+
+	// Allow INT to REAL coercion (common in VCL)
+	if got == vcc.TypeInt && expected == vcc.TypeReal {
+		return true
+	}
+
+	// TODO: Add other type coercions as needed
+	return false
+}
+
+// inferObjectMethodReturnType attempts to infer the return type of a VMOD object method call
+func (v *VMODValidator) inferObjectMethodReturnType(memberExpr *ast.MemberExpression) vcc.VCCType {
+	// Check if this is an object.method() pattern
+	objectIdent, ok := memberExpr.Object.(*ast.Identifier)
+	if !ok {
+		return "" // Object is not an identifier
+	}
+
+	methodIdent, ok := memberExpr.Property.(*ast.Identifier)
+	if !ok {
+		return "" // Property is not an identifier
+	}
+
+	objectName := objectIdent.Name
+	methodName := methodIdent.Name
+
+	// Look up object in symbol table
+	objectSymbol := v.symbolTable.Lookup(objectName)
+	if objectSymbol == nil || objectSymbol.Kind != types.SymbolVMODObject {
+		return "" // Object not found or not a VMOD object
+	}
+
+	// For now, handle specific known cases
+	// TODO: This should be enhanced to use actual VMOD object type information
+	if methodName == "backend" {
+		// .backend() methods typically return BACKEND type
+		return vcc.TypeBackend
+	}
+
+	return "" // Unknown method
 }
 
 // visitChildren visits all children of a node

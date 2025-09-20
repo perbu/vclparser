@@ -68,7 +68,7 @@ $Function BYTES get_req_body_hash(ENUM {sha1, sha256, sha512} algorithm)`
 	utilsVCC := `$Module utils 3 "Utility functions"
 $ABI strict
 
-$Function STRING time_format(STRING format, TIME time=now, BOOL utc=false)
+$Function STRING time_format(STRING format, BOOL local_time = 0, [TIME time])
 $Function STRING newline()`
 
 	// Probe Proxy VMOD
@@ -88,7 +88,7 @@ $Function DURATION timeout()`
 $ABI strict
 
 $Function INT integer(STRING s, INT fallback)
-$Function REAL real2time(REAL r, TIME fallback)
+$Function TIME real2time(REAL r, TIME fallback)
 $Function BOOL healthy(BACKEND backend)`
 
 	kvstoreVCC := `$Module kvstore 3 "Key-value store"

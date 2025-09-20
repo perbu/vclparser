@@ -235,6 +235,11 @@ func (f *Function) isCompatibleType(actual, expected VCCType) bool {
 		return true
 	}
 
+	// Allow INT to REAL coercion (common in VCL)
+	if expected == TypeReal && actual == TypeInt {
+		return true
+	}
+
 	// STRING_LIST can accept STRING
 	if expected == TypeStringList && actual == TypeString {
 		return true
@@ -254,6 +259,11 @@ func (m *Method) isCompatibleType(actual, expected VCCType) bool {
 		return true
 	}
 
+	// Allow INT to REAL coercion (common in VCL)
+	if expected == TypeReal && actual == TypeInt {
+		return true
+	}
+
 	// STRING_LIST can accept STRING
 	if expected == TypeStringList && actual == TypeString {
 		return true
@@ -270,6 +280,11 @@ func (m *Method) isCompatibleType(actual, expected VCCType) bool {
 // isCompatibleType checks if two types are compatible for object constructors
 func (o *Object) isCompatibleType(actual, expected VCCType) bool {
 	if actual == expected {
+		return true
+	}
+
+	// Allow INT to REAL coercion (common in VCL)
+	if expected == TypeReal && actual == TypeInt {
 		return true
 	}
 
