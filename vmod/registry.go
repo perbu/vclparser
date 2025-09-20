@@ -85,7 +85,7 @@ func (r *Registry) ListModules() []string {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
-	var names []string
+	names := make([]string, 0, len(r.modules))
 	for name := range r.modules {
 		names = append(names, name)
 	}
@@ -98,7 +98,8 @@ func (r *Registry) GetFunction(moduleName, functionName string) (*vcc.Function, 
 	if !exists {
 		return nil, fmt.Errorf("module %s not found", moduleName)
 	}
-
+	// module is guaranteed non-nil when exists is true
+	//nolint:nilaway
 	function := module.FindFunction(functionName)
 	if function == nil {
 		return nil, fmt.Errorf("function %s not found in module %s", functionName, moduleName)
@@ -113,7 +114,8 @@ func (r *Registry) GetObject(moduleName, objectName string) (*vcc.Object, error)
 	if !exists {
 		return nil, fmt.Errorf("module %s not found", moduleName)
 	}
-
+	// module is guaranteed non-nil when exists is true
+	//nolint:nilaway
 	object := module.FindObject(objectName)
 	if object == nil {
 		return nil, fmt.Errorf("object %s not found in module %s", objectName, moduleName)

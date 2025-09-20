@@ -61,6 +61,9 @@ $Method STRING .method2(INT param)`
 	if !exists {
 		t.Error("Module 'std' should exist")
 	}
+	if module == nil {
+		t.Fatal("Module should not be nil when exists is true")
+	}
 
 	if module.Name != "std" {
 		t.Errorf("Expected module name 'std', got '%s'", module.Name)
@@ -70,6 +73,9 @@ $Method STRING .method2(INT param)`
 	function, err := registry.GetFunction("std", "toupper")
 	if err != nil {
 		t.Errorf("Failed to get function: %v", err)
+	}
+	if function == nil {
+		t.Fatal("Function should not be nil when no error returned")
 	}
 
 	if function.Name != "toupper" {
@@ -81,6 +87,9 @@ $Method STRING .method2(INT param)`
 	if err != nil {
 		t.Errorf("Failed to get object: %v", err)
 	}
+	if object == nil {
+		t.Fatal("Object should not be nil when no error returned")
+	}
 
 	if object.Name != "test_object" {
 		t.Errorf("Expected object name 'test_object', got '%s'", object.Name)
@@ -90,6 +99,9 @@ $Method STRING .method2(INT param)`
 	method, err := registry.GetMethod("std", "test_object", "method1")
 	if err != nil {
 		t.Errorf("Failed to get method: %v", err)
+	}
+	if method == nil {
+		t.Fatal("Method should not be nil when no error returned")
 	}
 
 	if method.Name != "method1" {

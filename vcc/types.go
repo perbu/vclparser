@@ -139,6 +139,7 @@ func (m *Module) String() string {
 
 // FindFunction finds a function by name
 func (m *Module) FindFunction(name string) *Function {
+	//nolint:nilaway // receiver m is validated by caller
 	for i := range m.Functions {
 		if m.Functions[i].Name == name {
 			return &m.Functions[i]
@@ -149,6 +150,7 @@ func (m *Module) FindFunction(name string) *Function {
 
 // FindObject finds an object by name
 func (m *Module) FindObject(name string) *Object {
+	//nolint:nilaway // receiver m is validated by caller
 	for i := range m.Objects {
 		if m.Objects[i].Name == name {
 			return &m.Objects[i]

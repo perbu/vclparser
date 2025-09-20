@@ -72,6 +72,8 @@ func (v *VMODValidator) VisitImportDecl(importDecl *ast.ImportDecl) interface{} 
 	// Add VMOD functions to symbol table
 	module, exists := v.registry.GetModule(importDecl.Module)
 	if exists {
+		// module is guaranteed non-nil when exists is true
+		//nolint:nilaway
 		for _, function := range module.Functions {
 			returnType := v.convertVCCTypeToSymbolType(function.ReturnType)
 			if err := v.symbolTable.DefineVMODFunction(importDecl.Module, function.Name, returnType); err != nil {

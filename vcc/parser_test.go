@@ -264,8 +264,7 @@ func TestModuleFindFunctions(t *testing.T) {
 	function := module.FindFunction("func1")
 	if function == nil {
 		t.Error("Should find existing function")
-	}
-	if function.Name != "func1" {
+	} else if function.Name != "func1" {
 		t.Errorf("Expected function name 'func1', got '%s'", function.Name)
 	}
 
@@ -279,8 +278,7 @@ func TestModuleFindFunctions(t *testing.T) {
 	object := module.FindObject("obj1")
 	if object == nil {
 		t.Error("Should find existing object")
-	}
-	if object.Name != "obj1" {
+	} else if object.Name != "obj1" {
 		t.Errorf("Expected object name 'obj1', got '%s'", object.Name)
 	}
 
