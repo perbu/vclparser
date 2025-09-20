@@ -176,6 +176,7 @@ func (l *Lexer) NextToken() Token {
 			tok = l.readCBlock()
 		} else {
 			tok = l.readIdentifier()
+			return tok // Early return to avoid advancing twice
 		}
 	case '#':
 		// Shell-style comment

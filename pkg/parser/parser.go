@@ -92,6 +92,17 @@ func (p *Parser) addError(message string) {
 	})
 }
 
+// addPeekError adds a parsing error using the peek token's position
+func (p *Parser) addPeekError(message string) {
+	p.errors = append(p.errors, DetailedError{
+		Message:  message,
+		Position: p.peekToken.Start,
+		Token:    p.peekToken,
+		Filename: p.filename,
+		Source:   p.input,
+	})
+}
+
 // expectToken checks if current token matches expected type
 func (p *Parser) expectToken(t lexer2.TokenType) bool {
 	if p.currentToken.Type == t {
@@ -107,7 +118,7 @@ func (p *Parser) expectPeek(t lexer2.TokenType) bool {
 		p.nextToken()
 		return true
 	}
-	p.addError(fmt.Sprintf("expected next token to be %s, got %s", t, p.peekToken.Type))
+	p.addPeekError(fmt.Sprintf("expected next token to be %s, got %s", t, p.peekToken.Type))
 	return false
 }
 
