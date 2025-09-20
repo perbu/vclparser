@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 func TestNamedArgumentParsing(t *testing.T) {
@@ -13,7 +13,7 @@ func TestNamedArgumentParsing(t *testing.T) {
 		input       string
 		wantErr     bool
 		description string
-		checkArgs   func(t *testing.T, callExpr *ast.CallExpression)
+		checkArgs   func(t *testing.T, callExpr *ast2.CallExpression)
 	}{
 		{
 			name: "Pure positional arguments",
@@ -23,7 +23,7 @@ sub test {
 }`,
 			wantErr:     false,
 			description: "All arguments are positional - baseline test",
-			checkArgs: func(t *testing.T, callExpr *ast.CallExpression) {
+			checkArgs: func(t *testing.T, callExpr *ast2.CallExpression) {
 				if len(callExpr.Arguments) != 3 {
 					t.Errorf("Expected 3 positional arguments, got %d", len(callExpr.Arguments))
 				}
@@ -40,7 +40,7 @@ sub test {
 }`,
 			wantErr:     false,
 			description: "All arguments are named",
-			checkArgs: func(t *testing.T, callExpr *ast.CallExpression) {
+			checkArgs: func(t *testing.T, callExpr *ast2.CallExpression) {
 				if len(callExpr.Arguments) != 0 {
 					t.Errorf("Expected 0 positional arguments, got %d", len(callExpr.Arguments))
 				}
@@ -64,7 +64,7 @@ sub test {
 }`,
 			wantErr:     false,
 			description: "First two arguments positional, third named",
-			checkArgs: func(t *testing.T, callExpr *ast.CallExpression) {
+			checkArgs: func(t *testing.T, callExpr *ast2.CallExpression) {
 				if len(callExpr.Arguments) != 2 {
 					t.Errorf("Expected 2 positional arguments, got %d", len(callExpr.Arguments))
 				}
@@ -84,7 +84,7 @@ sub test {
 }`,
 			wantErr:     false,
 			description: "Named argument value is a function call",
-			checkArgs: func(t *testing.T, callExpr *ast.CallExpression) {
+			checkArgs: func(t *testing.T, callExpr *ast2.CallExpression) {
 				if len(callExpr.Arguments) != 2 {
 					t.Errorf("Expected 2 positional arguments, got %d", len(callExpr.Arguments))
 				}
@@ -99,7 +99,7 @@ sub test {
 				}
 
 				// Check that the named argument value is a function call
-				if _, ok := maxArg.(*ast.CallExpression); !ok {
+				if _, ok := maxArg.(*ast2.CallExpression); !ok {
 					t.Errorf("Expected named argument 'max' to be a CallExpression, got %T", maxArg)
 				}
 			},
@@ -112,7 +112,7 @@ sub test {
 }`,
 			wantErr:     false,
 			description: "Single named argument only",
-			checkArgs: func(t *testing.T, callExpr *ast.CallExpression) {
+			checkArgs: func(t *testing.T, callExpr *ast2.CallExpression) {
 				if len(callExpr.Arguments) != 0 {
 					t.Errorf("Expected 0 positional arguments, got %d", len(callExpr.Arguments))
 				}
@@ -132,7 +132,7 @@ sub test {
 }`,
 			wantErr:     false,
 			description: "Named arguments with string and boolean values",
-			checkArgs: func(t *testing.T, callExpr *ast.CallExpression) {
+			checkArgs: func(t *testing.T, callExpr *ast2.CallExpression) {
 				if len(callExpr.Arguments) != 0 {
 					t.Errorf("Expected 0 positional arguments, got %d", len(callExpr.Arguments))
 				}
@@ -252,9 +252,9 @@ sub test {
 }
 
 // Helper function to find the first CallExpression in a program
-func findCallExpression(t *testing.T, program *ast.Program) *ast.CallExpression {
+func findCallExpression(t *testing.T, program *ast2.Program) *ast2.CallExpression {
 	for _, decl := range program.Declarations {
-		if subDecl, ok := decl.(*ast.SubDecl); ok {
+		if subDecl, ok := decl.(*ast2.SubDecl); ok {
 			return findCallExpressionInBlock(subDecl.Body)
 		}
 	}
@@ -263,12 +263,12 @@ func findCallExpression(t *testing.T, program *ast.Program) *ast.CallExpression 
 }
 
 // Helper function to find CallExpression in a block statement
-func findCallExpressionInBlock(block *ast.BlockStatement) *ast.CallExpression {
+func findCallExpressionInBlock(block *ast2.BlockStatement) *ast2.CallExpression {
 	for _, stmt := range block.Statements {
-		if setStmt, ok := stmt.(*ast.SetStatement); ok {
+		if setStmt, ok := stmt.(*ast2.SetStatement); ok {
 			return findCallExpressionInExpression(setStmt.Value)
 		}
-		if exprStmt, ok := stmt.(*ast.ExpressionStatement); ok {
+		if exprStmt, ok := stmt.(*ast2.ExpressionStatement); ok {
 			return findCallExpressionInExpression(exprStmt.Expression)
 		}
 	}
@@ -276,8 +276,8 @@ func findCallExpressionInBlock(block *ast.BlockStatement) *ast.CallExpression {
 }
 
 // Helper function to find CallExpression in an expression
-func findCallExpressionInExpression(expr ast.Expression) *ast.CallExpression {
-	if callExpr, ok := expr.(*ast.CallExpression); ok {
+func findCallExpressionInExpression(expr ast2.Expression) *ast2.CallExpression {
+	if callExpr, ok := expr.(*ast2.CallExpression); ok {
 		return callExpr
 	}
 	// Could recursively search in other expression types if needed

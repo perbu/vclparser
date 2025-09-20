@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 func TestVCLVersionDeclaration(t *testing.T) {
@@ -44,7 +44,7 @@ backend default {
 			len(program.Declarations))
 	}
 
-	decl, ok := program.Declarations[0].(*ast.BackendDecl)
+	decl, ok := program.Declarations[0].(*ast2.BackendDecl)
 	if !ok {
 		t.Fatalf("program.Declarations[0] is not *ast.BackendDecl. got=%T",
 			program.Declarations[0])
@@ -72,7 +72,7 @@ backend default {
 			t.Errorf("property[%d].Name = %q, want %q", i, prop.Name, expected.name)
 		}
 
-		stringLit, ok := prop.Value.(*ast.StringLiteral)
+		stringLit, ok := prop.Value.(*ast2.StringLiteral)
 		if !ok {
 			t.Fatalf("property[%d].Value is not *ast.StringLiteral. got=%T", i, prop.Value)
 		}
@@ -103,7 +103,7 @@ sub vcl_recv {
 			len(program.Declarations))
 	}
 
-	decl, ok := program.Declarations[0].(*ast.SubDecl)
+	decl, ok := program.Declarations[0].(*ast2.SubDecl)
 	if !ok {
 		t.Fatalf("program.Declarations[0] is not *ast.SubDecl. got=%T",
 			program.Declarations[0])
@@ -122,7 +122,7 @@ sub vcl_recv {
 			len(decl.Body.Statements))
 	}
 
-	ifStmt, ok := decl.Body.Statements[0].(*ast.IfStatement)
+	ifStmt, ok := decl.Body.Statements[0].(*ast2.IfStatement)
 	if !ok {
 		t.Fatalf("statement is not *ast.IfStatement. got=%T", decl.Body.Statements[0])
 	}
@@ -156,7 +156,7 @@ acl purge {
 			len(program.Declarations))
 	}
 
-	decl, ok := program.Declarations[0].(*ast.ACLDecl)
+	decl, ok := program.Declarations[0].(*ast2.ACLDecl)
 	if !ok {
 		t.Fatalf("program.Declarations[0] is not *ast.ACLDecl. got=%T",
 			program.Declarations[0])
@@ -238,7 +238,7 @@ func TestSimpleExpressions(t *testing.T) {
 					len(program.Declarations))
 			}
 
-			sub, ok := program.Declarations[0].(*ast.SubDecl)
+			sub, ok := program.Declarations[0].(*ast2.SubDecl)
 			if !ok {
 				t.Fatalf("declaration is not *ast.SubDecl. got=%T", program.Declarations[0])
 			}
@@ -248,7 +248,7 @@ func TestSimpleExpressions(t *testing.T) {
 					len(sub.Body.Statements))
 			}
 
-			exprStmt, ok := sub.Body.Statements[0].(*ast.ExpressionStatement)
+			exprStmt, ok := sub.Body.Statements[0].(*ast2.ExpressionStatement)
 			if !ok {
 				t.Fatalf("statement is not *ast.ExpressionStatement. got=%T",
 					sub.Body.Statements[0])
@@ -280,7 +280,7 @@ sub test {
 		t.Fatalf("Expected 1 declaration, got %d", len(program.Declarations))
 	}
 
-	subDecl, ok := program.Declarations[0].(*ast.SubDecl)
+	subDecl, ok := program.Declarations[0].(*ast2.SubDecl)
 	if !ok {
 		t.Fatalf("Expected SubDecl, got %T", program.Declarations[0])
 	}
@@ -289,12 +289,12 @@ sub test {
 		t.Fatalf("Expected 1 statement, got %d", len(subDecl.Body.Statements))
 	}
 
-	exprStmt, ok := subDecl.Body.Statements[0].(*ast.ExpressionStatement)
+	exprStmt, ok := subDecl.Body.Statements[0].(*ast2.ExpressionStatement)
 	if !ok {
 		t.Fatalf("Expected ExpressionStatement, got %T", subDecl.Body.Statements[0])
 	}
 
-	callExpr, ok := exprStmt.Expression.(*ast.CallExpression)
+	callExpr, ok := exprStmt.Expression.(*ast2.CallExpression)
 	if !ok {
 		t.Fatalf("Expected CallExpression, got %T", exprStmt.Expression)
 	}
@@ -313,17 +313,17 @@ sub test {
 	}()
 
 	// Verify the structure is correct
-	memberExpr, ok := callExpr.Function.(*ast.MemberExpression)
+	memberExpr, ok := callExpr.Function.(*ast2.MemberExpression)
 	if !ok {
 		t.Fatalf("Expected MemberExpression as function, got %T", callExpr.Function)
 	}
 
-	objIdent, ok := memberExpr.Object.(*ast.Identifier)
+	objIdent, ok := memberExpr.Object.(*ast2.Identifier)
 	if !ok || objIdent.Name != "cluster" {
 		t.Errorf("Expected object 'cluster', got %v", memberExpr.Object)
 	}
 
-	propIdent, ok := memberExpr.Property.(*ast.Identifier)
+	propIdent, ok := memberExpr.Property.(*ast2.Identifier)
 	if !ok || propIdent.Name != "backend" {
 		t.Errorf("Expected property 'backend', got %v", memberExpr.Property)
 	}
@@ -364,7 +364,7 @@ sub vcl_init {
 			len(program.Declarations))
 	}
 
-	subDecl, ok := program.Declarations[0].(*ast.SubDecl)
+	subDecl, ok := program.Declarations[0].(*ast2.SubDecl)
 	if !ok {
 		t.Fatalf("program.Declarations[0] is not *ast.SubDecl. got=%T",
 			program.Declarations[0])
@@ -379,14 +379,14 @@ sub vcl_init {
 			len(subDecl.Body.Statements))
 	}
 
-	newStmt, ok := subDecl.Body.Statements[0].(*ast.NewStatement)
+	newStmt, ok := subDecl.Body.Statements[0].(*ast2.NewStatement)
 	if !ok {
 		t.Fatalf("subDecl.Body.Statements[0] is not *ast.NewStatement. got=%T",
 			subDecl.Body.Statements[0])
 	}
 
 	// Check the variable name
-	nameIdent, ok := newStmt.Name.(*ast.Identifier)
+	nameIdent, ok := newStmt.Name.(*ast2.Identifier)
 	if !ok {
 		t.Fatalf("newStmt.Name is not *ast.Identifier. got=%T", newStmt.Name)
 	}
@@ -396,13 +396,13 @@ sub vcl_init {
 	}
 
 	// Check the constructor call
-	constructorCall, ok := newStmt.Constructor.(*ast.CallExpression)
+	constructorCall, ok := newStmt.Constructor.(*ast2.CallExpression)
 	if !ok {
 		t.Fatalf("newStmt.Constructor is not *ast.CallExpression. got=%T", newStmt.Constructor)
 	}
 
 	// Check that it's a simple function call (foo)
-	functionIdent, ok := constructorCall.Function.(*ast.Identifier)
+	functionIdent, ok := constructorCall.Function.(*ast2.Identifier)
 	if !ok {
 		t.Fatalf("constructorCall.Function is not *ast.Identifier. got=%T",
 			constructorCall.Function)

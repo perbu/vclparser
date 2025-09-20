@@ -6,16 +6,16 @@ import (
 	"log"
 	"os"
 
-	"github.com/varnish/vclparser/analyzer"
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/parser"
-	"github.com/varnish/vclparser/types"
-	"github.com/varnish/vclparser/vmod"
+	"github.com/varnish/vclparser/pkg/analyzer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/parser"
+	"github.com/varnish/vclparser/pkg/types"
+	"github.com/varnish/vclparser/pkg/vmod"
 )
 
 // PrettyPrinter implements a visitor that prints the AST in a readable format
 type PrettyPrinter struct {
-	ast.BaseVisitor
+	ast2.BaseVisitor
 	indent int
 }
 
@@ -26,137 +26,137 @@ func (pp *PrettyPrinter) print(format string, args ...interface{}) {
 	fmt.Printf(format, args...)
 }
 
-func (pp *PrettyPrinter) VisitProgram(node *ast.Program) interface{} {
+func (pp *PrettyPrinter) VisitProgram(node *ast2.Program) interface{} {
 	pp.print("Program:\n")
 	pp.indent++
 
 	if node.VCLVersion != nil {
-		ast.Accept(node.VCLVersion, pp)
+		ast2.Accept(node.VCLVersion, pp)
 	}
 
 	for _, decl := range node.Declarations {
-		ast.Accept(decl, pp)
+		ast2.Accept(decl, pp)
 	}
 
 	pp.indent--
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitVCLVersionDecl(node *ast.VCLVersionDecl) interface{} {
+func (pp *PrettyPrinter) VisitVCLVersionDecl(node *ast2.VCLVersionDecl) interface{} {
 	pp.print("VCL Version: %s\n", node.Version)
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitBackendDecl(node *ast.BackendDecl) interface{} {
+func (pp *PrettyPrinter) VisitBackendDecl(node *ast2.BackendDecl) interface{} {
 	pp.print("Backend: %s\n", node.Name)
 	pp.indent++
 	for _, prop := range node.Properties {
 		pp.print("Property: %s = ", prop.Name)
-		ast.Accept(prop.Value, pp)
+		ast2.Accept(prop.Value, pp)
 		fmt.Println()
 	}
 	pp.indent--
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitSubDecl(node *ast.SubDecl) interface{} {
+func (pp *PrettyPrinter) VisitSubDecl(node *ast2.SubDecl) interface{} {
 	pp.print("Subroutine: %s\n", node.Name)
 	pp.indent++
 	if node.Body != nil {
-		ast.Accept(node.Body, pp)
+		ast2.Accept(node.Body, pp)
 	}
 	pp.indent--
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitBlockStatement(node *ast.BlockStatement) interface{} {
+func (pp *PrettyPrinter) VisitBlockStatement(node *ast2.BlockStatement) interface{} {
 	pp.print("Block:\n")
 	pp.indent++
 	for _, stmt := range node.Statements {
-		ast.Accept(stmt, pp)
+		ast2.Accept(stmt, pp)
 	}
 	pp.indent--
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitIfStatement(node *ast.IfStatement) interface{} {
+func (pp *PrettyPrinter) VisitIfStatement(node *ast2.IfStatement) interface{} {
 	pp.print("If: ")
-	ast.Accept(node.Condition, pp)
+	ast2.Accept(node.Condition, pp)
 	fmt.Println()
 	pp.indent++
 	if node.Then != nil {
-		ast.Accept(node.Then, pp)
+		ast2.Accept(node.Then, pp)
 	}
 	if node.Else != nil {
 		pp.print("Else:\n")
-		ast.Accept(node.Else, pp)
+		ast2.Accept(node.Else, pp)
 	}
 	pp.indent--
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitBinaryExpression(node *ast.BinaryExpression) interface{} {
+func (pp *PrettyPrinter) VisitBinaryExpression(node *ast2.BinaryExpression) interface{} {
 	fmt.Print("(")
-	ast.Accept(node.Left, pp)
+	ast2.Accept(node.Left, pp)
 	fmt.Printf(" %s ", node.Operator)
-	ast.Accept(node.Right, pp)
+	ast2.Accept(node.Right, pp)
 	fmt.Print(")")
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitMemberExpression(node *ast.MemberExpression) interface{} {
-	ast.Accept(node.Object, pp)
+func (pp *PrettyPrinter) VisitMemberExpression(node *ast2.MemberExpression) interface{} {
+	ast2.Accept(node.Object, pp)
 	fmt.Print(".")
-	ast.Accept(node.Property, pp)
+	ast2.Accept(node.Property, pp)
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitIdentifier(node *ast.Identifier) interface{} {
+func (pp *PrettyPrinter) VisitIdentifier(node *ast2.Identifier) interface{} {
 	fmt.Print(node.Name)
 	return nil
 }
 
-func (pp *PrettyPrinter) VisitStringLiteral(node *ast.StringLiteral) interface{} {
+func (pp *PrettyPrinter) VisitStringLiteral(node *ast2.StringLiteral) interface{} {
 	fmt.Printf(`"%s"`, node.Value)
 	return nil
 }
 
 // JSONExporter exports the AST as JSON
 type JSONExporter struct {
-	ast.BaseVisitor
+	ast2.BaseVisitor
 }
 
-func (je *JSONExporter) VisitProgram(node *ast.Program) interface{} {
+func (je *JSONExporter) VisitProgram(node *ast2.Program) interface{} {
 	result := map[string]interface{}{
 		"type": "Program",
 	}
 
 	if node.VCLVersion != nil {
-		result["vclVersion"] = ast.Accept(node.VCLVersion, je)
+		result["vclVersion"] = ast2.Accept(node.VCLVersion, je)
 	}
 
 	declarations := make([]interface{}, len(node.Declarations))
 	for i, decl := range node.Declarations {
-		declarations[i] = ast.Accept(decl, je)
+		declarations[i] = ast2.Accept(decl, je)
 	}
 	result["declarations"] = declarations
 
 	return result
 }
 
-func (je *JSONExporter) VisitVCLVersionDecl(node *ast.VCLVersionDecl) interface{} {
+func (je *JSONExporter) VisitVCLVersionDecl(node *ast2.VCLVersionDecl) interface{} {
 	return map[string]interface{}{
 		"type":    "VCLVersionDecl",
 		"version": node.Version,
 	}
 }
 
-func (je *JSONExporter) VisitBackendDecl(node *ast.BackendDecl) interface{} {
+func (je *JSONExporter) VisitBackendDecl(node *ast2.BackendDecl) interface{} {
 	properties := make([]interface{}, len(node.Properties))
 	for i, prop := range node.Properties {
 		properties[i] = map[string]interface{}{
 			"name":  prop.Name,
-			"value": ast.Accept(prop.Value, je),
+			"value": ast2.Accept(prop.Value, je),
 		}
 	}
 
@@ -167,7 +167,7 @@ func (je *JSONExporter) VisitBackendDecl(node *ast.BackendDecl) interface{} {
 	}
 }
 
-func (je *JSONExporter) VisitStringLiteral(node *ast.StringLiteral) interface{} {
+func (je *JSONExporter) VisitStringLiteral(node *ast2.StringLiteral) interface{} {
 	return map[string]interface{}{
 		"type":  "StringLiteral",
 		"value": node.Value,
@@ -218,7 +218,7 @@ func main() {
 	if outputJSON {
 		// Export as JSON
 		exporter := &JSONExporter{}
-		result := ast.Accept(program, exporter)
+		result := ast2.Accept(program, exporter)
 
 		jsonBytes, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
@@ -229,7 +229,7 @@ func main() {
 	} else {
 		// Pretty print the AST
 		printer := &PrettyPrinter{}
-		ast.Accept(program, printer)
+		ast2.Accept(program, printer)
 
 		// Show some statistics
 		fmt.Printf("\nParsing completed successfully!\n")
@@ -244,13 +244,13 @@ func main() {
 
 		for _, decl := range program.Declarations {
 			switch decl.(type) {
-			case *ast.BackendDecl:
+			case *ast2.BackendDecl:
 				backends++
-			case *ast.SubDecl:
+			case *ast2.SubDecl:
 				subroutines++
-			case *ast.ACLDecl:
+			case *ast2.ACLDecl:
 				acls++
-			case *ast.ProbeDecl:
+			case *ast2.ProbeDecl:
 				probes++
 			}
 		}

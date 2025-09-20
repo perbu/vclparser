@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/varnish/vclparser/vcc"
+	"github.com/varnish/vclparser/pkg/vcc"
 )
 
 func TestRegistryBasicOperations(t *testing.T) {

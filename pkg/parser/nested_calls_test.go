@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 func TestNestedFunctionCalls(t *testing.T) {
@@ -132,7 +132,7 @@ sub test {
 					t.Errorf("No declarations found in parsed program")
 				} else {
 					// Verify it's a subroutine
-					if sub, ok := program.Declarations[0].(*ast.SubDecl); ok {
+					if sub, ok := program.Declarations[0].(*ast2.SubDecl); ok {
 						if len(sub.Body.Statements) == 0 {
 							t.Errorf("Subroutine body is empty")
 						}
@@ -229,7 +229,7 @@ sub test {
 		t.Fatal("No declarations found")
 	}
 
-	sub, ok := program.Declarations[0].(*ast.SubDecl)
+	sub, ok := program.Declarations[0].(*ast2.SubDecl)
 	if !ok {
 		t.Fatalf("Expected SubDecl, got %T", program.Declarations[0])
 	}
@@ -239,19 +239,19 @@ sub test {
 	}
 
 	// The first statement should be an expression statement containing the call
-	exprStmt, ok := sub.Body.Statements[0].(*ast.ExpressionStatement)
+	exprStmt, ok := sub.Body.Statements[0].(*ast2.ExpressionStatement)
 	if !ok {
 		t.Fatalf("Expected ExpressionStatement, got %T", sub.Body.Statements[0])
 	}
 
 	// Check if it's a call expression
-	callExpr, ok := exprStmt.Expression.(*ast.CallExpression)
+	callExpr, ok := exprStmt.Expression.(*ast2.CallExpression)
 	if !ok {
 		t.Fatalf("Expected CallExpression, got %T", exprStmt.Expression)
 	}
 
 	// Verify the outer function name
-	if fn, ok := callExpr.Function.(*ast.Identifier); ok {
+	if fn, ok := callExpr.Function.(*ast2.Identifier); ok {
 		if fn.Name != "foo" {
 			t.Errorf("Expected function name 'foo', got '%s'", fn.Name)
 		}
@@ -262,12 +262,12 @@ sub test {
 		t.Fatalf("Expected 1 argument, got %d", len(callExpr.Arguments))
 	}
 
-	nestedCall, ok := callExpr.Arguments[0].(*ast.CallExpression)
+	nestedCall, ok := callExpr.Arguments[0].(*ast2.CallExpression)
 	if !ok {
 		t.Errorf("Expected nested CallExpression as argument, got %T", callExpr.Arguments[0])
 	} else {
 		// Verify the nested function name
-		if fn, ok := nestedCall.Function.(*ast.Identifier); ok {
+		if fn, ok := nestedCall.Function.(*ast2.Identifier); ok {
 			if fn.Name != "bar" {
 				t.Errorf("Expected nested function name 'bar', got '%s'", fn.Name)
 			}

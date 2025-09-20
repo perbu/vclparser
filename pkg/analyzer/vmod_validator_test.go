@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
-	"github.com/varnish/vclparser/parser"
-	"github.com/varnish/vclparser/types"
-	"github.com/varnish/vclparser/vcc"
-	"github.com/varnish/vclparser/vmod"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
+	"github.com/varnish/vclparser/pkg/parser"
+	types2 "github.com/varnish/vclparser/pkg/types"
+	"github.com/varnish/vclparser/pkg/vcc"
+	"github.com/varnish/vclparser/pkg/vmod"
 )
 
 func setupTestRegistry(t *testing.T) *vmod.Registry {
@@ -70,7 +70,7 @@ $Method BACKEND .backend(STRING key)`
 	return registry
 }
 
-func parseVCL(t *testing.T, vclCode string) *ast.Program {
+func parseVCL(t *testing.T, vclCode string) *ast2.Program {
 	// Use lexer and parser directly to avoid import cycle
 	l := lexer.New(vclCode, "test.vcl")
 	p := parser.New(l, vclCode, "test.vcl")
@@ -84,7 +84,7 @@ func parseVCL(t *testing.T, vclCode string) *ast.Program {
 
 func TestValidateImport(t *testing.T) {
 	registry := setupTestRegistry(t)
-	symbolTable := types.NewSymbolTable()
+	symbolTable := types2.NewSymbolTable()
 	validator := NewVMODValidator(registry, symbolTable)
 
 	// Test valid import
@@ -117,7 +117,7 @@ import nonexistent;`
 
 func TestValidateFunctionCall(t *testing.T) {
 	registry := setupTestRegistry(t)
-	symbolTable := types.NewSymbolTable()
+	symbolTable := types2.NewSymbolTable()
 	validator := NewVMODValidator(registry, symbolTable)
 
 	// Import module first
@@ -137,7 +137,7 @@ sub vcl_recv {
 
 	// Test function call without import
 	// Create a fresh symbol table for this test
-	symbolTable = types.NewSymbolTable()
+	symbolTable = types2.NewSymbolTable()
 	validator = NewVMODValidator(registry, symbolTable)
 
 	vclCode = `vcl 4.0;
@@ -171,7 +171,7 @@ sub vcl_recv {
 
 func TestValidateObjectInstantiation(t *testing.T) {
 	registry := setupTestRegistry(t)
-	symbolTable := types.NewSymbolTable()
+	symbolTable := types2.NewSymbolTable()
 	validator := NewVMODValidator(registry, symbolTable)
 
 	// Test valid object instantiation
@@ -221,7 +221,7 @@ sub vcl_init {
 
 func TestValidateMethodCall(t *testing.T) {
 	registry := setupTestRegistry(t)
-	symbolTable := types.NewSymbolTable()
+	symbolTable := types2.NewSymbolTable()
 	validator := NewVMODValidator(registry, symbolTable)
 
 	// Test valid method call
@@ -252,7 +252,7 @@ sub vcl_recv {
 
 func TestValidateComplexVCL(t *testing.T) {
 	registry := setupTestRegistry(t)
-	symbolTable := types.NewSymbolTable()
+	symbolTable := types2.NewSymbolTable()
 	validator := NewVMODValidator(registry, symbolTable)
 
 	// Test complex VCL with multiple VMODs
@@ -308,7 +308,7 @@ sub vcl_recv {
 
 func TestValidateWithErrors(t *testing.T) {
 	registry := setupTestRegistry(t)
-	symbolTable := types.NewSymbolTable()
+	symbolTable := types2.NewSymbolTable()
 	validator := NewVMODValidator(registry, symbolTable)
 
 	// Test VCL with multiple errors
@@ -358,42 +358,42 @@ sub vcl_recv {
 
 func TestInferExpressionType(t *testing.T) {
 	registry := setupTestRegistry(t)
-	symbolTable := types.NewSymbolTable()
+	symbolTable := types2.NewSymbolTable()
 	validator := NewVMODValidator(registry, symbolTable)
 
 	tests := []struct {
 		name     string
-		expr     ast.Expression
+		expr     ast2.Expression
 		expected string
 	}{
 		{
 			name:     "string literal",
-			expr:     &ast.StringLiteral{Value: "hello"},
+			expr:     &ast2.StringLiteral{Value: "hello"},
 			expected: "STRING",
 		},
 		{
 			name:     "integer literal",
-			expr:     &ast.IntegerLiteral{Value: 42},
+			expr:     &ast2.IntegerLiteral{Value: 42},
 			expected: "INT",
 		},
 		{
 			name:     "float literal",
-			expr:     &ast.FloatLiteral{Value: 3.14},
+			expr:     &ast2.FloatLiteral{Value: 3.14},
 			expected: "REAL",
 		},
 		{
 			name:     "boolean literal",
-			expr:     &ast.BooleanLiteral{Value: true},
+			expr:     &ast2.BooleanLiteral{Value: true},
 			expected: "BOOL",
 		},
 		{
 			name:     "identifier",
-			expr:     &ast.Identifier{Name: "req.method"},
+			expr:     &ast2.Identifier{Name: "req.method"},
 			expected: "STRING", // Default assumption
 		},
 		{
 			name:     "time expression",
-			expr:     &ast.TimeExpression{Value: "30s"},
+			expr:     &ast2.TimeExpression{Value: "30s"},
 			expected: "DURATION",
 		},
 	}
@@ -410,23 +410,23 @@ func TestInferExpressionType(t *testing.T) {
 
 func TestTypeConversion(t *testing.T) {
 	registry := setupTestRegistry(t)
-	symbolTable := types.NewSymbolTable()
+	symbolTable := types2.NewSymbolTable()
 	validator := NewVMODValidator(registry, symbolTable)
 
 	// Test VCC to Symbol type conversion
-	vccTests := map[string]types.Type{
-		"STRING":      types.String,
-		"INT":         types.Int,
-		"REAL":        types.Real,
-		"BOOL":        types.Bool,
-		"BACKEND":     types.Backend,
-		"HEADER":      types.Header,
-		"DURATION":    types.Duration,
-		"BYTES":       types.Bytes,
-		"IP":          types.IP,
-		"TIME":        types.Time,
-		"VOID":        types.Void,
-		"STRING_LIST": types.String, // Maps to string
+	vccTests := map[string]types2.Type{
+		"STRING":      types2.String,
+		"INT":         types2.Int,
+		"REAL":        types2.Real,
+		"BOOL":        types2.Bool,
+		"BACKEND":     types2.Backend,
+		"HEADER":      types2.Header,
+		"DURATION":    types2.Duration,
+		"BYTES":       types2.Bytes,
+		"IP":          types2.IP,
+		"TIME":        types2.Time,
+		"VOID":        types2.Void,
+		"STRING_LIST": types2.String, // Maps to string
 	}
 
 	for vccTypeStr, expectedSymbolType := range vccTests {
@@ -439,18 +439,18 @@ func TestTypeConversion(t *testing.T) {
 	}
 
 	// Test Symbol to VCC type conversion
-	symbolTests := map[types.Type]string{
-		types.String:   "STRING",
-		types.Int:      "INT",
-		types.Real:     "REAL",
-		types.Bool:     "BOOL",
-		types.Backend:  "BACKEND",
-		types.Header:   "HEADER",
-		types.Duration: "DURATION",
-		types.Bytes:    "BYTES",
-		types.IP:       "IP",
-		types.Time:     "TIME",
-		types.Void:     "VOID",
+	symbolTests := map[types2.Type]string{
+		types2.String:   "STRING",
+		types2.Int:      "INT",
+		types2.Real:     "REAL",
+		types2.Bool:     "BOOL",
+		types2.Backend:  "BACKEND",
+		types2.Header:   "HEADER",
+		types2.Duration: "DURATION",
+		types2.Bytes:    "BYTES",
+		types2.IP:       "IP",
+		types2.Time:     "TIME",
+		types2.Void:     "VOID",
 	}
 
 	for symbolType, expectedVCCTypeStr := range symbolTests {

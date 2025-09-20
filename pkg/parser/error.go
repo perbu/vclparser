@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/varnish/vclparser/lexer"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 // DetailedError represents a parsing error with enhanced context visualization

@@ -4,23 +4,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	"github.com/varnish/vclparser/pkg/ast"
+	lexer2 "github.com/varnish/vclparser/pkg/lexer"
 )
 
 // Parser implements a recursive descent parser for VCL
 type Parser struct {
-	lexer    *lexer.Lexer
+	lexer    *lexer2.Lexer
 	errors   []DetailedError
 	input    string // Store original VCL source for error context
 	filename string // Store filename for error reporting
 
-	currentToken lexer.Token
-	peekToken    lexer.Token
+	currentToken lexer2.Token
+	peekToken    lexer2.Token
 }
 
 // New creates a new parser
-func New(l *lexer.Lexer, input, filename string) *Parser {
+func New(l *lexer2.Lexer, input, filename string) *Parser {
 	p := &Parser{
 		lexer:    l,
 		errors:   []DetailedError{},
@@ -37,7 +37,7 @@ func New(l *lexer.Lexer, input, filename string) *Parser {
 
 // Parse parses the input and returns the AST
 func Parse(input, filename string) (*ast.Program, error) {
-	l := lexer.New(input, filename)
+	l := lexer2.New(input, filename)
 	p := New(l, input, filename)
 	program := p.ParseProgram()
 
@@ -76,7 +76,7 @@ func (p *Parser) nextToken() {
 	p.peekToken = p.lexer.NextToken()
 
 	// Skip comments during parsing
-	for p.peekToken.Type == lexer.COMMENT {
+	for p.peekToken.Type == lexer2.COMMENT {
 		p.peekToken = p.lexer.NextToken()
 	}
 }
@@ -93,7 +93,7 @@ func (p *Parser) addError(message string) {
 }
 
 // expectToken checks if current token matches expected type
-func (p *Parser) expectToken(t lexer.TokenType) bool {
+func (p *Parser) expectToken(t lexer2.TokenType) bool {
 	if p.currentToken.Type == t {
 		return true
 	}
@@ -102,7 +102,7 @@ func (p *Parser) expectToken(t lexer.TokenType) bool {
 }
 
 // expectPeek checks if peek token matches expected type and advances
-func (p *Parser) expectPeek(t lexer.TokenType) bool {
+func (p *Parser) expectPeek(t lexer2.TokenType) bool {
 	if p.peekToken.Type == t {
 		p.nextToken()
 		return true
@@ -112,18 +112,18 @@ func (p *Parser) expectPeek(t lexer.TokenType) bool {
 }
 
 // currentTokenIs checks if current token is of given type
-func (p *Parser) currentTokenIs(t lexer.TokenType) bool {
+func (p *Parser) currentTokenIs(t lexer2.TokenType) bool {
 	return p.currentToken.Type == t
 }
 
 // peekTokenIs checks if peek token is of given type
-func (p *Parser) peekTokenIs(t lexer.TokenType) bool {
+func (p *Parser) peekTokenIs(t lexer2.TokenType) bool {
 	return p.peekToken.Type == t
 }
 
 // skipSemicolon optionally skips a semicolon
 func (p *Parser) skipSemicolon() {
-	if p.currentTokenIs(lexer.SEMICOLON) {
+	if p.currentTokenIs(lexer2.SEMICOLON) {
 		p.nextToken()
 	}
 }
@@ -138,12 +138,12 @@ func (p *Parser) ParseProgram() *ast.Program {
 	}
 
 	// Skip any initial comments
-	for p.currentTokenIs(lexer.COMMENT) {
+	for p.currentTokenIs(lexer2.COMMENT) {
 		p.nextToken()
 	}
 
 	// Parse VCL version declaration (required first)
-	if p.currentTokenIs(lexer.VCL_KW) {
+	if p.currentTokenIs(lexer2.VCL_KW) {
 		program.VCLVersion = p.parseVCLVersionDecl()
 		if program.VCLVersion == nil {
 			return program
@@ -155,8 +155,8 @@ func (p *Parser) ParseProgram() *ast.Program {
 	}
 
 	// Parse declarations
-	for !p.currentTokenIs(lexer.EOF) {
-		if p.currentTokenIs(lexer.COMMENT) {
+	for !p.currentTokenIs(lexer2.EOF) {
+		if p.currentTokenIs(lexer2.COMMENT) {
 			p.nextToken()
 			continue
 		}
@@ -167,7 +167,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 		}
 
 		// Don't advance token if we're at EOF
-		if !p.currentTokenIs(lexer.EOF) {
+		if !p.currentTokenIs(lexer2.EOF) {
 			p.nextToken()
 		}
 	}
@@ -179,17 +179,17 @@ func (p *Parser) ParseProgram() *ast.Program {
 // parseDeclaration parses a top-level declaration
 func (p *Parser) parseDeclaration() ast.Declaration {
 	switch p.currentToken.Type {
-	case lexer.IMPORT_KW:
+	case lexer2.IMPORT_KW:
 		return p.parseImportDecl()
-	case lexer.INCLUDE_KW:
+	case lexer2.INCLUDE_KW:
 		return p.parseIncludeDecl()
-	case lexer.BACKEND_KW:
+	case lexer2.BACKEND_KW:
 		return p.parseBackendDecl()
-	case lexer.PROBE_KW:
+	case lexer2.PROBE_KW:
 		return p.parseProbeDecl()
-	case lexer.ACL_KW:
+	case lexer2.ACL_KW:
 		return p.parseACLDecl()
-	case lexer.SUB_KW:
+	case lexer2.SUB_KW:
 		return p.parseSubDecl()
 	default:
 		p.addError(fmt.Sprintf("unexpected token %s", p.currentToken.Type))
@@ -205,12 +205,12 @@ func (p *Parser) parseVCLVersionDecl() *ast.VCLVersionDecl {
 		},
 	}
 
-	if !p.expectToken(lexer.VCL_KW) {
+	if !p.expectToken(lexer2.VCL_KW) {
 		return nil
 	}
 
-	if !p.expectPeek(lexer.FNUM) {
-		if !p.currentTokenIs(lexer.CNUM) {
+	if !p.expectPeek(lexer2.FNUM) {
+		if !p.currentTokenIs(lexer2.CNUM) {
 			p.addError("expected version number")
 			return nil
 		}
@@ -219,7 +219,7 @@ func (p *Parser) parseVCLVersionDecl() *ast.VCLVersionDecl {
 	decl.Version = p.currentToken.Value
 	decl.EndPos = p.currentToken.End
 
-	if !p.expectPeek(lexer.SEMICOLON) {
+	if !p.expectPeek(lexer2.SEMICOLON) {
 		return nil
 	}
 
@@ -234,14 +234,14 @@ func (p *Parser) parseImportDecl() *ast.ImportDecl {
 		},
 	}
 
-	if !p.expectPeek(lexer.ID) {
+	if !p.expectPeek(lexer2.ID) {
 		return nil
 	}
 
 	decl.Module = p.currentToken.Value
 
 	// Check for optional alias
-	if p.peekTokenIs(lexer.ID) {
+	if p.peekTokenIs(lexer2.ID) {
 		p.nextToken()
 		decl.Alias = p.currentToken.Value
 	}
@@ -249,7 +249,7 @@ func (p *Parser) parseImportDecl() *ast.ImportDecl {
 	decl.EndPos = p.currentToken.End
 
 	// Consume semicolon if present
-	if p.peekTokenIs(lexer.SEMICOLON) {
+	if p.peekTokenIs(lexer2.SEMICOLON) {
 		p.nextToken()
 	}
 
@@ -264,7 +264,7 @@ func (p *Parser) parseIncludeDecl() *ast.IncludeDecl {
 		},
 	}
 
-	if !p.expectPeek(lexer.CSTR) {
+	if !p.expectPeek(lexer2.CSTR) {
 		return nil
 	}
 
@@ -273,7 +273,7 @@ func (p *Parser) parseIncludeDecl() *ast.IncludeDecl {
 	decl.EndPos = p.currentToken.End
 
 	// Consume semicolon if present
-	if p.peekTokenIs(lexer.SEMICOLON) {
+	if p.peekTokenIs(lexer2.SEMICOLON) {
 		p.nextToken()
 	}
 

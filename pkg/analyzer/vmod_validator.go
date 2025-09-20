@@ -4,23 +4,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/types"
-	"github.com/varnish/vclparser/vcc"
-	"github.com/varnish/vclparser/vmod"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	types2 "github.com/varnish/vclparser/pkg/types"
+	"github.com/varnish/vclparser/pkg/vcc"
+	"github.com/varnish/vclparser/pkg/vmod"
 )
 
 // VMODValidator validates VMOD usage in VCL code
 type VMODValidator struct {
-	ast.BaseVisitor
+	ast2.BaseVisitor
 	registry      *vmod.Registry
-	symbolTable   *types.SymbolTable
+	symbolTable   *types2.SymbolTable
 	errors        []string
 	currentMethod string // Current VCL method context
 }
 
 // NewVMODValidator creates a new VMOD validator
-func NewVMODValidator(registry *vmod.Registry, symbolTable *types.SymbolTable) *VMODValidator {
+func NewVMODValidator(registry *vmod.Registry, symbolTable *types2.SymbolTable) *VMODValidator {
 	return &VMODValidator{
 		registry:    registry,
 		symbolTable: symbolTable,
@@ -29,35 +29,35 @@ func NewVMODValidator(registry *vmod.Registry, symbolTable *types.SymbolTable) *
 }
 
 // Validate validates VMOD usage in an AST node
-func (v *VMODValidator) Validate(node ast.Node) []string {
+func (v *VMODValidator) Validate(node ast2.Node) []string {
 	v.errors = []string{}
-	ast.Accept(node, v)
+	ast2.Accept(node, v)
 	return v.errors
 }
 
 // VisitProgram implements ast.Visitor
-func (v *VMODValidator) VisitProgram(program *ast.Program) interface{} {
+func (v *VMODValidator) VisitProgram(program *ast2.Program) interface{} {
 	for _, decl := range program.Declarations {
-		ast.Accept(decl, v)
+		ast2.Accept(decl, v)
 	}
 	return nil
 }
 
 // VisitSubDecl implements ast.Visitor
-func (v *VMODValidator) VisitSubDecl(sub *ast.SubDecl) interface{} {
+func (v *VMODValidator) VisitSubDecl(sub *ast2.SubDecl) interface{} {
 	// Set current method context for restriction validation
 	oldMethod := v.currentMethod
 	v.currentMethod = sub.Name
 	defer func() { v.currentMethod = oldMethod }()
 
 	for _, stmt := range sub.Body.Statements {
-		ast.Accept(stmt, v)
+		ast2.Accept(stmt, v)
 	}
 	return nil
 }
 
 // VisitImportDecl implements ast.Visitor
-func (v *VMODValidator) VisitImportDecl(importDecl *ast.ImportDecl) interface{} {
+func (v *VMODValidator) VisitImportDecl(importDecl *ast2.ImportDecl) interface{} {
 	if err := v.registry.ValidateImport(importDecl.Module); err != nil {
 		v.addError(fmt.Sprintf("import validation failed: %v", err))
 		return nil
@@ -86,25 +86,25 @@ func (v *VMODValidator) VisitImportDecl(importDecl *ast.ImportDecl) interface{} 
 }
 
 // VisitCallExpression implements ast.Visitor
-func (v *VMODValidator) VisitCallExpression(callExpr *ast.CallExpression) interface{} {
-	memberExpr, ok := callExpr.Function.(*ast.MemberExpression)
+func (v *VMODValidator) VisitCallExpression(callExpr *ast2.CallExpression) interface{} {
+	memberExpr, ok := callExpr.Function.(*ast2.MemberExpression)
 	if !ok {
 		// Not a VMOD call, visit children normally
-		ast.Accept(callExpr.Function, v)
+		ast2.Accept(callExpr.Function, v)
 		for _, arg := range callExpr.Arguments {
-			ast.Accept(arg, v)
+			ast2.Accept(arg, v)
 		}
 		for _, arg := range callExpr.NamedArguments {
-			ast.Accept(arg, v)
+			ast2.Accept(arg, v)
 		}
 		return nil
 	}
 
 	// Check if this is a VMOD function call or object method call
-	if objIdent, ok := memberExpr.Object.(*ast.Identifier); ok {
+	if objIdent, ok := memberExpr.Object.(*ast2.Identifier); ok {
 		// Check if this identifier refers to a known VMOD object first
 		objectSymbol := v.symbolTable.Lookup(objIdent.Name)
-		if objectSymbol != nil && objectSymbol.Kind == types.SymbolVMODObject {
+		if objectSymbol != nil && objectSymbol.Kind == types2.SymbolVMODObject {
 			// Object method call: object.method()
 			v.validateObjectMethodCall(memberExpr, callExpr.Arguments, callExpr.NamedArguments)
 		} else {
@@ -119,28 +119,28 @@ func (v *VMODValidator) VisitCallExpression(callExpr *ast.CallExpression) interf
 
 	// Visit positional arguments
 	for _, arg := range callExpr.Arguments {
-		ast.Accept(arg, v)
+		ast2.Accept(arg, v)
 	}
 
 	// Visit named arguments
 	for _, arg := range callExpr.NamedArguments {
-		ast.Accept(arg, v)
+		ast2.Accept(arg, v)
 	}
 	return nil
 }
 
 // VisitMemberExpression implements ast.Visitor
-func (v *VMODValidator) VisitMemberExpression(memberExpr *ast.MemberExpression) interface{} {
+func (v *VMODValidator) VisitMemberExpression(memberExpr *ast2.MemberExpression) interface{} {
 	// Visit children
-	ast.Accept(memberExpr.Object, v)
-	ast.Accept(memberExpr.Property, v)
+	ast2.Accept(memberExpr.Object, v)
+	ast2.Accept(memberExpr.Property, v)
 	return nil
 }
 
 // validateModuleFunctionCall validates a module function call
-func (v *VMODValidator) validateModuleFunctionCall(memberExpr *ast.MemberExpression, args []ast.Expression, namedArgs map[string]ast.Expression) {
-	moduleIdent := memberExpr.Object.(*ast.Identifier)
-	functionIdent, ok := memberExpr.Property.(*ast.Identifier)
+func (v *VMODValidator) validateModuleFunctionCall(memberExpr *ast2.MemberExpression, args []ast2.Expression, namedArgs map[string]ast2.Expression) {
+	moduleIdent := memberExpr.Object.(*ast2.Identifier)
+	functionIdent, ok := memberExpr.Property.(*ast2.Identifier)
 	if !ok {
 		v.addError("function name must be an identifier")
 		return
@@ -181,14 +181,14 @@ func (v *VMODValidator) validateModuleFunctionCall(memberExpr *ast.MemberExpress
 }
 
 // validateObjectMethodCall validates an object method call
-func (v *VMODValidator) validateObjectMethodCall(memberExpr *ast.MemberExpression, args []ast.Expression, namedArgs map[string]ast.Expression) {
-	objectIdent, ok := memberExpr.Object.(*ast.Identifier)
+func (v *VMODValidator) validateObjectMethodCall(memberExpr *ast2.MemberExpression, args []ast2.Expression, namedArgs map[string]ast2.Expression) {
+	objectIdent, ok := memberExpr.Object.(*ast2.Identifier)
 	if !ok {
 		v.addError("object name must be an identifier")
 		return
 	}
 
-	methodIdent, ok := memberExpr.Property.(*ast.Identifier)
+	methodIdent, ok := memberExpr.Property.(*ast2.Identifier)
 	if !ok {
 		v.addError("method name must be an identifier")
 		return
@@ -204,7 +204,7 @@ func (v *VMODValidator) validateObjectMethodCall(memberExpr *ast.MemberExpressio
 		return
 	}
 
-	if objectSymbol.Kind != types.SymbolVMODObject {
+	if objectSymbol.Kind != types2.SymbolVMODObject {
 		// Not a VMOD object, skip validation
 		return
 	}
@@ -214,7 +214,7 @@ func (v *VMODValidator) validateObjectMethodCall(memberExpr *ast.MemberExpressio
 }
 
 // fillPositionalArgs fills the result slice with positional arguments and marks them as used
-func (v *VMODValidator) fillPositionalArgs(result []ast.Expression, parameterUsed []bool, function *vcc.Function, positionalArgs []ast.Expression) error {
+func (v *VMODValidator) fillPositionalArgs(result []ast2.Expression, parameterUsed []bool, function *vcc.Function, positionalArgs []ast2.Expression) error {
 	for i, arg := range positionalArgs {
 		if i >= len(function.Parameters) {
 			return fmt.Errorf("too many positional arguments: got %d, function accepts at most %d", len(positionalArgs), len(function.Parameters))
@@ -226,7 +226,7 @@ func (v *VMODValidator) fillPositionalArgs(result []ast.Expression, parameterUse
 }
 
 // fillNamedArgs maps named arguments to their correct parameter positions
-func (v *VMODValidator) fillNamedArgs(result []ast.Expression, parameterUsed []bool, function *vcc.Function, namedArgs map[string]ast.Expression) error {
+func (v *VMODValidator) fillNamedArgs(result []ast2.Expression, parameterUsed []bool, function *vcc.Function, namedArgs map[string]ast2.Expression) error {
 	for argName, argValue := range namedArgs {
 		// Find the parameter by name
 		paramIndex := -1
@@ -252,7 +252,7 @@ func (v *VMODValidator) fillNamedArgs(result []ast.Expression, parameterUsed []b
 }
 
 // applyDefaultArgs checks for missing required parameters and handles defaults
-func (v *VMODValidator) applyDefaultArgs(result []ast.Expression, parameterUsed []bool, function *vcc.Function) error {
+func (v *VMODValidator) applyDefaultArgs(result []ast2.Expression, parameterUsed []bool, function *vcc.Function) error {
 	for i, param := range function.Parameters {
 		if !parameterUsed[i] {
 			if !param.Optional && param.DefaultValue == "" {
@@ -266,13 +266,13 @@ func (v *VMODValidator) applyDefaultArgs(result []ast.Expression, parameterUsed 
 }
 
 // buildCompleteArgumentList combines positional and named arguments into a complete argument list
-func (v *VMODValidator) buildCompleteArgumentList(function *vcc.Function, positionalArgs []ast.Expression, namedArgs map[string]ast.Expression) ([]ast.Expression, error) {
+func (v *VMODValidator) buildCompleteArgumentList(function *vcc.Function, positionalArgs []ast2.Expression, namedArgs map[string]ast2.Expression) ([]ast2.Expression, error) {
 	if function == nil {
 		return positionalArgs, nil // Fallback if no function definition available
 	}
 
 	// Create a result slice with the same capacity as the function parameters
-	result := make([]ast.Expression, len(function.Parameters))
+	result := make([]ast2.Expression, len(function.Parameters))
 	parameterUsed := make([]bool, len(function.Parameters))
 
 	// Phase 1: Fill in positional arguments
@@ -297,35 +297,35 @@ func (v *VMODValidator) buildCompleteArgumentList(function *vcc.Function, positi
 
 // validateNewStatement validates a VMOD object instantiation statement
 // VisitNewStatement implements ast.Visitor
-func (v *VMODValidator) VisitNewStatement(newStmt *ast.NewStatement) interface{} {
+func (v *VMODValidator) VisitNewStatement(newStmt *ast2.NewStatement) interface{} {
 	// Extract variable name being assigned
-	varName, ok := newStmt.Name.(*ast.Identifier)
+	varName, ok := newStmt.Name.(*ast2.Identifier)
 	if !ok {
 		v.addError("new statement: variable name must be an identifier")
 		return nil
 	}
 
 	// Extract VMOD constructor call
-	constructorCall, ok := newStmt.Constructor.(*ast.CallExpression)
+	constructorCall, ok := newStmt.Constructor.(*ast2.CallExpression)
 	if !ok {
 		v.addError("new statement: constructor must be a function call")
 		return nil
 	}
 
 	// Extract module.object() call
-	memberExpr, ok := constructorCall.Function.(*ast.MemberExpression)
+	memberExpr, ok := constructorCall.Function.(*ast2.MemberExpression)
 	if !ok {
 		v.addError("new statement: constructor must be a module.object() call")
 		return nil
 	}
 
-	moduleIdent, ok := memberExpr.Object.(*ast.Identifier)
+	moduleIdent, ok := memberExpr.Object.(*ast2.Identifier)
 	if !ok {
 		v.addError("new statement: module name must be an identifier")
 		return nil
 	}
 
-	objectIdent, ok := memberExpr.Property.(*ast.Identifier)
+	objectIdent, ok := memberExpr.Property.(*ast2.Identifier)
 	if !ok {
 		v.addError("new statement: object name must be an identifier")
 		return nil
@@ -355,7 +355,7 @@ func (v *VMODValidator) VisitNewStatement(newStmt *ast.NewStatement) interface{}
 
 	// Visit constructor arguments for nested validation
 	for _, arg := range constructorCall.Arguments {
-		ast.Accept(arg, v)
+		ast2.Accept(arg, v)
 	}
 	return nil
 }
@@ -384,7 +384,7 @@ func (v *VMODValidator) validateFunctionRestrictions(moduleName, functionName st
 }
 
 // extractArgumentTypes extracts VCC types from AST expressions
-func (v *VMODValidator) extractArgumentTypes(args []ast.Expression) []vcc.VCCType {
+func (v *VMODValidator) extractArgumentTypes(args []ast2.Expression) []vcc.VCCType {
 	var types []vcc.VCCType
 
 	for _, arg := range args {
@@ -396,7 +396,7 @@ func (v *VMODValidator) extractArgumentTypes(args []ast.Expression) []vcc.VCCTyp
 }
 
 // extractArgumentTypesWithParameters extracts VCC types from AST expressions using provided parameter definitions
-func (v *VMODValidator) extractArgumentTypesWithParameters(args []ast.Expression, parameters []vcc.Parameter) []vcc.VCCType {
+func (v *VMODValidator) extractArgumentTypesWithParameters(args []ast2.Expression, parameters []vcc.Parameter) []vcc.VCCType {
 	var types []vcc.VCCType
 
 	for i, arg := range args {
@@ -419,7 +419,7 @@ func (v *VMODValidator) extractArgumentTypesWithParameters(args []ast.Expression
 }
 
 // extractArgumentTypesWithContext extracts VCC types from AST expressions with parameter context
-func (v *VMODValidator) extractArgumentTypesWithContext(moduleName, functionName string, args []ast.Expression) []vcc.VCCType {
+func (v *VMODValidator) extractArgumentTypesWithContext(moduleName, functionName string, args []ast2.Expression) []vcc.VCCType {
 	// Look up function to get expected parameter types
 	function, err := v.registry.GetFunction(moduleName, functionName)
 	if err != nil {
@@ -431,7 +431,7 @@ func (v *VMODValidator) extractArgumentTypesWithContext(moduleName, functionName
 }
 
 // extractArgumentTypesWithObjectContext extracts VCC types from AST expressions with object constructor context
-func (v *VMODValidator) extractArgumentTypesWithObjectContext(moduleName, objectName string, args []ast.Expression) []vcc.VCCType {
+func (v *VMODValidator) extractArgumentTypesWithObjectContext(moduleName, objectName string, args []ast2.Expression) []vcc.VCCType {
 	// Look up object to get expected constructor parameter types
 	object, err := v.registry.GetObject(moduleName, objectName)
 	if err != nil {
@@ -444,28 +444,28 @@ func (v *VMODValidator) extractArgumentTypesWithObjectContext(moduleName, object
 
 // inferExpressionType infers the VCC type of an expression
 // If expectedType is provided, it enables enhanced type inference with context
-func (v *VMODValidator) inferExpressionType(expr ast.Expression, expectedType ...vcc.VCCType) vcc.VCCType {
+func (v *VMODValidator) inferExpressionType(expr ast2.Expression, expectedType ...vcc.VCCType) vcc.VCCType {
 	var expected vcc.VCCType
 	if len(expectedType) > 0 {
 		expected = expectedType[0]
 	}
 
 	switch e := expr.(type) {
-	case *ast.StringLiteral:
+	case *ast2.StringLiteral:
 		return vcc.TypeString
-	case *ast.IntegerLiteral:
+	case *ast2.IntegerLiteral:
 		// If we have expected type context, check if we can coerce INT to the expected type
 		if expected != "" && v.isTypeCompatible(vcc.TypeInt, expected) {
 			return expected
 		}
 		return vcc.TypeInt
-	case *ast.FloatLiteral:
+	case *ast2.FloatLiteral:
 		return vcc.TypeReal
-	case *ast.BooleanLiteral:
+	case *ast2.BooleanLiteral:
 		return vcc.TypeBool
-	case *ast.TimeExpression:
+	case *ast2.TimeExpression:
 		return vcc.TypeDuration
-	case *ast.Identifier:
+	case *ast2.Identifier:
 		// Look up identifier in symbol table first
 		symbol := v.symbolTable.Lookup(e.Name)
 		if symbol != nil {
@@ -480,19 +480,19 @@ func (v *VMODValidator) inferExpressionType(expr ast.Expression, expectedType ..
 			return vcc.TypeEnum
 		}
 		return vcc.TypeString // Default assumption
-	case *ast.MemberExpression:
+	case *ast2.MemberExpression:
 		// Try to infer method return type for VMOD objects
 		if returnType := v.inferObjectMethodReturnType(e); returnType != "" {
 			return returnType
 		}
 		return vcc.TypeString // Default assumption
-	case *ast.CallExpression:
+	case *ast2.CallExpression:
 		// For call expressions, try to look up the return type
 		if returnType := v.inferCallExpressionReturnType(e); returnType != "" {
 			return returnType
 		}
 		return vcc.TypeString // Default assumption
-	case *ast.UnaryExpression:
+	case *ast2.UnaryExpression:
 		// For unary expressions, infer the type of the operand with context if available
 		// This handles cases like "-1s" where the whole expression should be treated as the operand's type
 		if expected != "" {
@@ -505,19 +505,19 @@ func (v *VMODValidator) inferExpressionType(expr ast.Expression, expectedType ..
 }
 
 // inferCallExpressionReturnType attempts to infer the return type of a VMOD function call
-func (v *VMODValidator) inferCallExpressionReturnType(callExpr *ast.CallExpression) vcc.VCCType {
+func (v *VMODValidator) inferCallExpressionReturnType(callExpr *ast2.CallExpression) vcc.VCCType {
 	// Check if this is a VMOD function call (module.function())
-	memberExpr, ok := callExpr.Function.(*ast.MemberExpression)
+	memberExpr, ok := callExpr.Function.(*ast2.MemberExpression)
 	if !ok {
 		return "" // Not a member call
 	}
 
-	moduleIdent, ok := memberExpr.Object.(*ast.Identifier)
+	moduleIdent, ok := memberExpr.Object.(*ast2.Identifier)
 	if !ok {
 		return "" // Object is not an identifier
 	}
 
-	functionIdent, ok := memberExpr.Property.(*ast.Identifier)
+	functionIdent, ok := memberExpr.Property.(*ast2.Identifier)
 	if !ok {
 		return "" // Property is not an identifier
 	}
@@ -537,7 +537,7 @@ func (v *VMODValidator) inferCallExpressionReturnType(callExpr *ast.CallExpressi
 
 	// Check if this is an object method call (object.method())
 	objectSymbol := v.symbolTable.Lookup(moduleOrObjectName)
-	if objectSymbol != nil && objectSymbol.Kind == types.SymbolVMODObject {
+	if objectSymbol != nil && objectSymbol.Kind == types2.SymbolVMODObject {
 		// Check that object has required metadata
 		if objectSymbol.ModuleName == "" || objectSymbol.ObjectType == "" {
 			return "" // Object missing required VMOD metadata
@@ -555,61 +555,61 @@ func (v *VMODValidator) inferCallExpressionReturnType(callExpr *ast.CallExpressi
 }
 
 // convertVCCTypeToSymbolType converts VCC type to symbol table type
-func (v *VMODValidator) convertVCCTypeToSymbolType(vccType vcc.VCCType) types.Type {
+func (v *VMODValidator) convertVCCTypeToSymbolType(vccType vcc.VCCType) types2.Type {
 	switch vccType {
 	case vcc.TypeString, vcc.TypeStringList, vcc.TypeStrands:
-		return types.String
+		return types2.String
 	case vcc.TypeInt:
-		return types.Int
+		return types2.Int
 	case vcc.TypeReal:
-		return types.Real
+		return types2.Real
 	case vcc.TypeBool:
-		return types.Bool
+		return types2.Bool
 	case vcc.TypeBackend:
-		return types.Backend
+		return types2.Backend
 	case vcc.TypeHeader:
-		return types.Header
+		return types2.Header
 	case vcc.TypeDuration:
-		return types.Duration
+		return types2.Duration
 	case vcc.TypeBytes:
-		return types.Bytes
+		return types2.Bytes
 	case vcc.TypeIP:
-		return types.IP
+		return types2.IP
 	case vcc.TypeTime:
-		return types.Time
+		return types2.Time
 	case vcc.TypeVoid:
-		return types.Void
+		return types2.Void
 	default:
-		return types.String // Default
+		return types2.String // Default
 	}
 }
 
 // convertSymbolTypeToVCCType converts symbol table type to VCC type
-func (v *VMODValidator) convertSymbolTypeToVCCType(symbolType types.Type) vcc.VCCType {
+func (v *VMODValidator) convertSymbolTypeToVCCType(symbolType types2.Type) vcc.VCCType {
 	switch symbolType {
-	case types.String:
+	case types2.String:
 		return vcc.TypeString
-	case types.Int:
+	case types2.Int:
 		return vcc.TypeInt
-	case types.Real:
+	case types2.Real:
 		return vcc.TypeReal
-	case types.Bool:
+	case types2.Bool:
 		return vcc.TypeBool
-	case types.Backend:
+	case types2.Backend:
 		return vcc.TypeBackend
-	case types.Header:
+	case types2.Header:
 		return vcc.TypeHeader
-	case types.Duration:
+	case types2.Duration:
 		return vcc.TypeDuration
-	case types.Bytes:
+	case types2.Bytes:
 		return vcc.TypeBytes
-	case types.IP:
+	case types2.IP:
 		return vcc.TypeIP
-	case types.Time:
+	case types2.Time:
 		return vcc.TypeTime
-	case types.Void:
+	case types2.Void:
 		return vcc.TypeVoid
-	case types.HTTP:
+	case types2.HTTP:
 		return vcc.TypeHTTP
 	default:
 		return vcc.TypeString // Default
@@ -633,14 +633,14 @@ func (v *VMODValidator) isTypeCompatible(got, expected vcc.VCCType) bool {
 }
 
 // inferObjectMethodReturnType attempts to infer the return type of a VMOD object method call
-func (v *VMODValidator) inferObjectMethodReturnType(memberExpr *ast.MemberExpression) vcc.VCCType {
+func (v *VMODValidator) inferObjectMethodReturnType(memberExpr *ast2.MemberExpression) vcc.VCCType {
 	// Check if this is an object.method() pattern
-	objectIdent, ok := memberExpr.Object.(*ast.Identifier)
+	objectIdent, ok := memberExpr.Object.(*ast2.Identifier)
 	if !ok {
 		return "" // Object is not an identifier
 	}
 
-	methodIdent, ok := memberExpr.Property.(*ast.Identifier)
+	methodIdent, ok := memberExpr.Property.(*ast2.Identifier)
 	if !ok {
 		return "" // Property is not an identifier
 	}
@@ -650,7 +650,7 @@ func (v *VMODValidator) inferObjectMethodReturnType(memberExpr *ast.MemberExpres
 
 	// Look up object in symbol table
 	objectSymbol := v.symbolTable.Lookup(objectName)
-	if objectSymbol == nil || objectSymbol.Kind != types.SymbolVMODObject {
+	if objectSymbol == nil || objectSymbol.Kind != types2.SymbolVMODObject {
 		return "" // Object not found or not a VMOD object
 	}
 
@@ -670,66 +670,66 @@ func (v *VMODValidator) inferObjectMethodReturnType(memberExpr *ast.MemberExpres
 }
 
 // VisitBlockStatement implements ast.Visitor
-func (v *VMODValidator) VisitBlockStatement(node *ast.BlockStatement) interface{} {
+func (v *VMODValidator) VisitBlockStatement(node *ast2.BlockStatement) interface{} {
 	for _, stmt := range node.Statements {
-		ast.Accept(stmt, v)
+		ast2.Accept(stmt, v)
 	}
 	return nil
 }
 
 // VisitExpressionStatement implements ast.Visitor
-func (v *VMODValidator) VisitExpressionStatement(node *ast.ExpressionStatement) interface{} {
-	ast.Accept(node.Expression, v)
+func (v *VMODValidator) VisitExpressionStatement(node *ast2.ExpressionStatement) interface{} {
+	ast2.Accept(node.Expression, v)
 	return nil
 }
 
 // VisitIfStatement implements ast.Visitor
-func (v *VMODValidator) VisitIfStatement(node *ast.IfStatement) interface{} {
-	ast.Accept(node.Condition, v)
-	ast.Accept(node.Then, v)
+func (v *VMODValidator) VisitIfStatement(node *ast2.IfStatement) interface{} {
+	ast2.Accept(node.Condition, v)
+	ast2.Accept(node.Then, v)
 	if node.Else != nil {
-		ast.Accept(node.Else, v)
+		ast2.Accept(node.Else, v)
 	}
 	return nil
 }
 
 // VisitSetStatement implements ast.Visitor
-func (v *VMODValidator) VisitSetStatement(node *ast.SetStatement) interface{} {
-	ast.Accept(node.Variable, v)
-	ast.Accept(node.Value, v)
+func (v *VMODValidator) VisitSetStatement(node *ast2.SetStatement) interface{} {
+	ast2.Accept(node.Variable, v)
+	ast2.Accept(node.Value, v)
 	return nil
 }
 
 // VisitUnsetStatement implements ast.Visitor
-func (v *VMODValidator) VisitUnsetStatement(node *ast.UnsetStatement) interface{} {
-	ast.Accept(node.Variable, v)
+func (v *VMODValidator) VisitUnsetStatement(node *ast2.UnsetStatement) interface{} {
+	ast2.Accept(node.Variable, v)
 	return nil
 }
 
 // VisitReturnStatement implements ast.Visitor
-func (v *VMODValidator) VisitReturnStatement(node *ast.ReturnStatement) interface{} {
+func (v *VMODValidator) VisitReturnStatement(node *ast2.ReturnStatement) interface{} {
 	if node.Action != nil {
-		ast.Accept(node.Action, v)
+		ast2.Accept(node.Action, v)
 	}
 	return nil
 }
 
 // VisitCallStatement implements ast.Visitor
-func (v *VMODValidator) VisitCallStatement(node *ast.CallStatement) interface{} {
-	ast.Accept(node.Function, v)
+func (v *VMODValidator) VisitCallStatement(node *ast2.CallStatement) interface{} {
+	ast2.Accept(node.Function, v)
 	return nil
 }
 
 // VisitBinaryExpression implements ast.Visitor
-func (v *VMODValidator) VisitBinaryExpression(node *ast.BinaryExpression) interface{} {
-	ast.Accept(node.Left, v)
-	ast.Accept(node.Right, v)
+func (v *VMODValidator) VisitBinaryExpression(node *ast2.BinaryExpression) interface{} {
+	ast2.Accept(node.Left, v)
+	ast2.Accept(node.Right, v)
 	return nil
 }
 
 // VisitUnaryExpression implements ast.Visitor
-func (v *VMODValidator) VisitUnaryExpression(node *ast.UnaryExpression) interface{} {
-	ast.Accept(node.Operand, v)
+func (v *VMODValidator) VisitUnaryExpression(node *ast2.UnaryExpression) interface{} {
+	ast2.Accept(node.Operand, v)
 	return nil
 }
 

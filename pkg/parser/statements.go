@@ -1,12 +1,12 @@
 package parser
 
 import (
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 // parseStatement parses a statement
-func (p *Parser) parseStatement() ast.Statement {
+func (p *Parser) parseStatement() ast2.Statement {
 	switch p.currentToken.Type {
 	case lexer.IF_KW:
 		return p.parseIfStatement()
@@ -37,9 +37,9 @@ func (p *Parser) parseStatement() ast.Statement {
 }
 
 // parseBlockStatement parses a block statement
-func (p *Parser) parseBlockStatement() *ast.BlockStatement {
-	stmt := &ast.BlockStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseBlockStatement() *ast2.BlockStatement {
+	stmt := &ast2.BlockStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -71,9 +71,9 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 }
 
 // parseIfStatement parses an if statement
-func (p *Parser) parseIfStatement() *ast.IfStatement {
-	stmt := &ast.IfStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseIfStatement() *ast2.IfStatement {
+	stmt := &ast2.IfStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -123,9 +123,9 @@ func (p *Parser) parseIfStatement() *ast.IfStatement {
 }
 
 // parseSetStatement parses a set statement
-func (p *Parser) parseSetStatement() *ast.SetStatement {
-	stmt := &ast.SetStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseSetStatement() *ast2.SetStatement {
+	stmt := &ast2.SetStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -163,9 +163,9 @@ func (p *Parser) parseSetStatement() *ast.SetStatement {
 }
 
 // parseUnsetStatement parses an unset statement
-func (p *Parser) parseUnsetStatement() *ast.UnsetStatement {
-	stmt := &ast.UnsetStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseUnsetStatement() *ast2.UnsetStatement {
+	stmt := &ast2.UnsetStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -190,9 +190,9 @@ func (p *Parser) parseUnsetStatement() *ast.UnsetStatement {
 }
 
 // parseCallStatement parses a call statement
-func (p *Parser) parseCallStatement() *ast.CallStatement {
-	stmt := &ast.CallStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseCallStatement() *ast2.CallStatement {
+	stmt := &ast2.CallStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -206,9 +206,9 @@ func (p *Parser) parseCallStatement() *ast.CallStatement {
 }
 
 // parseReturnStatement parses a return statement
-func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
-	stmt := &ast.ReturnStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseReturnStatement() *ast2.ReturnStatement {
+	stmt := &ast2.ReturnStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -238,9 +238,9 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 }
 
 // parseSyntheticStatement parses a synthetic statement
-func (p *Parser) parseSyntheticStatement() *ast.SyntheticStatement {
-	stmt := &ast.SyntheticStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseSyntheticStatement() *ast2.SyntheticStatement {
+	stmt := &ast2.SyntheticStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -264,9 +264,9 @@ func (p *Parser) parseSyntheticStatement() *ast.SyntheticStatement {
 }
 
 // parseErrorStatement parses an error statement
-func (p *Parser) parseErrorStatement() *ast.ErrorStatement {
-	stmt := &ast.ErrorStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseErrorStatement() *ast2.ErrorStatement {
+	stmt := &ast2.ErrorStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -295,9 +295,9 @@ func (p *Parser) parseErrorStatement() *ast.ErrorStatement {
 }
 
 // parseRestartStatement parses a restart statement
-func (p *Parser) parseRestartStatement() *ast.RestartStatement {
-	stmt := &ast.RestartStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseRestartStatement() *ast2.RestartStatement {
+	stmt := &ast2.RestartStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
@@ -308,9 +308,9 @@ func (p *Parser) parseRestartStatement() *ast.RestartStatement {
 }
 
 // parseCSourceStatement parses a C source statement
-func (p *Parser) parseCSourceStatement() *ast.CSourceStatement {
-	stmt := &ast.CSourceStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseCSourceStatement() *ast2.CSourceStatement {
+	stmt := &ast2.CSourceStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
@@ -321,9 +321,9 @@ func (p *Parser) parseCSourceStatement() *ast.CSourceStatement {
 }
 
 // parseNewStatement parses a new statement for VMOD object instantiation
-func (p *Parser) parseNewStatement() *ast.NewStatement {
-	stmt := &ast.NewStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseNewStatement() *ast2.NewStatement {
+	stmt := &ast2.NewStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -366,9 +366,9 @@ func (p *Parser) parseNewStatement() *ast.NewStatement {
 }
 
 // parseExpressionStatement parses an expression statement
-func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
-	stmt := &ast.ExpressionStatement{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseExpressionStatement() *ast2.ExpressionStatement {
+	stmt := &ast2.ExpressionStatement{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -380,7 +380,7 @@ func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 
 	// Use current token end position as a safer alternative to calling End()
 	// This avoids the panic that occurs when CallExpression.End() is called
-	if _, ok := stmt.Expression.(*ast.CallExpression); ok {
+	if _, ok := stmt.Expression.(*ast2.CallExpression); ok {
 		stmt.EndPos = p.currentToken.End
 	} else {
 		stmt.EndPos = stmt.Expression.End()

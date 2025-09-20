@@ -1,7 +1,7 @@
 package ast
 
 import (
-	"github.com/varnish/vclparser/lexer"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 // Node represents any node in the AST

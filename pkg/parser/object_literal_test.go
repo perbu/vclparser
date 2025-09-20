@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 // TestInlineProbeObjectLiteral tests parsing of inline probe definitions within backend declarations
@@ -36,7 +36,7 @@ backend web {
 			len(program.Declarations))
 	}
 
-	decl, ok := program.Declarations[0].(*ast.BackendDecl)
+	decl, ok := program.Declarations[0].(*ast2.BackendDecl)
 	if !ok {
 		t.Fatalf("program.Declarations[0] is not *ast.BackendDecl. got=%T",
 			program.Declarations[0])
@@ -56,7 +56,7 @@ backend web {
 		t.Errorf("property[0].Name = %q, want %q", hostProp.Name, "host")
 	}
 
-	hostValue, ok := hostProp.Value.(*ast.StringLiteral)
+	hostValue, ok := hostProp.Value.(*ast2.StringLiteral)
 	if !ok {
 		t.Fatalf("property[0].Value is not *ast.StringLiteral. got=%T", hostProp.Value)
 	}
@@ -71,7 +71,7 @@ backend web {
 		t.Errorf("property[1].Name = %q, want %q", probeProp.Name, "probe")
 	}
 
-	probeObj, ok := probeProp.Value.(*ast.ObjectExpression)
+	probeObj, ok := probeProp.Value.(*ast2.ObjectExpression)
 	if !ok {
 		t.Fatalf("property[1].Value is not *ast.ObjectExpression. got=%T", probeProp.Value)
 	}
@@ -98,7 +98,7 @@ backend web {
 		prop := probeObj.Properties[i]
 
 		// Check key (should be an identifier like url, interval, etc.)
-		ident, ok := prop.Key.(*ast.Identifier)
+		ident, ok := prop.Key.(*ast2.Identifier)
 		if !ok {
 			t.Fatalf("probe property[%d].Key is not *ast.Identifier. got=%T", i, prop.Key)
 		}
@@ -110,7 +110,7 @@ backend web {
 		// Check value based on type
 		switch expected.typ {
 		case "string":
-			stringLit, ok := prop.Value.(*ast.StringLiteral)
+			stringLit, ok := prop.Value.(*ast2.StringLiteral)
 			if !ok {
 				t.Fatalf("probe property[%d].Value is not *ast.StringLiteral. got=%T", i, prop.Value)
 			}
@@ -118,7 +118,7 @@ backend web {
 				t.Errorf("probe property[%d].Value = %q, want %q", i, stringLit.Value, expected.value)
 			}
 		case "time":
-			timeLit, ok := prop.Value.(*ast.TimeExpression)
+			timeLit, ok := prop.Value.(*ast2.TimeExpression)
 			if !ok {
 				t.Fatalf("probe property[%d].Value is not *ast.TimeExpression. got=%T", i, prop.Value)
 			}
@@ -126,7 +126,7 @@ backend web {
 				t.Errorf("probe property[%d].Value = %q, want %q", i, timeLit.Value, expected.value)
 			}
 		case "int":
-			intLit, ok := prop.Value.(*ast.IntegerLiteral)
+			intLit, ok := prop.Value.(*ast2.IntegerLiteral)
 			if !ok {
 				t.Fatalf("probe property[%d].Value is not *ast.IntegerLiteral. got=%T", i, prop.Value)
 			}
@@ -167,7 +167,7 @@ backend api {
 			len(program.Declarations))
 	}
 
-	decl, ok := program.Declarations[0].(*ast.BackendDecl)
+	decl, ok := program.Declarations[0].(*ast2.BackendDecl)
 	if !ok {
 		t.Fatalf("program.Declarations[0] is not *ast.BackendDecl. got=%T",
 			program.Declarations[0])
@@ -189,15 +189,15 @@ backend api {
 
 		switch expectedTypes[i] {
 		case "string":
-			if _, ok := prop.Value.(*ast.StringLiteral); !ok {
+			if _, ok := prop.Value.(*ast2.StringLiteral); !ok {
 				t.Errorf("property[%d] (%s) is not string literal. got=%T", i, expectedName, prop.Value)
 			}
 		case "object":
-			if _, ok := prop.Value.(*ast.ObjectExpression); !ok {
+			if _, ok := prop.Value.(*ast2.ObjectExpression); !ok {
 				t.Errorf("property[%d] (%s) is not object expression. got=%T", i, expectedName, prop.Value)
 			}
 		case "int":
-			if _, ok := prop.Value.(*ast.IntegerLiteral); !ok {
+			if _, ok := prop.Value.(*ast2.IntegerLiteral); !ok {
 				t.Errorf("property[%d] (%s) is not integer literal. got=%T", i, expectedName, prop.Value)
 			}
 		}
@@ -226,7 +226,7 @@ backend simple {
 			len(program.Declarations))
 	}
 
-	decl, ok := program.Declarations[0].(*ast.BackendDecl)
+	decl, ok := program.Declarations[0].(*ast2.BackendDecl)
 	if !ok {
 		t.Fatalf("program.Declarations[0] is not *ast.BackendDecl. got=%T",
 			program.Declarations[0])
@@ -241,7 +241,7 @@ backend simple {
 		t.Errorf("property.Name = %q, want %q", probeProp.Name, "probe")
 	}
 
-	probeObj, ok := probeProp.Value.(*ast.ObjectExpression)
+	probeObj, ok := probeProp.Value.(*ast2.ObjectExpression)
 	if !ok {
 		t.Fatalf("property.Value is not *ast.ObjectExpression. got=%T", probeProp.Value)
 	}

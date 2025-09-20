@@ -1,9 +1,10 @@
 package vmod
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/varnish/vclparser"
 )
 
 // TestVCCLibAllFiles tests that all VCC files in vcclib directory can be parsed
@@ -12,31 +13,23 @@ import (
 func TestVCCLibAllFiles(t *testing.T) {
 	registry := NewRegistry()
 
-	// Get the vcclib directory path relative to this test file
-	vccLibPath := filepath.Join("..", "vcclib")
-
-	// Check if vcclib directory exists
-	if _, err := os.Stat(vccLibPath); os.IsNotExist(err) {
-		t.Skipf("vcclib directory not found at %s, skipping comprehensive test", vccLibPath)
+	// Load all embedded VCC files
+	err := registry.LoadEmbeddedVCCs()
+	if err != nil {
+		t.Fatalf("Failed to load embedded VCC files: %v", err)
 	}
 
-	// Load all VCC files from vcclib directory
-	err := registry.LoadVCCDirectory(vccLibPath)
+	// Get all embedded VCC files
+	vccFiles, err := vclparser.ListEmbeddedVCCFiles()
 	if err != nil {
-		t.Fatalf("Failed to load VCC files from %s: %v", vccLibPath, err)
-	}
-
-	// Get all VCC files in the directory
-	vccFiles, err := filepath.Glob(filepath.Join(vccLibPath, "*.vcc"))
-	if err != nil {
-		t.Fatalf("Failed to find VCC files: %v", err)
+		t.Fatalf("Failed to list embedded VCC files: %v", err)
 	}
 
 	if len(vccFiles) == 0 {
-		t.Fatalf("No VCC files found in %s", vccLibPath)
+		t.Fatalf("No embedded VCC files found")
 	}
 
-	t.Logf("Found %d VCC files in %s", len(vccFiles), vccLibPath)
+	t.Logf("Found %d embedded VCC files", len(vccFiles))
 
 	// Check that at least some modules were loaded successfully
 	modules := registry.ListModules()
@@ -86,21 +79,14 @@ func TestVCCLibAllFiles(t *testing.T) {
 // TestVCCLibIndividualFiles tests each VCC file individually to identify
 // which specific files might have parsing issues.
 func TestVCCLibIndividualFiles(t *testing.T) {
-	vccLibPath := filepath.Join("..", "vcclib")
-
-	// Check if vcclib directory exists
-	if _, err := os.Stat(vccLibPath); os.IsNotExist(err) {
-		t.Skipf("vcclib directory not found at %s, skipping individual file test", vccLibPath)
-	}
-
-	// Get all VCC files in the directory
-	vccFiles, err := filepath.Glob(filepath.Join(vccLibPath, "*.vcc"))
+	// Get all embedded VCC files
+	vccFiles, err := vclparser.ListEmbeddedVCCFiles()
 	if err != nil {
-		t.Fatalf("Failed to find VCC files: %v", err)
+		t.Fatalf("Failed to list embedded VCC files: %v", err)
 	}
 
 	if len(vccFiles) == 0 {
-		t.Fatalf("No VCC files found in %s", vccLibPath)
+		t.Fatalf("No embedded VCC files found")
 	}
 
 	successCount := 0
@@ -111,30 +97,14 @@ func TestVCCLibIndividualFiles(t *testing.T) {
 		t.Run(fileName, func(t *testing.T) {
 			registry := NewRegistry()
 
-			// Create temporary directory with just this one file
-			tmpDir, err := os.MkdirTemp("", "vcc_individual_test_*")
+			// Try to load just this embedded file
+			reader, err := vclparser.OpenEmbeddedVCCFile(vccFile)
 			if err != nil {
-				t.Fatalf("Failed to create temp directory: %v", err)
+				t.Fatalf("Failed to open embedded VCC file %s: %v", vccFile, err)
 			}
-			defer func() {
-				if err := os.RemoveAll(tmpDir); err != nil {
-					t.Logf("Failed to remove temp directory: %v", err)
-				}
-			}()
+			defer reader.Close()
 
-			// Copy the VCC file to the temp directory
-			content, err := os.ReadFile(vccFile)
-			if err != nil {
-				t.Fatalf("Failed to read %s: %v", vccFile, err)
-			}
-
-			tmpFilePath := filepath.Join(tmpDir, fileName)
-			if err := os.WriteFile(tmpFilePath, content, 0644); err != nil {
-				t.Fatalf("Failed to write temp file: %v", err)
-			}
-
-			// Try to load just this file
-			err = registry.LoadVCCDirectory(tmpDir)
+			err = registry.LoadVCCFromReader(reader, fileName)
 			if err != nil {
 				t.Errorf("Failed to parse %s: %v", fileName, err)
 				failureCount++

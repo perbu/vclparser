@@ -9,19 +9,19 @@ import (
 	"sync"
 
 	"github.com/varnish/vclparser"
-	"github.com/varnish/vclparser/vcc"
+	vcc2 "github.com/varnish/vclparser/pkg/vcc"
 )
 
 // Registry manages VMOD definitions loaded from VCC files
 type Registry struct {
-	modules map[string]*vcc.Module
+	modules map[string]*vcc2.Module
 	mutex   sync.RWMutex
 }
 
 // NewRegistry creates a new VMOD registry
 func NewRegistry() *Registry {
 	return &Registry{
-		modules: make(map[string]*vcc.Module),
+		modules: make(map[string]*vcc2.Module),
 	}
 }
 
@@ -61,7 +61,7 @@ func (r *Registry) LoadVCCFile(filename string) error {
 
 // LoadVCCFromReader loads a VCC from an io.Reader
 func (r *Registry) LoadVCCFromReader(reader io.Reader, source string) error {
-	parser := vcc.NewParser(reader)
+	parser := vcc2.NewParser(reader)
 	module, err := parser.Parse()
 	if err != nil {
 		return fmt.Errorf("failed to parse VCC from %s: %v", source, err)
@@ -81,7 +81,7 @@ func (r *Registry) LoadVCCFromReader(reader io.Reader, source string) error {
 }
 
 // GetModule returns a module by name
-func (r *Registry) GetModule(name string) (*vcc.Module, bool) {
+func (r *Registry) GetModule(name string) (*vcc2.Module, bool) {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
@@ -102,7 +102,7 @@ func (r *Registry) ListModules() []string {
 }
 
 // GetFunction finds a function in a specific module
-func (r *Registry) GetFunction(moduleName, functionName string) (*vcc.Function, error) {
+func (r *Registry) GetFunction(moduleName, functionName string) (*vcc2.Function, error) {
 	module, exists := r.GetModule(moduleName)
 	if !exists {
 		return nil, fmt.Errorf("module %s not found", moduleName)
@@ -118,7 +118,7 @@ func (r *Registry) GetFunction(moduleName, functionName string) (*vcc.Function, 
 }
 
 // GetObject finds an object in a specific module
-func (r *Registry) GetObject(moduleName, objectName string) (*vcc.Object, error) {
+func (r *Registry) GetObject(moduleName, objectName string) (*vcc2.Object, error) {
 	module, exists := r.GetModule(moduleName)
 	if !exists {
 		return nil, fmt.Errorf("module %s not found", moduleName)
@@ -134,7 +134,7 @@ func (r *Registry) GetObject(moduleName, objectName string) (*vcc.Object, error)
 }
 
 // GetMethod finds a method on an object in a specific module
-func (r *Registry) GetMethod(moduleName, objectName, methodName string) (*vcc.Method, error) {
+func (r *Registry) GetMethod(moduleName, objectName, methodName string) (*vcc2.Method, error) {
 	object, err := r.GetObject(moduleName, objectName)
 	if err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func (r *Registry) ValidateImport(moduleName string) error {
 }
 
 // ValidateFunctionCall validates a VMOD function call
-func (r *Registry) ValidateFunctionCall(moduleName, functionName string, argTypes []vcc.VCCType) error {
+func (r *Registry) ValidateFunctionCall(moduleName, functionName string, argTypes []vcc2.VCCType) error {
 	function, err := r.GetFunction(moduleName, functionName)
 	if err != nil {
 		return err
@@ -168,7 +168,7 @@ func (r *Registry) ValidateFunctionCall(moduleName, functionName string, argType
 }
 
 // ValidateMethodCall validates a VMOD method call
-func (r *Registry) ValidateMethodCall(moduleName, objectName, methodName string, argTypes []vcc.VCCType) error {
+func (r *Registry) ValidateMethodCall(moduleName, objectName, methodName string, argTypes []vcc2.VCCType) error {
 	method, err := r.GetMethod(moduleName, objectName, methodName)
 	if err != nil {
 		return err
@@ -178,7 +178,7 @@ func (r *Registry) ValidateMethodCall(moduleName, objectName, methodName string,
 }
 
 // ValidateObjectConstruction validates object instantiation
-func (r *Registry) ValidateObjectConstruction(moduleName, objectName string, argTypes []vcc.VCCType) error {
+func (r *Registry) ValidateObjectConstruction(moduleName, objectName string, argTypes []vcc2.VCCType) error {
 	object, err := r.GetObject(moduleName, objectName)
 	if err != nil {
 		return err
@@ -228,7 +228,7 @@ func (r *Registry) Clear() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	r.modules = make(map[string]*vcc.Module)
+	r.modules = make(map[string]*vcc2.Module)
 }
 
 // ModuleExists checks if a module is registered

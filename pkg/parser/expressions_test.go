@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 func TestCallExpressions(t *testing.T) {
@@ -78,9 +78,9 @@ func TestCallExpressions(t *testing.T) {
 			}
 
 			// Navigate to the call expression
-			subDecl := program.Declarations[0].(*ast.SubDecl)
-			exprStmt := subDecl.Body.Statements[0].(*ast.ExpressionStatement)
-			callExpr, ok := exprStmt.Expression.(*ast.CallExpression)
+			subDecl := program.Declarations[0].(*ast2.SubDecl)
+			exprStmt := subDecl.Body.Statements[0].(*ast2.ExpressionStatement)
+			callExpr, ok := exprStmt.Expression.(*ast2.CallExpression)
 			if !ok {
 				t.Fatalf("Expected CallExpression, got %T", exprStmt.Expression)
 			}
@@ -110,12 +110,12 @@ func TestCallExpressions(t *testing.T) {
 			// Verify function name for simple cases
 			if tt.expected != "" {
 				switch fn := callExpr.Function.(type) {
-				case *ast.Identifier:
+				case *ast2.Identifier:
 					if fn.Name != tt.expected {
 						t.Errorf("Expected function name %s, got %s", tt.expected, fn.Name)
 					}
-				case *ast.MemberExpression:
-					if obj, ok := fn.Object.(*ast.Identifier); ok && obj.Name != tt.expected {
+				case *ast2.MemberExpression:
+					if obj, ok := fn.Object.(*ast2.Identifier); ok && obj.Name != tt.expected {
 						t.Errorf("Expected object name %s, got %s", tt.expected, obj.Name)
 					}
 				}
@@ -138,9 +138,9 @@ sub test {
 	checkParserErrors(t, p)
 
 	// Navigate to the call expression
-	subDecl := program.Declarations[0].(*ast.SubDecl)
-	exprStmt := subDecl.Body.Statements[0].(*ast.ExpressionStatement)
-	callExpr, ok := exprStmt.Expression.(*ast.CallExpression)
+	subDecl := program.Declarations[0].(*ast2.SubDecl)
+	exprStmt := subDecl.Body.Statements[0].(*ast2.ExpressionStatement)
+	callExpr, ok := exprStmt.Expression.(*ast2.CallExpression)
 	if !ok {
 		t.Fatalf("Expected CallExpression, got %T", exprStmt.Expression)
 	}
@@ -157,16 +157,16 @@ sub test {
 	}()
 
 	// Verify the structure
-	memberExpr, ok := callExpr.Function.(*ast.MemberExpression)
+	memberExpr, ok := callExpr.Function.(*ast2.MemberExpression)
 	if !ok {
 		t.Fatalf("Expected MemberExpression as function, got %T", callExpr.Function)
 	}
 
-	if obj, ok := memberExpr.Object.(*ast.Identifier); !ok || obj.Name != "cluster" {
+	if obj, ok := memberExpr.Object.(*ast2.Identifier); !ok || obj.Name != "cluster" {
 		t.Errorf("Expected object 'cluster', got %v", memberExpr.Object)
 	}
 
-	if prop, ok := memberExpr.Property.(*ast.Identifier); !ok || prop.Name != "backend" {
+	if prop, ok := memberExpr.Property.(*ast2.Identifier); !ok || prop.Name != "backend" {
 		t.Errorf("Expected property 'backend', got %v", memberExpr.Property)
 	}
 
@@ -193,9 +193,9 @@ sub test {
 
 	// Check that we don't have a call expression (parsing should fail)
 	if len(program.Declarations) > 0 {
-		if subDecl, ok := program.Declarations[0].(*ast.SubDecl); ok {
+		if subDecl, ok := program.Declarations[0].(*ast2.SubDecl); ok {
 			if len(subDecl.Body.Statements) > 0 {
-				if exprStmt, ok := subDecl.Body.Statements[0].(*ast.ExpressionStatement); ok {
+				if exprStmt, ok := subDecl.Body.Statements[0].(*ast2.ExpressionStatement); ok {
 					if exprStmt.Expression == nil {
 						// This is expected - the expression statement should be nil due to parsing failure
 						return
@@ -223,8 +223,8 @@ func TestExpressionStatementEnd(t *testing.T) {
 
 			checkParserErrors(t, p)
 
-			subDecl := program.Declarations[0].(*ast.SubDecl)
-			exprStmt := subDecl.Body.Statements[0].(*ast.ExpressionStatement)
+			subDecl := program.Declarations[0].(*ast2.SubDecl)
+			exprStmt := subDecl.Body.Statements[0].(*ast2.ExpressionStatement)
 
 			// This should not panic
 			func() {
@@ -324,11 +324,11 @@ func TestDurationParsing(t *testing.T) {
 			checkParserErrors(t, p)
 
 			// Navigate to the assignment expression
-			subDecl := program.Declarations[0].(*ast.SubDecl)
-			setStmt := subDecl.Body.Statements[0].(*ast.SetStatement)
+			subDecl := program.Declarations[0].(*ast2.SubDecl)
+			setStmt := subDecl.Body.Statements[0].(*ast2.SetStatement)
 
 			// Check that the value is parsed as a TimeExpression
-			timeExpr, ok := setStmt.Value.(*ast.TimeExpression)
+			timeExpr, ok := setStmt.Value.(*ast2.TimeExpression)
 			if !ok {
 				t.Errorf("Expected TimeExpression, got %T", setStmt.Value)
 				return
@@ -385,16 +385,16 @@ func TestDurationInFunctionCalls(t *testing.T) {
 			checkParserErrors(t, p)
 
 			// Navigate to the function call expression
-			var subDecl *ast.SubDecl
+			var subDecl *ast2.SubDecl
 			if len(program.Declarations) > 1 {
 				// Has import statement, sub is second declaration
-				subDecl = program.Declarations[1].(*ast.SubDecl)
+				subDecl = program.Declarations[1].(*ast2.SubDecl)
 			} else {
 				// No import, sub is first declaration
-				subDecl = program.Declarations[0].(*ast.SubDecl)
+				subDecl = program.Declarations[0].(*ast2.SubDecl)
 			}
-			exprStmt := subDecl.Body.Statements[0].(*ast.ExpressionStatement)
-			callExpr := exprStmt.Expression.(*ast.CallExpression)
+			exprStmt := subDecl.Body.Statements[0].(*ast2.ExpressionStatement)
+			callExpr := exprStmt.Expression.(*ast2.CallExpression)
 
 			// Check that we have the expected arguments
 			if len(callExpr.Arguments) == 0 {
@@ -403,10 +403,10 @@ func TestDurationInFunctionCalls(t *testing.T) {
 			}
 
 			// Find the TimeExpression argument (could be any position)
-			var timeExpr *ast.TimeExpression
+			var timeExpr *ast2.TimeExpression
 			var found bool
 			for i, arg := range callExpr.Arguments {
-				if te, ok := arg.(*ast.TimeExpression); ok {
+				if te, ok := arg.(*ast2.TimeExpression); ok {
 					timeExpr = te
 					found = true
 					t.Logf("Found TimeExpression at argument position %d", i)

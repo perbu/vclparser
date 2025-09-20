@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/varnish/vclparser/lexer"
-	"github.com/varnish/vclparser/parser"
-	"github.com/varnish/vclparser/types"
-	"github.com/varnish/vclparser/vmod"
+	"github.com/varnish/vclparser/pkg/lexer"
+	"github.com/varnish/vclparser/pkg/parser"
+	"github.com/varnish/vclparser/pkg/types"
+	"github.com/varnish/vclparser/pkg/vmod"
 )
 
 // TestNamedArgumentMappingRegression tests specific edge cases that previously failed

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 // Operator precedence levels
@@ -64,7 +64,7 @@ func (p *Parser) currentPrecedence() int {
 }
 
 // parseExpression parses expressions using Pratt parsing
-func (p *Parser) parseExpression() ast.Expression {
+func (p *Parser) parseExpression() ast2.Expression {
 	return p.parseExpressionWithPrecedence(LOWEST)
 }
 
@@ -92,7 +92,7 @@ func (p *Parser) parseExpression() ast.Expression {
 //
 // Termination conditions check for syntactic boundaries where expressions end:
 // semicolons (statement end), parentheses/braces (grouping end), commas (argument separator).
-func (p *Parser) parseExpressionWithPrecedence(precedence int) ast.Expression {
+func (p *Parser) parseExpressionWithPrecedence(precedence int) ast2.Expression {
 	left := p.parsePrefixExpression()
 	if left == nil {
 		return nil
@@ -114,7 +114,7 @@ func (p *Parser) parseExpressionWithPrecedence(precedence int) ast.Expression {
 }
 
 // parsePrefixExpression parses prefix expressions
-func (p *Parser) parsePrefixExpression() ast.Expression {
+func (p *Parser) parsePrefixExpression() ast2.Expression {
 	switch p.currentToken.Type {
 	case lexer.ID:
 		return p.parseIdentifier()
@@ -123,8 +123,8 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 		lexer.HIT_KW, lexer.MISS_KW, lexer.DELIVER_KW, lexer.PURGE_KW,
 		lexer.SYNTH_KW, lexer.ABANDON_KW, lexer.RETRY_KW, lexer.OK_KW, lexer.FAIL_KW,
 		lexer.ERROR_KW, lexer.RESTART_KW, lexer.ACL_KW, lexer.LOOKUP_KW, lexer.VCL_KW:
-		return &ast.Identifier{
-			BaseNode: ast.BaseNode{
+		return &ast2.Identifier{
+			BaseNode: ast2.BaseNode{
 				StartPos: p.currentToken.Start,
 				EndPos:   p.currentToken.End,
 			},
@@ -165,7 +165,7 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 }
 
 // parseInfixExpression parses infix expressions
-func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
+func (p *Parser) parseInfixExpression(left ast2.Expression) ast2.Expression {
 	switch p.peekToken.Type {
 	case lexer.COR, lexer.CAND, lexer.EQ, lexer.NEQ, lexer.LT, lexer.GT,
 		lexer.LEQ, lexer.GEQ, lexer.PLUS, lexer.MINUS, lexer.MULTIPLY,
@@ -183,9 +183,9 @@ func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
 }
 
 // parseIdentifier parses an identifier
-func (p *Parser) parseIdentifier() *ast.Identifier {
-	return &ast.Identifier{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseIdentifier() *ast2.Identifier {
+	return &ast2.Identifier{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
@@ -194,15 +194,15 @@ func (p *Parser) parseIdentifier() *ast.Identifier {
 }
 
 // parseIntegerLiteral parses an integer literal
-func (p *Parser) parseIntegerLiteral() *ast.IntegerLiteral {
+func (p *Parser) parseIntegerLiteral() *ast2.IntegerLiteral {
 	value, err := strconv.ParseInt(p.currentToken.Value, 0, 64)
 	if err != nil {
 		p.addError("could not parse " + p.currentToken.Value + " as integer")
 		return nil
 	}
 
-	return &ast.IntegerLiteral{
-		BaseNode: ast.BaseNode{
+	return &ast2.IntegerLiteral{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
@@ -211,15 +211,15 @@ func (p *Parser) parseIntegerLiteral() *ast.IntegerLiteral {
 }
 
 // parseFloatLiteral parses a float literal
-func (p *Parser) parseFloatLiteral() *ast.FloatLiteral {
+func (p *Parser) parseFloatLiteral() *ast2.FloatLiteral {
 	value, err := strconv.ParseFloat(p.currentToken.Value, 64)
 	if err != nil {
 		p.addError("could not parse " + p.currentToken.Value + " as float")
 		return nil
 	}
 
-	return &ast.FloatLiteral{
-		BaseNode: ast.BaseNode{
+	return &ast2.FloatLiteral{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
@@ -228,12 +228,12 @@ func (p *Parser) parseFloatLiteral() *ast.FloatLiteral {
 }
 
 // parseStringLiteral parses a string literal
-func (p *Parser) parseStringLiteral() *ast.StringLiteral {
+func (p *Parser) parseStringLiteral() *ast2.StringLiteral {
 	// Remove quotes from string literal
 	value := strings.Trim(p.currentToken.Value, `"`)
 
-	return &ast.StringLiteral{
-		BaseNode: ast.BaseNode{
+	return &ast2.StringLiteral{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
@@ -242,9 +242,9 @@ func (p *Parser) parseStringLiteral() *ast.StringLiteral {
 }
 
 // parseUnaryExpression parses a unary expression
-func (p *Parser) parseUnaryExpression() *ast.UnaryExpression {
-	expr := &ast.UnaryExpression{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseUnaryExpression() *ast2.UnaryExpression {
+	expr := &ast2.UnaryExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 		Operator: p.currentToken.Value,
@@ -258,9 +258,9 @@ func (p *Parser) parseUnaryExpression() *ast.UnaryExpression {
 }
 
 // parseGroupedExpression parses a parenthesized expression
-func (p *Parser) parseGroupedExpression() *ast.ParenthesizedExpression {
-	expr := &ast.ParenthesizedExpression{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseGroupedExpression() *ast2.ParenthesizedExpression {
+	expr := &ast2.ParenthesizedExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -277,14 +277,14 @@ func (p *Parser) parseGroupedExpression() *ast.ParenthesizedExpression {
 }
 
 // parseBinaryExpression parses a binary expression
-func (p *Parser) parseBinaryExpression(left ast.Expression) *ast.BinaryExpression {
+func (p *Parser) parseBinaryExpression(left ast2.Expression) *ast2.BinaryExpression {
 	if left == nil {
 		p.addError("left expression is nil")
 		return nil
 	}
 
-	expr := &ast.BinaryExpression{
-		BaseNode: ast.BaseNode{
+	expr := &ast2.BinaryExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: left.Start(),
 		},
 		Left: left,
@@ -302,9 +302,9 @@ func (p *Parser) parseBinaryExpression(left ast.Expression) *ast.BinaryExpressio
 }
 
 // parseRegexMatchExpression parses regex match expressions
-func (p *Parser) parseRegexMatchExpression(left ast.Expression) *ast.RegexMatchExpression {
-	expr := &ast.RegexMatchExpression{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseRegexMatchExpression(left ast2.Expression) *ast2.RegexMatchExpression {
+	expr := &ast2.RegexMatchExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: left.Start(),
 		},
 		Left: left,
@@ -321,18 +321,18 @@ func (p *Parser) parseRegexMatchExpression(left ast.Expression) *ast.RegexMatchE
 }
 
 // parseCallExpression parses a function call expression
-func (p *Parser) parseCallExpression(fn ast.Expression) *ast.CallExpression {
+func (p *Parser) parseCallExpression(fn ast2.Expression) *ast2.CallExpression {
 	if fn == nil {
 		p.addError("function expression is nil")
 		return nil
 	}
 
-	expr := &ast.CallExpression{
-		BaseNode: ast.BaseNode{
+	expr := &ast2.CallExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: fn.Start(),
 		},
 		Function:       fn,
-		NamedArguments: make(map[string]ast.Expression),
+		NamedArguments: make(map[string]ast2.Expression),
 	}
 
 	p.nextToken() // move to '('
@@ -411,9 +411,9 @@ func (p *Parser) parseCallExpression(fn ast.Expression) *ast.CallExpression {
 }
 
 // parseMemberExpression parses member access expressions
-func (p *Parser) parseMemberExpression(obj ast.Expression) *ast.MemberExpression {
-	expr := &ast.MemberExpression{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseMemberExpression(obj ast2.Expression) *ast2.MemberExpression {
+	expr := &ast2.MemberExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: obj.Start(),
 		},
 		Object: obj,
@@ -429,9 +429,9 @@ func (p *Parser) parseMemberExpression(obj ast.Expression) *ast.MemberExpression
 }
 
 // parseObjectExpression parses object literals (for backend properties)
-func (p *Parser) parseObjectExpression() *ast.ObjectExpression {
-	expr := &ast.ObjectExpression{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseObjectExpression() *ast2.ObjectExpression {
+	expr := &ast2.ObjectExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 		},
 	}
@@ -450,8 +450,8 @@ func (p *Parser) parseObjectExpression() *ast.ObjectExpression {
 			continue
 		}
 
-		prop := &ast.Property{
-			BaseNode: ast.BaseNode{
+		prop := &ast2.Property{
+			BaseNode: ast2.BaseNode{
 				StartPos: p.currentToken.Start,
 			},
 		}
@@ -464,8 +464,8 @@ func (p *Parser) parseObjectExpression() *ast.ObjectExpression {
 				return nil
 			}
 			// Create an identifier for the property name (without the dot)
-			prop.Key = &ast.Identifier{
-				BaseNode: ast.BaseNode{
+			prop.Key = &ast2.Identifier{
+				BaseNode: ast2.BaseNode{
 					StartPos: p.currentToken.Start,
 					EndPos:   p.currentToken.End,
 				},
@@ -506,9 +506,9 @@ func (p *Parser) parseObjectExpression() *ast.ObjectExpression {
 }
 
 // parseTimeExpression parses time/duration expressions
-func (p *Parser) parseTimeExpression() *ast.TimeExpression {
-	return &ast.TimeExpression{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseTimeExpression() *ast2.TimeExpression {
+	return &ast2.TimeExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
@@ -517,9 +517,9 @@ func (p *Parser) parseTimeExpression() *ast.TimeExpression {
 }
 
 // parseIPExpression parses IP address expressions
-func (p *Parser) parseIPExpression() *ast.IPExpression {
-	return &ast.IPExpression{
-		BaseNode: ast.BaseNode{
+func (p *Parser) parseIPExpression() *ast2.IPExpression {
+	return &ast2.IPExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
@@ -546,7 +546,7 @@ func (p *Parser) isNumberFollowedByTimeUnit() bool {
 }
 
 // parseTimeExpressionFromNumber parses time expressions from number + unit (e.g., "30" + "s")
-func (p *Parser) parseTimeExpressionFromNumber() *ast.TimeExpression {
+func (p *Parser) parseTimeExpressionFromNumber() *ast2.TimeExpression {
 	numberValue := p.currentToken.Value
 	startPos := p.currentToken.Start
 
@@ -554,8 +554,8 @@ func (p *Parser) parseTimeExpressionFromNumber() *ast.TimeExpression {
 	unitValue := p.currentToken.Value
 	endPos := p.currentToken.End
 
-	return &ast.TimeExpression{
-		BaseNode: ast.BaseNode{
+	return &ast2.TimeExpression{
+		BaseNode: ast2.BaseNode{
 			StartPos: startPos,
 			EndPos:   endPos,
 		},

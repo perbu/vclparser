@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
-	"github.com/varnish/vclparser/ast"
-	"github.com/varnish/vclparser/lexer"
+	ast2 "github.com/varnish/vclparser/pkg/ast"
+	"github.com/varnish/vclparser/pkg/lexer"
 )
 
 func TestReturnActions(t *testing.T) {
@@ -52,9 +52,9 @@ func TestReturnActions(t *testing.T) {
 			}
 
 			// Find the subroutine
-			var sub *ast.SubDecl
+			var sub *ast2.SubDecl
 			for _, decl := range program.Declarations {
-				if s, ok := decl.(*ast.SubDecl); ok && s.Name == "test" {
+				if s, ok := decl.(*ast2.SubDecl); ok && s.Name == "test" {
 					sub = s
 					break
 				}
@@ -69,7 +69,7 @@ func TestReturnActions(t *testing.T) {
 				t.Fatalf("no statements in subroutine body")
 			}
 
-			retStmt, ok := sub.Body.Statements[0].(*ast.ReturnStatement)
+			retStmt, ok := sub.Body.Statements[0].(*ast2.ReturnStatement)
 			if !ok {
 				t.Fatalf("first statement is not a return statement, got %T", sub.Body.Statements[0])
 			}
@@ -79,7 +79,7 @@ func TestReturnActions(t *testing.T) {
 			}
 
 			// Check the action is an identifier with the expected value
-			ident, ok := retStmt.Action.(*ast.Identifier)
+			ident, ok := retStmt.Action.(*ast2.Identifier)
 			if !ok {
 				t.Fatalf("return action is not an identifier, got %T", retStmt.Action)
 			}
@@ -115,9 +115,9 @@ func TestReturnActionsWithArguments(t *testing.T) {
 			}
 
 			// Find the subroutine
-			var sub *ast.SubDecl
+			var sub *ast2.SubDecl
 			for _, decl := range program.Declarations {
-				if s, ok := decl.(*ast.SubDecl); ok && s.Name == "test" {
+				if s, ok := decl.(*ast2.SubDecl); ok && s.Name == "test" {
 					sub = s
 					break
 				}
@@ -132,7 +132,7 @@ func TestReturnActionsWithArguments(t *testing.T) {
 				t.Fatalf("no statements in subroutine body")
 			}
 
-			retStmt, ok := sub.Body.Statements[0].(*ast.ReturnStatement)
+			retStmt, ok := sub.Body.Statements[0].(*ast2.ReturnStatement)
 			if !ok {
 				t.Fatalf("first statement is not a return statement, got %T", sub.Body.Statements[0])
 			}
@@ -142,10 +142,10 @@ func TestReturnActionsWithArguments(t *testing.T) {
 			}
 
 			// For function calls, we expect a CallExpression
-			if _, ok := retStmt.Action.(*ast.CallExpression); !ok {
+			if _, ok := retStmt.Action.(*ast2.CallExpression); !ok {
 				// Could also be a ParenthesizedExpression containing a CallExpression
-				if parenExpr, isParenExpr := retStmt.Action.(*ast.ParenthesizedExpression); isParenExpr {
-					if _, ok := parenExpr.Expression.(*ast.CallExpression); !ok {
+				if parenExpr, isParenExpr := retStmt.Action.(*ast2.ParenthesizedExpression); isParenExpr {
+					if _, ok := parenExpr.Expression.(*ast2.CallExpression); !ok {
 						t.Fatalf("return action is not a call expression, got %T", retStmt.Action)
 					}
 				} else {
