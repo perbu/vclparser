@@ -2,35 +2,27 @@
 
 Parses VCL files into an AST. Can be given VCC files to validate VMOD usage.
 
-## Recently Completed Features (2025)
-
-### ✅ Return Statement Action Keywords (Fixed)
-- Parser now supports both parenthesized and naked return statements
-- Examples: Both `return lookup;` and `return (lookup);` work correctly
-- All valid VCL return action keywords supported: `lookup`, `hash`, `pass`, `pipe`, `purge`, `synth`, `deliver`, `restart`, `fetch`, `miss`, `hit`, `abandon`, `retry`, `error`, `ok`, `fail`, `vcl`
-- Comprehensive test coverage added in `parser/return_actions_test.go`
-- Full backward compatibility maintained
-
 ## Missing Features
+
+### Known Edge Cases (VMOD Type Inference)
+
+#### Named Argument Mapping Issue
+- **Issue**: `utils.time_format("%format", time = std.real2time(-1, now))` causes format string to be mapped to wrong parameter position
+- **Error**: "argument 2: expected BOOL, got STRING"
+- **Root Cause**: Named argument mapping logic in `buildCompleteArgumentList` needs refinement
+- **Files**: `analyzer/vmod_validator.go:228-295`
 
 ## Future Enhancements
 
-### Parser Improvements
+### Potential Parser Improvements
 - Enhanced object literal parsing for complex backend/probe definitions
 - Enhanced error recovery and partial parsing
-- Advanced semantic analysis (variable scope, dead code detection, flow validation)
 
 ### Developer Experience
 - Language Server Protocol (LSP) implementation
 - VCL formatter
 - IDE integration and VS Code extension
 - Testing tools (fuzzing, performance benchmarks, compliance testing)
-
-### Advanced Features
-- ESI support
-- String templates and advanced interpolation
-- Time/duration arithmetic
-- Regex validation
 
 ## VMOD Support
 

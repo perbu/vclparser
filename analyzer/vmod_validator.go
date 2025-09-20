@@ -502,6 +502,10 @@ func (v *VMODValidator) inferExpressionTypeWithContext(expr ast.Expression, expe
 		if symbol != nil {
 			return v.convertSymbolTypeToVCCType(symbol.Type)
 		}
+		// If expected type is BOOL and this is a boolean literal identifier, treat it as bool
+		if expectedType == vcc.TypeBool && (e.Name == "true" || e.Name == "false") {
+			return vcc.TypeBool
+		}
 		// If expected type is ENUM and this is a bare identifier, treat it as enum
 		if expectedType == vcc.TypeEnum {
 			return vcc.TypeEnum
@@ -546,21 +550,36 @@ func (v *VMODValidator) inferCallExpressionReturnType(callExpr *ast.CallExpressi
 		return "" // Property is not an identifier
 	}
 
-	moduleName := moduleIdent.Name
-	functionName := functionIdent.Name
+	moduleOrObjectName := moduleIdent.Name
+	functionOrMethodName := functionIdent.Name
 
-	// Check if module is imported
-	if !v.symbolTable.IsModuleImported(moduleName) {
-		return "" // Module not imported, can't resolve type
+	// First check if this is a module function call (module.function())
+	if v.symbolTable.IsModuleImported(moduleOrObjectName) {
+		// Look up function in registry
+		function, err := v.registry.GetFunction(moduleOrObjectName, functionOrMethodName)
+		if err != nil {
+			return "" // Function not found
+		}
+		return function.ReturnType
 	}
 
-	// Look up function in registry
-	function, err := v.registry.GetFunction(moduleName, functionName)
-	if err != nil {
-		return "" // Function not found
+	// Check if this is an object method call (object.method())
+	objectSymbol := v.symbolTable.Lookup(moduleOrObjectName)
+	if objectSymbol != nil && objectSymbol.Kind == types.SymbolVMODObject {
+		// Check that object has required metadata
+		if objectSymbol.ModuleName == "" || objectSymbol.ObjectType == "" {
+			return "" // Object missing required VMOD metadata
+		}
+
+		// Look up method in registry using object metadata
+		method, err := v.registry.GetMethod(objectSymbol.ModuleName, objectSymbol.ObjectType, functionOrMethodName)
+		if err != nil {
+			return "" // Method not found
+		}
+		return method.ReturnType
 	}
 
-	return function.ReturnType
+	return "" // Not a recognized module function or object method call
 }
 
 // convertVCCTypeToSymbolType converts VCC type to symbol table type
@@ -661,14 +680,19 @@ func (v *VMODValidator) inferObjectMethodReturnType(memberExpr *ast.MemberExpres
 		return "" // Object not found or not a VMOD object
 	}
 
-	// For now, handle specific known cases
-	// TODO: This should be enhanced to use actual VMOD object type information
-	if methodName == "backend" {
-		// .backend() methods typically return BACKEND type
-		return vcc.TypeBackend
+	// Check that object has required metadata
+	if objectSymbol.ModuleName == "" || objectSymbol.ObjectType == "" {
+		return "" // Object missing required VMOD metadata
 	}
 
-	return "" // Unknown method
+	// Look up method in registry using object metadata
+	method, err := v.registry.GetMethod(objectSymbol.ModuleName, objectSymbol.ObjectType, methodName)
+	if err != nil {
+		// Method not found in registry, return empty type
+		return ""
+	}
+
+	return method.ReturnType
 }
 
 // visitChildren visits all children of a node
