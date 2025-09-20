@@ -346,13 +346,30 @@ func (l *Lexer) readIdentifier() Token {
 	return Token{Type: tokenType, Literal: literal, Line: l.line, Column: startColumn}
 }
 
-// readNumber reads a numeric literal
+// readNumber reads a numeric literal, optionally with duration suffix
 func (l *Lexer) readNumber() Token {
 	startColumn := l.column
 	startPos := l.position
 
+	// Handle optional minus sign
+	if l.currentChar() == '-' {
+		l.advance()
+	}
+
 	for l.position < len(l.currentLine) && (unicode.IsDigit(rune(l.currentChar())) || l.currentChar() == '.') {
 		l.advance()
+	}
+
+	// Check for duration suffix (s, m, h, d, w, y, ms)
+	if l.position < len(l.currentLine) {
+		ch := l.currentChar()
+		if ch == 's' || ch == 'm' || ch == 'h' || ch == 'd' || ch == 'w' || ch == 'y' {
+			l.advance()
+			// Check for "ms" (milliseconds)
+			if ch == 'm' && l.position < len(l.currentLine) && l.currentChar() == 's' {
+				l.advance()
+			}
+		}
 	}
 
 	literal := l.currentLine[startPos:l.position]

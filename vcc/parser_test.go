@@ -325,3 +325,58 @@ func TestParseVCCType(t *testing.T) {
 		}
 	}
 }
+
+func TestDurationDefaultValues(t *testing.T) {
+	vccContent := `$Module test 3 "Test module for duration defaults"
+$ABI strict
+
+$Function BOOL verify_timeout(STRING key, DURATION timeout = -1s)
+$Function VOID set_cache_ttl(STRING key, DURATION ttl = 300s)
+$Function INT get_delay(DURATION delay = 30m)
+$Function REAL calculate(DURATION window = 2h)`
+
+	parser := NewParser(strings.NewReader(vccContent))
+	module, err := parser.Parse()
+
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+
+	if len(module.Functions) != 4 {
+		t.Fatalf("Expected 4 functions, got %d", len(module.Functions))
+	}
+
+	// Test negative duration default
+	verifyTimeout := module.Functions[0]
+	if len(verifyTimeout.Parameters) != 2 {
+		t.Fatalf("Expected 2 parameters in verify_timeout, got %d", len(verifyTimeout.Parameters))
+	}
+	timeoutParam := verifyTimeout.Parameters[1]
+	if timeoutParam.Type != TypeDuration {
+		t.Errorf("Expected DURATION type, got %s", timeoutParam.Type)
+	}
+	if timeoutParam.DefaultValue != "-1s" {
+		t.Errorf("Expected default value '-1s', got '%s'", timeoutParam.DefaultValue)
+	}
+
+	// Test positive duration default
+	setCacheTtl := module.Functions[1]
+	ttlParam := setCacheTtl.Parameters[1]
+	if ttlParam.DefaultValue != "300s" {
+		t.Errorf("Expected default value '300s', got '%s'", ttlParam.DefaultValue)
+	}
+
+	// Test minute duration default
+	getDelay := module.Functions[2]
+	delayParam := getDelay.Parameters[0]
+	if delayParam.DefaultValue != "30m" {
+		t.Errorf("Expected default value '30m', got '%s'", delayParam.DefaultValue)
+	}
+
+	// Test hour duration default
+	calculate := module.Functions[3]
+	windowParam := calculate.Parameters[0]
+	if windowParam.DefaultValue != "2h" {
+		t.Errorf("Expected default value '2h', got '%s'", windowParam.DefaultValue)
+	}
+}
