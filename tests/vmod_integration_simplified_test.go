@@ -416,33 +416,34 @@ sub vcl_recv {
 	}
 }
 
-// Test that the VMOD registry correctly loads from the actual vcclib directory
-func TestVMODWithActualVCCLib(t *testing.T) {
-	// This will try to load from vcclib directory
-	err := vmod.LoadDefaultVCCFiles()
-	if err != nil {
-		t.Logf("Could not load default VCC files (expected in CI): %v", err)
-		return // Skip this test if vcclib is not available
-	}
+// Test that the VMOD registry correctly loads from embedded VCC files
+func TestVMODWithEmbeddedVCCLib(t *testing.T) {
+	// The registry should already be loaded with embedded VCC files via init()
+	// Test that we have modules loaded automatically
 
 	// Test that we can load some common modules
-	commonModules := []string{"std", "directors"}
+	commonModules := []string{"std", "directors", "blob", "debug"}
 	loadedCount := 0
 
 	for _, moduleName := range commonModules {
 		if vmod.DefaultRegistry.ModuleExists(moduleName) {
 			loadedCount++
-			t.Logf("Successfully loaded module: %s", moduleName)
+			t.Logf("Successfully loaded embedded module: %s", moduleName)
 		}
 	}
 
 	if loadedCount == 0 {
-		t.Error("No common modules were loaded from vcclib")
+		t.Error("No common modules were loaded from embedded VCC files")
 	}
 
 	// Test that we can get stats
 	stats := vmod.DefaultRegistry.GetModuleStats()
-	t.Logf("Loaded %d modules from vcclib", len(stats))
+	t.Logf("Loaded %d modules from embedded VCC files", len(stats))
+
+	// Verify we have a reasonable number of modules
+	if len(stats) < 5 {
+		t.Errorf("Expected at least 5 embedded modules, got %d", len(stats))
+	}
 
 	// Print some module info for debugging
 	for name, stat := range stats {

@@ -2,11 +2,13 @@ package vmod
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/varnish/vclparser"
 	"github.com/varnish/vclparser/vcc"
 )
 
@@ -54,10 +56,15 @@ func (r *Registry) LoadVCCFile(filename string) error {
 		_ = file.Close() // Ignore error in defer
 	}()
 
-	parser := vcc.NewParser(file)
+	return r.LoadVCCFromReader(file, filename)
+}
+
+// LoadVCCFromReader loads a VCC from an io.Reader
+func (r *Registry) LoadVCCFromReader(reader io.Reader, source string) error {
+	parser := vcc.NewParser(reader)
 	module, err := parser.Parse()
 	if err != nil {
-		return fmt.Errorf("failed to parse VCC file %s: %v", filename, err)
+		return fmt.Errorf("failed to parse VCC from %s: %v", source, err)
 	}
 
 	// Register the module
@@ -67,7 +74,7 @@ func (r *Registry) LoadVCCFile(filename string) error {
 	if module.Name != "" {
 		r.modules[module.Name] = module
 	} else {
-		return fmt.Errorf("module in %s has no name", filename)
+		return fmt.Errorf("module in %s has no name", source)
 	}
 
 	return nil
@@ -247,9 +254,37 @@ func (r *Registry) GetBuiltinModules() []string {
 // DefaultRegistry is a global registry instance
 var DefaultRegistry = NewRegistry()
 
-// LoadDefaultVCCFiles loads VCC files from the default vcclib directory
+// LoadEmbeddedVCCs loads all embedded VCC files
+func (r *Registry) LoadEmbeddedVCCs() error {
+	vccFiles, err := vclparser.ListEmbeddedVCCFiles()
+	if err != nil {
+		return fmt.Errorf("failed to list embedded VCC files: %v", err)
+	}
+
+	for _, filename := range vccFiles {
+		reader, err := vclparser.OpenEmbeddedVCCFile(filename)
+		if err != nil {
+			return fmt.Errorf("failed to open embedded VCC file %s: %v", filename, err)
+		}
+
+		if err := r.LoadVCCFromReader(reader, fmt.Sprintf("embedded:%s", filename)); err != nil {
+			_ = reader.Close()
+			return fmt.Errorf("failed to load embedded VCC file %s: %v", filename, err)
+		}
+		_ = reader.Close()
+	}
+
+	return nil
+}
+
+// LoadDefaultVCCFiles loads VCC files from embedded files first, then tries filesystem fallback
 func LoadDefaultVCCFiles() error {
-	// Try to find vcclib directory in multiple locations
+	// First try to load embedded VCC files
+	if err := DefaultRegistry.LoadEmbeddedVCCs(); err == nil {
+		return nil // Successfully loaded embedded files
+	}
+
+	// Fallback to filesystem for backwards compatibility
 	possibleDirs := []string{
 		"vcclib",       // Relative to current directory
 		"./vcclib",     // Explicit relative path
@@ -269,10 +304,22 @@ func LoadDefaultVCCFiles() error {
 	}
 
 	// If not found in any location, return an error but don't fail completely
-	return fmt.Errorf("vcclib directory not found in any of the expected locations: %v", possibleDirs)
+	return fmt.Errorf("no VCC files found - neither embedded nor in filesystem locations: %v", possibleDirs)
 }
 
-// Init initializes the default registry
+// LoadUserVCCFile loads a user-provided VCC file (for custom VMODs)
+func (r *Registry) LoadUserVCCFile(filename string) error {
+	return r.LoadVCCFile(filename)
+}
+
+// Init initializes the default registry with embedded VCC files
 func Init() error {
-	return LoadDefaultVCCFiles()
+	return DefaultRegistry.LoadEmbeddedVCCs()
+}
+
+// init automatically loads embedded VCC files when the package is imported
+func init() {
+	// Load embedded VCCs automatically, but don't fail if it doesn't work
+	// This ensures the registry is always populated with standard VMODs
+	_ = DefaultRegistry.LoadEmbeddedVCCs()
 }

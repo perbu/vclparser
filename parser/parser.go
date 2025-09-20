@@ -6,7 +6,6 @@ import (
 
 	"github.com/varnish/vclparser/ast"
 	"github.com/varnish/vclparser/lexer"
-	"github.com/varnish/vclparser/vmod"
 )
 
 // Parser implements a recursive descent parser for VCL
@@ -58,9 +57,8 @@ func ParseWithVMODValidation(input, filename string) (*ast.Program, []string, er
 		return program, nil, err
 	}
 
-	// Initialize VMOD registry with default VCC files
-	// Ignore errors - not all environments have VCC files
-	_ = vmod.LoadDefaultVCCFiles()
+	// VMOD registry is automatically initialized with embedded VCC files
+	// via the package init() function, so no explicit loading needed here
 
 	// Return the program and empty validation errors
 	// The validation will be handled by the analyzer package
