@@ -102,7 +102,11 @@ func TestVCCLibIndividualFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to open embedded VCC file %s: %v", vccFile, err)
 			}
-			defer reader.Close()
+			defer func() {
+				if err := reader.Close(); err != nil {
+					t.Fatalf("Failed to close embedded VCC file %s: %v", vccFile, err)
+				}
+			}()
 
 			err = registry.LoadVCCFromReader(reader, fileName)
 			if err != nil {

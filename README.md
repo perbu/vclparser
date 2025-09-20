@@ -20,7 +20,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/varnish/vclparser/parser"
+    "github.com/varnish/vclparser/pkg/parser"
 )
 
 func main() {
@@ -50,12 +50,12 @@ func main() {
 
 ## Architecture
 
-- `lexer/` - Lexical analysis and tokenization
-- `ast/` - AST node definitions and visitor pattern
-- `parser/` - Recursive descent parser implementation
-- `types/` - Type system and symbol table
+- `pkg/lexer/` - Lexical analysis and tokenization
+- `pkg/ast/` - AST node definitions and visitor pattern
+- `pkg/parser/` - Recursive descent parser implementation
+- `pkg/types/` - Type system and symbol table
 - `examples/` - Usage examples
-- `testdata/` - Test VCL files
+- `tests/testdata/` - Test VCL files
 
 ## VCL Language Support
 

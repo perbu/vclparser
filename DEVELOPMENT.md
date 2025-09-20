@@ -5,6 +5,7 @@
 The VCL parser is organized into distinct packages with clear separation of concerns:
 
 ```
+pkg
 ├── lexer/       # Tokenization
 ├── parser/      # Recursive descent parsing
 ├── ast/         # Abstract syntax tree definitions
@@ -12,21 +13,20 @@ The VCL parser is organized into distinct packages with clear separation of conc
 ├── analyzer/    # Semantic analysis
 ├── vmod/        # VMOD registry and management
 ├── vcc/         # VCC file parsing (VMOD definitions)
-└── examples/    # CLI tools and usage examples
 ```
 
 ## Core Parsing Pipeline
 
-### lexer/
-**Purpose**: Tokenizes VCL source code into lexical tokens
+### pkg/lexer/
+Purpose: Tokenizes VCL source code into lexical tokens
 - `lexer.go`: Main lexer implementation with position tracking
 - `token.go`: Token definitions and types
 - `lexer_test.go`: Lexer unit tests
 
 The lexer performs character-by-character scanning with lookahead support. Tracks line/column positions for error reporting.
 
-### parser/
-**Purpose**: Recursive descent parser that converts tokens to AST
+### pkg/parser/
+Purpose: Recursive descent parser that converts tokens to AST
 - `parser.go`: Main parser entry point and infrastructure
 - `expressions.go`: Expression parsing with operator precedence
 - `statements.go`: Statement parsing (if/else, assignments, calls)
@@ -38,8 +38,8 @@ The lexer performs character-by-character scanning with lookahead support. Track
 
 Parser follows grammar productions closely. Implements error recovery to continue parsing after syntax errors.
 
-### ast/
-**Purpose**: AST node definitions and visitor pattern implementation
+### pkg/ast/
+Purpose: AST node definitions and visitor pattern implementation
 - `node.go`: Base AST node interfaces and common types
 - `expressions.go`: Expression AST nodes (binary ops, calls, literals)
 - `statements.go`: Statement AST nodes (if, assignments, returns)
@@ -47,8 +47,8 @@ Parser follows grammar productions closely. Implements error recovery to continu
 
 All nodes implement position tracking for source mapping. Visitor pattern enables multiple analysis passes.
 
-### types/
-**Purpose**: Type system and symbol table management
+### pkg/types/
+Purpose: Type system and symbol table management
 - `types.go`: VCL type definitions (STRING, INT, BACKEND, etc.)
 - `symbol_table.go`: Scoped symbol table for variables and functions
 
@@ -56,24 +56,24 @@ Implements VCL's type system including built-in types and type checking rules.
 
 ## Extended Functionality
 
-### analyzer/
-**Purpose**: Semantic analysis on parsed AST
+### pkg/analyzer/
+Purpose: Semantic analysis on parsed AST
 - `analyzer.go`: Main semantic analysis coordinator
 - `vmod_validator.go`: VMOD usage validation and type checking
 - `vmod_validator_test.go`: VMOD validation tests
 
 Validates VMOD function calls, parameter types, and usage patterns. Extensible for additional semantic checks.
 
-### vmod/
-**Purpose**: VMOD registry and definition management
+### pkg/vmod/
+Purpose: VMOD registry and definition management
 - `registry.go`: VMOD definition loading and lookup
 - `registry_test.go`: Registry functionality tests
 - `*_test.go`: Integration tests with real VMOD definitions
 
 Loads VMOD definitions from VCC files and provides runtime lookup for validation.
 
-### vcc/
-**Purpose**: VCC file parsing for VMOD definitions
+### pkg/vcc/
+Purpose: VCC file parsing for VMOD definitions
 - `parser.go`: VCC file parser
 - `types.go`: VCC-specific types and structures
 - `lexer.go`: VCC tokenizer
@@ -84,31 +84,31 @@ Parses Varnish VCC (Varnish C Compiler) files that define VMOD interfaces and fu
 
 ## Data Flow
 
-1. **Tokenization**: `lexer` converts VCL source to token stream
-2. **Parsing**: `parser` builds AST from tokens using `ast` node types
-3. **Type Resolution**: `types` provides type checking infrastructure
-4. **VMOD Loading**: `vmod` registry loads definitions via `vcc` parser
-5. **Analysis**: `analyzer` performs semantic validation using symbol tables and VMOD registry
+1. Tokenization: `lexer` converts VCL source to token stream
+2. Parsing: `parser` builds AST from tokens using `ast` node types
+3. Type Resolution: `types` provides type checking infrastructure
+4. VMOD Loading: `vmod` registry loads definitions via `vcc` parser
+5. Analysis: `analyzer` performs semantic validation using symbol tables and VMOD registry
 
 ## Integration Points
 
-- **parser** → **ast**: Parser creates AST nodes
-- **parser** → **lexer**: Parser consumes tokens from lexer
-- **parser** → **vmod**: Parser validates VMOD calls against registry
-- **analyzer** → **vmod**: Analyzer uses registry for semantic validation
-- **analyzer** → **types**: Analyzer uses type system for validation
-- **vmod** → **vcc**: Registry loads VMOD definitions via VCC parser
+- parser → ast: Parser creates AST nodes
+- parser → lexer: Parser consumes tokens from lexer
+- parser → vmod: Parser validates VMOD calls against registry
+- analyzer → vmod: Analyzer uses registry for semantic validation
+- analyzer → types: Analyzer uses type system for validation
+- vmod → vcc: Registry loads VMOD definitions via VCC parser
 
 ## Extension Points
 
-- **ast/visitor.go**: Add new analysis passes by implementing Visitor interface
-- **analyzer/**: Add semantic checks by extending analyzer
-- **types/**: Extend type system for custom types
-- **vmod/**: Add VMOD loading from other sources beyond VCC files
+- ast/visitor.go: Add new analysis passes by implementing Visitor interface
+- analyzer/: Add semantic checks by extending analyzer
+- types/: Extend type system for custom types
+- vmod/: Add VMOD loading from other sources beyond VCC files
 
 ## Testing Structure
 
 - Unit tests in each package test individual components
 - `tests/` contains integration tests exercising full parsing pipeline
-- Test data in `testdata/` provides real VCL examples
+- Test data in `tests/testdata/` provides real VCL examples
 - VMOD tests use fixtures from `vcclib/` directory
