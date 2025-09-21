@@ -1,8 +1,6 @@
 package analyzer
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,68 +9,9 @@ import (
 	"github.com/perbu/vclparser/pkg/parser"
 	types2 "github.com/perbu/vclparser/pkg/types"
 	"github.com/perbu/vclparser/pkg/vcc"
-	"github.com/perbu/vclparser/pkg/vmod"
 )
 
-func setupTestRegistry(t *testing.T) *vmod.Registry {
-	registry := vmod.NewRegistry()
-
-	// Create temporary directory for VCC files
-	tmpDir, err := os.MkdirTemp("", "vcc_test_*")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("Failed to remove temp directory: %v", err)
-		}
-	})
-
-	// Create std.vcc
-	stdVCC := `$Module std 3 "Standard library"
-$ABI strict
-
-$Function STRING toupper(STRING_LIST s)
-$Function VOID log(STRING_LIST s)
-$Function REAL random(REAL lo, REAL hi)
-$Function BOOL file_exists(STRING path)`
-
-	stdFile := filepath.Join(tmpDir, "std.vcc")
-	err = os.WriteFile(stdFile, []byte(stdVCC), 0644)
-	if err != nil {
-		t.Fatalf("Failed to write std.vcc: %v", err)
-	}
-
-	// Create directors.vcc
-	directorsVCC := `$Module directors 3 "Directors module"
-$ABI strict
-
-$Object round_robin()
-$Method VOID .add_backend(BACKEND backend)
-$Method BACKEND .backend()
-
-$Object hash()
-$Method VOID .add_backend(BACKEND backend, REAL weight)
-$Method BACKEND .backend(STRING key)`
-
-	directorsFile := filepath.Join(tmpDir, "directors.vcc")
-	err = os.WriteFile(directorsFile, []byte(directorsVCC), 0644)
-	if err != nil {
-		t.Fatalf("Failed to write directors.vcc: %v", err)
-	}
-
-	// Load the VCC files
-	err = registry.LoadVCCFile(stdFile)
-	if err != nil {
-		t.Fatalf("Failed to load std.vcc: %v", err)
-	}
-	err = registry.LoadVCCFile(directorsFile)
-	if err != nil {
-		t.Fatalf("Failed to load directors.vcc: %v", err)
-	}
-
-	return registry
-}
+// Use shared test utilities from test_utils.go
 
 func parseVCL(t *testing.T, vclCode string) *ast2.Program {
 	// Use lexer and parser directly to avoid import cycle
@@ -463,5 +402,78 @@ func TestTypeConversion(t *testing.T) {
 			t.Errorf("Symbol type %s: expected VCC type %s, got %s",
 				symbolType, expectedVCCTypeStr, vccType)
 		}
+	}
+}
+
+// TestNamedArgumentRegression tests specific edge cases for named parameter mapping
+func TestNamedArgumentRegression(t *testing.T) {
+
+	tests := []struct {
+		name          string
+		vcl           string
+		expectErrors  bool
+		errorContains string
+	}{
+		{
+			name: "time_format with positional format and named time argument",
+			vcl: `vcl 4.0;
+import utils;
+import std;
+
+sub vcl_deliver {
+    set resp.http.timestamp = utils.time_format("%format", time = std.real2time(-1, now));
+}`,
+			expectErrors: false,
+		},
+		{
+			name: "time_format with named format and named time argument",
+			vcl: `vcl 4.0;
+import utils;
+import std;
+
+sub vcl_deliver {
+    set resp.http.timestamp = utils.time_format(format = "%Y-%m-%d", time = std.real2time(-1, now));
+}`,
+			expectErrors: false,
+		},
+		{
+			name: "time_format with all named arguments",
+			vcl: `vcl 4.0;
+import utils;
+import std;
+
+sub vcl_deliver {
+    set resp.http.timestamp = utils.time_format(format = "%Y-%m-%d", local_time = true, time = std.real2time(-1, now));
+}`,
+			expectErrors: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			registry := setupTestRegistry(t)
+			validator := NewVMODValidator(registry, types2.NewSymbolTable())
+			program := parseVCL(t, test.vcl)
+			errors := validator.Validate(program)
+
+			if test.expectErrors && len(errors) == 0 {
+				t.Errorf("Expected errors but got none")
+			} else if !test.expectErrors && len(errors) > 0 {
+				t.Errorf("Expected no errors but got: %v", errors)
+			}
+
+			if test.errorContains != "" {
+				found := false
+				for _, err := range errors {
+					if strings.Contains(err, test.errorContains) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Expected error containing '%s' but got: %v", test.errorContains, errors)
+				}
+			}
+		})
 	}
 }
