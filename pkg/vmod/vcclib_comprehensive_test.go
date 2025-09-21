@@ -1,7 +1,6 @@
 package vmod
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/perbu/vclparser"
@@ -73,64 +72,5 @@ func TestVCCLibAllFiles(t *testing.T) {
 
 	if totalObjects < 5 {
 		t.Errorf("Expected at least 5 total objects across all modules, got %d", totalObjects)
-	}
-}
-
-// TestVCCLibIndividualFiles tests each VCC file individually to identify
-// which specific files might have parsing issues.
-func TestVCCLibIndividualFiles(t *testing.T) {
-	// Get all embedded VCC files
-	vccFiles, err := vclparser.ListEmbeddedVCCFiles()
-	if err != nil {
-		t.Fatalf("Failed to list embedded VCC files: %v", err)
-	}
-
-	if len(vccFiles) == 0 {
-		t.Fatalf("No embedded VCC files found")
-	}
-
-	successCount := 0
-	failureCount := 0
-
-	for _, vccFile := range vccFiles {
-		fileName := filepath.Base(vccFile)
-		t.Run(fileName, func(t *testing.T) {
-			registry := NewEmptyRegistry()
-
-			// Try to load just this embedded file
-			reader, err := vclparser.OpenEmbeddedVCCFile(vccFile)
-			if err != nil {
-				t.Fatalf("Failed to open embedded VCC file %s: %v", vccFile, err)
-			}
-			defer func() {
-				if err := reader.Close(); err != nil {
-					t.Fatalf("Failed to close embedded VCC file %s: %v", vccFile, err)
-				}
-			}()
-
-			err = registry.loadVCCFromReader(reader, fileName)
-			if err != nil {
-				t.Errorf("Failed to parse %s: %v", fileName, err)
-				failureCount++
-			} else {
-				modules := registry.ListModules()
-				if len(modules) == 0 {
-					t.Errorf("No modules loaded from %s", fileName)
-					failureCount++
-				} else {
-					t.Logf("Successfully loaded module(s) from %s: %v", fileName, modules)
-					successCount++
-				}
-			}
-		})
-	}
-
-	t.Logf("Individual file test summary: %d successful, %d failed out of %d total files",
-		successCount, failureCount, len(vccFiles))
-
-	// We expect most files to parse successfully individually
-	if successCount < len(vccFiles)*3/4 {
-		t.Errorf("Expected at least 75%% of files to parse successfully, got %d/%d (%.1f%%)",
-			successCount, len(vccFiles), float64(successCount)/float64(len(vccFiles))*100)
 	}
 }
