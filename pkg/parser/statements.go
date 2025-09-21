@@ -5,6 +5,7 @@ import (
 
 	ast2 "github.com/perbu/vclparser/pkg/ast"
 	"github.com/perbu/vclparser/pkg/lexer"
+	"github.com/perbu/vclparser/pkg/types"
 )
 
 // parseStatement parses a statement
@@ -216,11 +217,23 @@ func (p *Parser) parseCallStatement() *ast2.CallStatement {
 		Name: p.currentToken.Value,
 	}
 
+	// Validate that the called subroutine exists
+	if symbol := p.symbolTable.Lookup(p.currentToken.Value); symbol == nil {
+		p.addError(fmt.Sprintf("undefined subroutine: %s", p.currentToken.Value))
+		return nil
+	} else if symbol.Kind != types.SymbolSubroutine {
+		p.addError(fmt.Sprintf("'%s' is not a subroutine", p.currentToken.Value))
+		return nil
+	}
+
 	stmt.EndPos = p.currentToken.End
 
-	// Advance past the identifier before checking for semicolon
-	p.nextToken()
-	p.skipSemicolon()
+	// Consume the semicolon if present (consistent with other statement parsers)
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken() // move to semicolon
+		stmt.EndPos = p.currentToken.End
+	}
+
 	return stmt
 }
 

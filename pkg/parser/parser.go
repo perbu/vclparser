@@ -6,14 +6,16 @@ import (
 
 	"github.com/perbu/vclparser/pkg/ast"
 	lexer2 "github.com/perbu/vclparser/pkg/lexer"
+	"github.com/perbu/vclparser/pkg/types"
 )
 
 // Parser implements a recursive descent parser for VCL
 type Parser struct {
-	lexer    *lexer2.Lexer
-	errors   []DetailedError
-	input    string // Store original VCL source for error context
-	filename string // Store filename for error reporting
+	lexer       *lexer2.Lexer
+	errors      []DetailedError
+	input       string // Store original VCL source for error context
+	filename    string // Store filename for error reporting
+	symbolTable *types.SymbolTable
 
 	currentToken lexer2.Token
 	peekToken    lexer2.Token
@@ -22,10 +24,11 @@ type Parser struct {
 // New creates a new parser
 func New(l *lexer2.Lexer, input, filename string) *Parser {
 	p := &Parser{
-		lexer:    l,
-		errors:   []DetailedError{},
-		input:    input,
-		filename: filename,
+		lexer:       l,
+		errors:      []DetailedError{},
+		input:       input,
+		filename:    filename,
+		symbolTable: types.NewSymbolTable(),
 	}
 
 	// Read two tokens, so currentToken and peekToken are both set

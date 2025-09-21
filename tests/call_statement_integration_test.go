@@ -39,7 +39,6 @@ sub vcl_recv {
 }
 
 func TestCallStatementParsingInvalid(t *testing.T) {
-	t.Skip("not relevant yet")
 	vclCode := `vcl 4.0;
 
 sub vcl_recv {

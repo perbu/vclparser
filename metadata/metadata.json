@@ -1,0 +1,1770 @@
+{
+  "vcl_methods": {
+    "recv": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "synth",
+        "restart",
+        "pass",
+        "pipe",
+        "hash",
+        "purge",
+        "vcl",
+        "connect"
+      ]
+    },
+    "pipe": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "synth",
+        "pipe"
+      ]
+    },
+    "pass": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "synth",
+        "restart",
+        "fetch"
+      ]
+    },
+    "hash": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "lookup"
+      ]
+    },
+    "purge": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "synth",
+        "restart"
+      ]
+    },
+    "miss": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "synth",
+        "restart",
+        "pass",
+        "fetch"
+      ]
+    },
+    "hit": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "synth",
+        "restart",
+        "pass",
+        "miss",
+        "deliver"
+      ]
+    },
+    "deliver": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "synth",
+        "restart",
+        "deliver"
+      ]
+    },
+    "synth": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "restart",
+        "deliver"
+      ]
+    },
+    "connect": {
+      "context": "C",
+      "allowed_returns": [
+        "fail",
+        "connect"
+      ]
+    },
+    "backend_fetch": {
+      "context": "B",
+      "allowed_returns": [
+        "fail",
+        "fetch",
+        "abandon",
+        "error"
+      ]
+    },
+    "backend_response": {
+      "context": "B",
+      "allowed_returns": [
+        "fail",
+        "deliver",
+        "retry",
+        "abandon",
+        "pass",
+        "error"
+      ]
+    },
+    "backend_error": {
+      "context": "B",
+      "allowed_returns": [
+        "fail",
+        "deliver",
+        "retry",
+        "abandon"
+      ]
+    },
+    "vha_internal": {
+      "context": "B",
+      "allowed_returns": [
+        "fail",
+        "ok"
+      ]
+    },
+    "init": {
+      "context": "H",
+      "allowed_returns": [
+        "ok",
+        "fail"
+      ]
+    },
+    "fini": {
+      "context": "H",
+      "allowed_returns": [
+        "ok"
+      ]
+    }
+  },
+  "vcl_variables": {
+    "local.ip": {
+      "type": "IP",
+      "readable_from": [
+        "client",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "local.endpoint": {
+      "type": "STRING",
+      "readable_from": [
+        "client",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 41,
+      "version_high": 99
+    },
+    "local.socket": {
+      "type": "STRING",
+      "readable_from": [
+        "client",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 41,
+      "version_high": 99
+    },
+    "remote.ip": {
+      "type": "IP",
+      "readable_from": [
+        "client",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "client.ip": {
+      "type": "IP",
+      "readable_from": [
+        "client",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "client.identity": {
+      "type": "STRING",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "server.ip": {
+      "type": "IP",
+      "readable_from": [
+        "client",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "server.hostname": {
+      "type": "STRING",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "server.identity": {
+      "type": "STRING",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req": {
+      "type": "HTTP",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.method": {
+      "type": "STRING",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.hash": {
+      "type": "BLOB",
+      "readable_from": [
+        "vcl_hit",
+        "vcl_miss",
+        "vcl_pass",
+        "vcl_purge",
+        "vcl_deliver",
+        "vcl_synth",
+        "vcl_pipe",
+        "vcl_connect"
+      ],
+      "writable_from": [
+        "vcl_hash"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.url": {
+      "type": "STRING",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.proto": {
+      "type": "STRING",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 41,
+      "version_high": 99
+    },
+    "req.http.": {
+      "type": "HEADER",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [
+        "client"
+      ],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.restarts": {
+      "type": "INT",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.storage": {
+      "type": "STEVEDORE",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.esi_level": {
+      "type": "INT",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.ttl": {
+      "type": "DURATION",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.grace": {
+      "type": "DURATION",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.xid": {
+      "type": "STRING",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.esi": {
+      "type": "BOOL",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 40
+    },
+    "req.can_gzip": {
+      "type": "BOOL",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.backend_hint": {
+      "type": "BACKEND",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.hash_ignore_busy": {
+      "type": "BOOL",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.hash_ignore_vary": {
+      "type": "BOOL",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.hash_always_miss": {
+      "type": "BOOL",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.is_hitmiss": {
+      "type": "BOOL",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.is_hitpass": {
+      "type": "BOOL",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req.time": {
+      "type": "TIME",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req_top.method": {
+      "type": "STRING",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req_top.url": {
+      "type": "STRING",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req_top.http.": {
+      "type": "HEADER",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req_top.proto": {
+      "type": "STRING",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "req_top.time": {
+      "type": "TIME",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq": {
+      "type": "HTTP",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.xid": {
+      "type": "STRING",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.retries": {
+      "type": "INT",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.backend": {
+      "type": "BACKEND",
+      "readable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "writable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.body": {
+      "type": "BODY",
+      "readable_from": [],
+      "writable_from": [],
+      "unsetable_from": [
+        "vcl_backend_fetch"
+      ],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.hash": {
+      "type": "BLOB",
+      "readable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.method": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "writable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.url": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "writable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.proto": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 41,
+      "version_high": 99
+    },
+    "bereq.http.": {
+      "type": "HEADER",
+      "readable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "writable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "unsetable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.uncacheable": {
+      "type": "BOOL",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.connect_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "writable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.first_byte_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [
+        "backend"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.between_bytes_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [
+        "backend"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.last_byte_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [
+        "backend"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.is_bgfetch": {
+      "type": "BOOL",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.time": {
+      "type": "TIME",
+      "readable_from": [
+        "vcl_pipe",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.is_hitmiss": {
+      "type": "BOOL",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "bereq.is_hitpass": {
+      "type": "BOOL",
+      "readable_from": [
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp": {
+      "type": "HTTP",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.body": {
+      "type": "BODY",
+      "readable_from": [],
+      "writable_from": [
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.proto": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 41,
+      "version_high": 99
+    },
+    "beresp.status": {
+      "type": "INT",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.reason": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.http.": {
+      "type": "HEADER",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.do_esi": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.do_stream": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.do_gzip": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.do_gunzip": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.was_304": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.uncacheable": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.ttl": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.age": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.grace": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.keep": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.backend": {
+      "type": "BACKEND",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.backend.name": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.backend.ip": {
+      "type": "IP",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 40
+    },
+    "beresp.storage": {
+      "type": "STEVEDORE",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.storage_hint": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_vha_internal",
+        "vcl_backend_error"
+      ],
+      "writable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 40
+    },
+    "beresp.transit_buffer": {
+      "type": "BYTES",
+      "readable_from": [
+        "vcl_backend_response"
+      ],
+      "writable_from": [
+        "vcl_backend_response"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "beresp.time": {
+      "type": "TIME",
+      "readable_from": [
+        "vcl_backend_response",
+        "vcl_backend_error"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.proto": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_hit"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.status": {
+      "type": "INT",
+      "readable_from": [
+        "vcl_hit"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.reason": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_hit"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.hits": {
+      "type": "INT",
+      "readable_from": [
+        "vcl_hit",
+        "vcl_deliver"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.http.": {
+      "type": "HEADER",
+      "readable_from": [
+        "vcl_hit"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.ttl": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_hit",
+        "vcl_deliver"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.age": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_hit",
+        "vcl_deliver"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.grace": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_hit",
+        "vcl_deliver"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.keep": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_hit",
+        "vcl_deliver"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.uncacheable": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_deliver"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.storage": {
+      "type": "STEVEDORE",
+      "readable_from": [
+        "vcl_hit",
+        "vcl_deliver"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "obj.time": {
+      "type": "TIME",
+      "readable_from": [
+        "vcl_hit",
+        "vcl_deliver"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "resp": {
+      "type": "HTTP",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "resp.body": {
+      "type": "BODY",
+      "readable_from": [],
+      "writable_from": [
+        "vcl_synth"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "resp.proto": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "unsetable_from": [],
+      "version_low": 41,
+      "version_high": 99
+    },
+    "resp.status": {
+      "type": "INT",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "resp.reason": {
+      "type": "STRING",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "resp.http.": {
+      "type": "HEADER",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "unsetable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "resp.do_esi": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "unsetable_from": [],
+      "version_low": 41,
+      "version_high": 99
+    },
+    "resp.is_streaming": {
+      "type": "BOOL",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "resp.send_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "resp.time": {
+      "type": "TIME",
+      "readable_from": [
+        "vcl_deliver",
+        "vcl_synth"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "now": {
+      "type": "TIME",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "sess.timeout_idle": {
+      "type": "DURATION",
+      "readable_from": [
+        "client"
+      ],
+      "writable_from": [
+        "client"
+      ],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "sess.xid": {
+      "type": "STRING",
+      "readable_from": [
+        "client",
+        "backend"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 41,
+      "version_high": 99
+    },
+    "param.backend_idle_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.backend_wait_limit": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.backend_wait_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.between_bytes_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.connect_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.default_grace": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.default_keep": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.default_ttl": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.first_byte_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.idle_send_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.max_esi_depth": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.max_restarts": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.max_retries": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.pipe_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.send_timeout": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.shortlived": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.thread_pool_max": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.thread_pool_min": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.thread_pool_reserve": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.thread_pools": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.thread_queue_limit": {
+      "type": "INT",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.timeout_idle": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.transit_buffer": {
+      "type": "BYTES",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    },
+    "param.uncacheable_ttl": {
+      "type": "DURATION",
+      "readable_from": [
+        "all"
+      ],
+      "writable_from": [],
+      "unsetable_from": [],
+      "version_low": 0,
+      "version_high": 99
+    }
+  },
+  "vcl_types": {
+    "STRINGS": {
+      "c_type": "void",
+      "internal": true
+    },
+    "STRING_LIST": {
+      "c_type": "void*",
+      "internal": true
+    },
+    "SUB": {
+      "c_type": "void*",
+      "internal": true
+    },
+    "ACL": {
+      "c_type": "const struct vrt_acl *",
+      "internal": false
+    },
+    "BACKEND": {
+      "c_type": "const struct director *",
+      "internal": false
+    },
+    "BLOB": {
+      "c_type": "const struct vmod_priv *",
+      "internal": false
+    },
+    "BODY": {
+      "c_type": "const char *",
+      "internal": false
+    },
+    "BOOL": {
+      "c_type": "unsigned",
+      "internal": false
+    },
+    "BYTES": {
+      "c_type": "int64_t",
+      "internal": false
+    },
+    "DURATION": {
+      "c_type": "vtim_dur",
+      "internal": false
+    },
+    "ENUM": {
+      "c_type": "const char *",
+      "internal": false
+    },
+    "HEADER": {
+      "c_type": "const struct gethdr_s *",
+      "internal": false
+    },
+    "HTTP": {
+      "c_type": "struct http *",
+      "internal": false
+    },
+    "INSTANCE": {
+      "c_type": "void",
+      "internal": false
+    },
+    "INT": {
+      "c_type": "int64_t",
+      "internal": false
+    },
+    "IP": {
+      "c_type": "const struct suckaddr *",
+      "internal": false
+    },
+    "PROBE": {
+      "c_type": "const struct vrt_backend_probe *",
+      "internal": false
+    },
+    "REAL": {
+      "c_type": "double",
+      "internal": false
+    },
+    "STEVEDORE": {
+      "c_type": "const struct stevedore *",
+      "internal": false
+    },
+    "STRANDS": {
+      "c_type": "const struct strands *",
+      "internal": false
+    },
+    "STRING": {
+      "c_type": "const char *",
+      "internal": false
+    },
+    "TIME": {
+      "c_type": "vtim_real",
+      "internal": false
+    },
+    "VCL": {
+      "c_type": "struct vcl *",
+      "internal": false
+    },
+    "VOID": {
+      "c_type": "void",
+      "internal": false
+    },
+    "IP)": {
+      "c_type": "int acl_match_f(VRT_CTX, const",
+      "internal": false
+    }
+  },
+  "vcl_tokens": {
+    "T_INC": "++",
+    "T_DEC": "--",
+    "T_CAND": "&&",
+    "T_COR": "||",
+    "T_LEQ": "<=",
+    "T_EQ": "==",
+    "T_NEQ": "!=",
+    "T_GEQ": ">=",
+    "T_SHR": ">>",
+    "T_SHL": "<<",
+    "T_INCR": "+=",
+    "T_DECR": "-=",
+    "T_MUL": "*=",
+    "T_DIV": "/=",
+    "T_NOMATCH": "!~",
+    "ID": null,
+    "CNUM": null,
+    "FNUM": null,
+    "CSTR": null,
+    "EOI": null,
+    "CSRC": null,
+    "'{'": "{",
+    "'}'": "}",
+    "'('": "(",
+    "')'": ")",
+    "'*'": "*",
+    "'+'": "+",
+    "'-'": "-",
+    "'/'": "/",
+    "'%'": "%",
+    "'>'": ">",
+    "'<'": "<",
+    "'='": "=",
+    "';'": ";",
+    "'!'": "!",
+    "'&'": "&",
+    "'.'": ".",
+    "'|'": "|",
+    "'~'": "~",
+    "','": ","
+  },
+  "storage_variables": [
+    {
+      "name": "free_space",
+      "type": "BYTES",
+      "default": "0.",
+      "description": "storage.<name>.free_space",
+      "docstring": "Free space available in the named stevedore. Only available for\n    the malloc stevedore."
+    },
+    {
+      "name": "used_space",
+      "type": "BYTES",
+      "default": "0.",
+      "description": "storage.<name>.used_space",
+      "docstring": "Used space in the named stevedore. Only available for the malloc\n    stevedore."
+    },
+    {
+      "name": "happy",
+      "type": "BOOL",
+      "default": "0",
+      "description": "storage.<name>.happy",
+      "docstring": "Health status for the named stevedore. Not available in any of the\n    current stevedores."
+    }
+  ]
+}

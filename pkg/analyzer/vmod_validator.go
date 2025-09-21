@@ -85,6 +85,15 @@ func (v *VMODValidator) VisitImportDecl(importDecl *ast2.ImportDecl) interface{}
 	return nil
 }
 
+// VisitBackendDecl implements ast.Visitor
+func (v *VMODValidator) VisitBackendDecl(backendDecl *ast2.BackendDecl) interface{} {
+	// Add backend to symbol table
+	if err := v.symbolTable.DefineBackend(backendDecl.Name); err != nil {
+		v.addError(fmt.Sprintf("failed to register backend %s: %v", backendDecl.Name, err))
+	}
+	return nil
+}
+
 // VisitCallExpression implements ast.Visitor
 func (v *VMODValidator) VisitCallExpression(callExpr *ast2.CallExpression) interface{} {
 	memberExpr, ok := callExpr.Function.(*ast2.MemberExpression)

@@ -452,6 +452,15 @@ func (st *SymbolTable) DefineVMODObject(objectName, moduleName, objectType strin
 	})
 }
 
+// DefineBackend adds a backend declaration to the symbol table
+func (st *SymbolTable) DefineBackend(backendName string) error {
+	return st.Define(&Symbol{
+		Name: backendName,
+		Kind: SymbolBackend,
+		Type: Backend,
+	})
+}
+
 // LookupVMODFunction looks up a VMOD function by module and function name
 func (st *SymbolTable) LookupVMODFunction(moduleName, functionName string) *Symbol {
 	fullName := moduleName + "." + functionName

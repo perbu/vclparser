@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/perbu/vclparser/pkg/ast"
+	"github.com/perbu/vclparser/pkg/metadata"
 	"github.com/perbu/vclparser/pkg/parser"
 	"github.com/perbu/vclparser/pkg/types"
 	"github.com/perbu/vclparser/pkg/vmod"
@@ -11,9 +12,13 @@ import (
 
 // Analyzer performs semantic analysis on VCL AST
 type Analyzer struct {
-	symbolTable   *types.SymbolTable
-	vmodValidator *VMODValidator
-	errors        []string
+	symbolTable       *types.SymbolTable
+	vmodValidator     *VMODValidator
+	returnValidator   *ReturnActionValidator
+	variableValidator *VariableAccessValidator
+	versionValidator  *VersionValidator
+	metadataLoader    *metadata.MetadataLoader
+	errors            []string
 }
 
 // NewAnalyzer creates a new semantic analyzer
@@ -21,10 +26,25 @@ func NewAnalyzer(registry *vmod.Registry) *Analyzer {
 	symbolTable := types.NewSymbolTable()
 	vmodValidator := NewVMODValidator(registry, symbolTable)
 
+	// Load metadata for return action validation
+	metadataLoader := metadata.NewMetadataLoader()
+	if err := metadataLoader.LoadDefault(); err != nil {
+		// Log warning but continue - return validation will be disabled
+		fmt.Printf("Warning: Could not load VCL metadata: %v\n", err)
+	}
+
+	returnValidator := NewReturnActionValidator(metadataLoader)
+	variableValidator := NewVariableAccessValidator(metadataLoader, symbolTable)
+	versionValidator := NewVersionValidator(metadataLoader)
+
 	return &Analyzer{
-		symbolTable:   symbolTable,
-		vmodValidator: vmodValidator,
-		errors:        []string{},
+		symbolTable:       symbolTable,
+		vmodValidator:     vmodValidator,
+		returnValidator:   returnValidator,
+		variableValidator: variableValidator,
+		versionValidator:  versionValidator,
+		metadataLoader:    metadataLoader,
+		errors:            []string{},
 	}
 }
 
@@ -36,8 +56,19 @@ func (a *Analyzer) Analyze(program *ast.Program) []string {
 	vmodErrors := a.vmodValidator.Validate(program)
 	a.errors = append(a.errors, vmodErrors...)
 
+	// Perform return action validation
+	returnErrors := a.returnValidator.Validate(program)
+	a.errors = append(a.errors, returnErrors...)
+
+	// Perform variable access validation
+	variableErrors := a.variableValidator.Validate(program)
+	a.errors = append(a.errors, variableErrors...)
+
+	// Perform VCL version compatibility validation
+	versionErrors := a.versionValidator.Validate(program)
+	a.errors = append(a.errors, versionErrors...)
+
 	// TODO: Add other semantic analysis passes here
-	// - Variable usage validation
 	// - Type checking
 	// - Control flow analysis
 

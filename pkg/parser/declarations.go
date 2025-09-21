@@ -1,8 +1,11 @@
 package parser
 
 import (
+	"fmt"
+
 	"github.com/perbu/vclparser/pkg/ast"
 	"github.com/perbu/vclparser/pkg/lexer"
+	"github.com/perbu/vclparser/pkg/types"
 )
 
 // parseBackendDecl parses a backend declaration
@@ -271,6 +274,17 @@ func (p *Parser) parseSubDecl() *ast.SubDecl {
 
 	if !p.expectPeek(lexer.LBRACE) {
 		return nil
+	}
+
+	// Register the subroutine in the symbol table
+	symbol := &types.Symbol{
+		Name:     decl.Name,
+		Kind:     types.SymbolSubroutine,
+		Type:     types.Void,
+		Position: p.currentToken.Start,
+	}
+	if err := p.symbolTable.Define(symbol); err != nil {
+		p.addError(fmt.Sprintf("subroutine %s already defined: %s", decl.Name, err.Error()))
 	}
 
 	// Parse the subroutine body
