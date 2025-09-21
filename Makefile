@@ -1,9 +1,9 @@
 # Makefile for VCL Parser
 
-.PHONY: lint vet nilaway golangci all clean test build
+.PHONY: lint vet nilaway golangci all clean test
 
 # Run all linting tools
-lint: vet nilaway golangci
+default: vet nilaway golangci test
 
 # Go vet - built-in static analysis
 vet:
@@ -28,7 +28,3 @@ clean:
 # Run tests
 test:
 	go test ./...
-
-# Build example parser
-build:
-	go build -o parse_vcl ./examples/parse_vcl.go
