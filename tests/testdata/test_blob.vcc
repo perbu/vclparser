@@ -1,0 +1,4 @@
+$Module blob 3 "Blob module"
+$Function STRING encode(ENUM {BASE64, HEX} encoding, BLOB blob)
+$Object decoder()
+$Event vmod_event

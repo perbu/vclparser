@@ -3,13 +3,14 @@ package vmod
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/perbu/vclparser/pkg/vcc"
 )
 
 func TestRegistryBasicOperations(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewEmptyRegistry()
 
 	// Test empty registry
 	if len(registry.ListModules()) != 0 {
@@ -116,7 +117,7 @@ $Method STRING .method2(INT param)`
 }
 
 func TestRegistryValidation(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewEmptyRegistry()
 
 	// Create a test VCC content
 	vccContent := `$Module std 3 "Standard library"
@@ -203,7 +204,7 @@ $Method BACKEND .backend()`
 }
 
 func TestRegistryLoadDirectory(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewEmptyRegistry()
 
 	// Create temporary directory
 	tmpDir, err := os.MkdirTemp("", "vcc_test_*")
@@ -233,10 +234,15 @@ $Object round_robin()`,
 		}
 	}
 
-	// Load directory
-	err = registry.LoadVCCDirectory(tmpDir)
-	if err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+	// Load VCC files individually
+	for filename := range vccFiles {
+		if strings.HasSuffix(strings.ToLower(filename), ".vcc") {
+			filePath := filepath.Join(tmpDir, filename)
+			err := registry.LoadVCCFile(filePath)
+			if err != nil {
+				t.Fatalf("Failed to load VCC file %s: %v", filename, err)
+			}
+		}
 	}
 
 	// Check loaded modules
@@ -260,7 +266,7 @@ $Object round_robin()`,
 }
 
 func TestRegistryStats(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewEmptyRegistry()
 
 	// Create test module
 	vccContent := `$Module test 1 "Test module"
@@ -326,7 +332,7 @@ $Event event1`
 }
 
 func TestRegistryClear(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewEmptyRegistry()
 
 	// Load a module
 	vccContent := `$Module std 3 "Standard library"
@@ -374,7 +380,7 @@ $Function STRING toupper(STRING_LIST s)`
 }
 
 func TestBuiltinModules(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewEmptyRegistry()
 
 	// Load standard modules
 	vccStd := `$Module std 3 "Standard library"
@@ -406,10 +412,15 @@ $Object round_robin()`
 		t.Fatalf("Failed to write directors.vcc: %v", err)
 	}
 
-	// Load directory
-	err = registry.LoadVCCDirectory(tmpDir)
+	// Load VCC files individually
+	err = registry.LoadVCCFile(stdFile)
 	if err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+		t.Fatalf("Failed to load std.vcc: %v", err)
+	}
+
+	err = registry.LoadVCCFile(directorsFile)
+	if err != nil {
+		t.Fatalf("Failed to load directors.vcc: %v", err)
 	}
 
 	// Test builtin modules

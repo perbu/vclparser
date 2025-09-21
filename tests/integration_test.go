@@ -61,9 +61,15 @@ $Method BACKEND .backend(STRING key)`
 
 	// Create a custom registry and load our test VCC files
 	registry := vmod.NewRegistry()
-	err = registry.LoadVCCDirectory(tmpDir)
+
+	// Load individual VCC files
+	err = registry.LoadVCCFile(stdFile)
 	if err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+		t.Fatalf("Failed to load std.vcc: %v", err)
+	}
+	err = registry.LoadVCCFile(directorsFile)
+	if err != nil {
+		t.Fatalf("Failed to load directors.vcc: %v", err)
 	}
 
 	// Test cases
@@ -235,10 +241,14 @@ $Event vmod_event`,
 	}
 
 	// Create registry and load files
-	registry := vmod.NewRegistry()
-	err = registry.LoadVCCDirectory(tmpDir)
-	if err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+	registry := vmod.NewEmptyRegistry()
+	// Load VCC files individually
+	for filename := range vccFiles {
+		filePath := filepath.Join(tmpDir, filename)
+		err := registry.LoadVCCFile(filePath)
+		if err != nil {
+			t.Fatalf("Failed to load VCC file %s: %v", filename, err)
+		}
 	}
 
 	// Test stats
@@ -436,9 +446,15 @@ $Method BACKEND .backend()`
 
 	// Create registry and load files
 	registry := vmod.NewRegistry()
-	err = registry.LoadVCCDirectory(tmpDir)
+	// Load VCC files individually
+	err = registry.LoadVCCFile(stdFile)
 	if err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+		t.Fatalf("Failed to load std.vcc: %v", err)
+	}
+
+	err = registry.LoadVCCFile(directorsFile)
+	if err != nil {
+		t.Fatalf("Failed to load directors.vcc: %v", err)
 	}
 
 	// Override the default registry for this test

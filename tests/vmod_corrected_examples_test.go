@@ -63,8 +63,15 @@ $Function VOID add_hashed_keys(STRING keys)`
 		}
 	}
 
-	if err := registry.LoadVCCDirectory(tmpDir); err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+	// Load VCC files individually
+	for filename := range vccFiles {
+		if strings.HasSuffix(strings.ToLower(filename), ".vcc") {
+			filePath := filepath.Join(tmpDir, filename)
+			err := registry.LoadVCCFile(filePath)
+			if err != nil {
+				t.Fatalf("Failed to load VCC file %s: %v", filename, err)
+			}
+		}
 	}
 
 	tests := []struct {
@@ -285,8 +292,10 @@ $Function VOID void_func(STRING input)`
 		t.Fatalf("Failed to write testmod.vcc: %v", err)
 	}
 
-	if err := registry.LoadVCCDirectory(tmpDir); err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+	// Load VCC file
+	err = registry.LoadVCCFile(filePath)
+	if err != nil {
+		t.Fatalf("Failed to load testmod.vcc: %v", err)
 	}
 
 	validationTests := []struct {

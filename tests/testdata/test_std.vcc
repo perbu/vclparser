@@ -1,0 +1,3 @@
+$Module std 3 "Standard library"
+$Function STRING toupper(STRING_LIST s)
+$Function VOID log(STRING_LIST s)

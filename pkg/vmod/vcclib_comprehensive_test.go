@@ -11,7 +11,7 @@ import (
 // without syntax errors. This is a comprehensive smoke test to ensure all
 // VCC files in the repository are syntactically valid.
 func TestVCCLibAllFiles(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewEmptyRegistry()
 
 	// Load all embedded VCC files
 	err := registry.LoadEmbeddedVCCs()
@@ -95,7 +95,7 @@ func TestVCCLibIndividualFiles(t *testing.T) {
 	for _, vccFile := range vccFiles {
 		fileName := filepath.Base(vccFile)
 		t.Run(fileName, func(t *testing.T) {
-			registry := NewRegistry()
+			registry := NewEmptyRegistry()
 
 			// Try to load just this embedded file
 			reader, err := vclparser.OpenEmbeddedVCCFile(vccFile)
@@ -108,7 +108,7 @@ func TestVCCLibIndividualFiles(t *testing.T) {
 				}
 			}()
 
-			err = registry.LoadVCCFromReader(reader, fileName)
+			err = registry.loadVCCFromReader(reader, fileName)
 			if err != nil {
 				t.Errorf("Failed to parse %s: %v", fileName, err)
 				failureCount++

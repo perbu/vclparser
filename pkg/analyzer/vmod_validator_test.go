@@ -62,9 +62,13 @@ $Method BACKEND .backend(STRING key)`
 	}
 
 	// Load the VCC files
-	err = registry.LoadVCCDirectory(tmpDir)
+	err = registry.LoadVCCFile(stdFile)
 	if err != nil {
-		t.Fatalf("Failed to load VCC files: %v", err)
+		t.Fatalf("Failed to load std.vcc: %v", err)
+	}
+	err = registry.LoadVCCFile(directorsFile)
+	if err != nil {
+		t.Fatalf("Failed to load directors.vcc: %v", err)
 	}
 
 	return registry

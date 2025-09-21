@@ -83,8 +83,15 @@ $Method BACKEND .backend()`
 		}
 	}
 
-	if err := registry.LoadVCCDirectory(tmpDir); err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+	// Load VCC files individually
+	for filename := range vccFiles {
+		if strings.HasSuffix(strings.ToLower(filename), ".vcc") {
+			filePath := filepath.Join(tmpDir, filename)
+			err := registry.LoadVCCFile(filePath)
+			if err != nil {
+				t.Fatalf("Failed to load VCC file %s: %v", filename, err)
+			}
+		}
 	}
 
 	tests := []struct {
@@ -315,8 +322,15 @@ $Method VOID .set(STRING key, STRING value)`
 		}
 	}
 
-	if err := registry.LoadVCCDirectory(tmpDir); err != nil {
-		t.Fatalf("Failed to load VCC directory: %v", err)
+	// Load VCC files individually
+	for filename := range vccFiles {
+		if strings.HasSuffix(strings.ToLower(filename), ".vcc") {
+			filePath := filepath.Join(tmpDir, filename)
+			err := registry.LoadVCCFile(filePath)
+			if err != nil {
+				t.Fatalf("Failed to load VCC file %s: %v", filename, err)
+			}
+		}
 	}
 
 	tests := []struct {

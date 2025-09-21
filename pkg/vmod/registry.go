@@ -4,46 +4,33 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/perbu/vclparser"
-	vcc2 "github.com/perbu/vclparser/pkg/vcc"
+	"github.com/perbu/vclparser/pkg/vcc"
 )
 
 // Registry manages VMOD definitions loaded from VCC files
 type Registry struct {
-	modules map[string]*vcc2.Module
+	modules map[string]*vcc.Module
 	mutex   sync.RWMutex
 }
 
-// NewRegistry creates a new VMOD registry
+// NewRegistry creates a new VMOD registry and automatically loads embedded VCC files
 func NewRegistry() *Registry {
-	return &Registry{
-		modules: make(map[string]*vcc2.Module),
+	r := &Registry{
+		modules: make(map[string]*vcc.Module),
 	}
+	// Load embedded VCC files automatically
+	_ = r.LoadEmbeddedVCCs()
+	return r
 }
 
-// LoadVCCDirectory loads all VCC files from a directory
-func (r *Registry) LoadVCCDirectory(dir string) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Only process .vcc files
-		if !strings.HasSuffix(strings.ToLower(path), ".vcc") {
-			return nil
-		}
-
-		if err := r.LoadVCCFile(path); err != nil {
-			// Return error immediately instead of just logging warning
-			return fmt.Errorf("failed to load VCC file %s: %v", path, err)
-		}
-
-		return nil
-	})
+// NewEmptyRegistry creates a new empty VMOD registry for testing purposes
+func NewEmptyRegistry() *Registry {
+	return &Registry{
+		modules: make(map[string]*vcc.Module),
+	}
 }
 
 // LoadVCCFile loads a single VCC file
@@ -56,12 +43,12 @@ func (r *Registry) LoadVCCFile(filename string) error {
 		_ = file.Close() // Ignore error in defer
 	}()
 
-	return r.LoadVCCFromReader(file, filename)
+	return r.loadVCCFromReader(file, filename)
 }
 
-// LoadVCCFromReader loads a VCC from an io.Reader
-func (r *Registry) LoadVCCFromReader(reader io.Reader, source string) error {
-	parser := vcc2.NewParser(reader)
+// loadVCCFromReader loads a VCC from an io.Reader
+func (r *Registry) loadVCCFromReader(reader io.Reader, source string) error {
+	parser := vcc.NewParser(reader)
 	module, err := parser.Parse()
 	if err != nil {
 		return fmt.Errorf("failed to parse VCC from %s: %v", source, err)
@@ -81,7 +68,7 @@ func (r *Registry) LoadVCCFromReader(reader io.Reader, source string) error {
 }
 
 // GetModule returns a module by name
-func (r *Registry) GetModule(name string) (*vcc2.Module, bool) {
+func (r *Registry) GetModule(name string) (*vcc.Module, bool) {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
@@ -102,7 +89,7 @@ func (r *Registry) ListModules() []string {
 }
 
 // GetFunction finds a function in a specific module
-func (r *Registry) GetFunction(moduleName, functionName string) (*vcc2.Function, error) {
+func (r *Registry) GetFunction(moduleName, functionName string) (*vcc.Function, error) {
 	module, exists := r.GetModule(moduleName)
 	if !exists {
 		return nil, fmt.Errorf("module %s not found", moduleName)
@@ -118,7 +105,7 @@ func (r *Registry) GetFunction(moduleName, functionName string) (*vcc2.Function,
 }
 
 // GetObject finds an object in a specific module
-func (r *Registry) GetObject(moduleName, objectName string) (*vcc2.Object, error) {
+func (r *Registry) GetObject(moduleName, objectName string) (*vcc.Object, error) {
 	module, exists := r.GetModule(moduleName)
 	if !exists {
 		return nil, fmt.Errorf("module %s not found", moduleName)
@@ -134,7 +121,7 @@ func (r *Registry) GetObject(moduleName, objectName string) (*vcc2.Object, error
 }
 
 // GetMethod finds a method on an object in a specific module
-func (r *Registry) GetMethod(moduleName, objectName, methodName string) (*vcc2.Method, error) {
+func (r *Registry) GetMethod(moduleName, objectName, methodName string) (*vcc.Method, error) {
 	object, err := r.GetObject(moduleName, objectName)
 	if err != nil {
 		return nil, err
@@ -158,7 +145,7 @@ func (r *Registry) ValidateImport(moduleName string) error {
 }
 
 // ValidateFunctionCall validates a VMOD function call
-func (r *Registry) ValidateFunctionCall(moduleName, functionName string, argTypes []vcc2.VCCType) error {
+func (r *Registry) ValidateFunctionCall(moduleName, functionName string, argTypes []vcc.VCCType) error {
 	function, err := r.GetFunction(moduleName, functionName)
 	if err != nil {
 		return err
@@ -168,7 +155,7 @@ func (r *Registry) ValidateFunctionCall(moduleName, functionName string, argType
 }
 
 // ValidateMethodCall validates a VMOD method call
-func (r *Registry) ValidateMethodCall(moduleName, objectName, methodName string, argTypes []vcc2.VCCType) error {
+func (r *Registry) ValidateMethodCall(moduleName, objectName, methodName string, argTypes []vcc.VCCType) error {
 	method, err := r.GetMethod(moduleName, objectName, methodName)
 	if err != nil {
 		return err
@@ -178,7 +165,7 @@ func (r *Registry) ValidateMethodCall(moduleName, objectName, methodName string,
 }
 
 // ValidateObjectConstruction validates object instantiation
-func (r *Registry) ValidateObjectConstruction(moduleName, objectName string, argTypes []vcc2.VCCType) error {
+func (r *Registry) ValidateObjectConstruction(moduleName, objectName string, argTypes []vcc.VCCType) error {
 	object, err := r.GetObject(moduleName, objectName)
 	if err != nil {
 		return err
@@ -228,7 +215,7 @@ func (r *Registry) Clear() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	r.modules = make(map[string]*vcc2.Module)
+	r.modules = make(map[string]*vcc.Module)
 }
 
 // ModuleExists checks if a module is registered
@@ -267,7 +254,7 @@ func (r *Registry) LoadEmbeddedVCCs() error {
 			return fmt.Errorf("failed to open embedded VCC file %s: %v", filename, err)
 		}
 
-		if err := r.LoadVCCFromReader(reader, fmt.Sprintf("embedded:%s", filename)); err != nil {
+		if err := r.loadVCCFromReader(reader, fmt.Sprintf("embedded:%s", filename)); err != nil {
 			_ = reader.Close()
 			return fmt.Errorf("failed to load embedded VCC file %s: %v", filename, err)
 		}
@@ -275,51 +262,4 @@ func (r *Registry) LoadEmbeddedVCCs() error {
 	}
 
 	return nil
-}
-
-// LoadDefaultVCCFiles loads VCC files from embedded files first, then tries filesystem fallback
-func LoadDefaultVCCFiles() error {
-	// First try to load embedded VCC files
-	if err := DefaultRegistry.LoadEmbeddedVCCs(); err == nil {
-		return nil // Successfully loaded embedded files
-	}
-
-	// Fallback to filesystem for backwards compatibility
-	possibleDirs := []string{
-		"vcclib",       // Relative to current directory
-		"./vcclib",     // Explicit relative path
-		"../vcclib",    // One level up
-		"../../vcclib", // Two levels up (for nested test directories)
-	}
-
-	for _, vccDir := range possibleDirs {
-		if _, err := os.Stat(vccDir); err == nil {
-			// Found the directory, try to load it
-			if err := DefaultRegistry.LoadVCCDirectory(vccDir); err != nil {
-				// Log the error but continue trying other directories
-				continue
-			}
-			return nil // Successfully loaded
-		}
-	}
-
-	// If not found in any location, return an error but don't fail completely
-	return fmt.Errorf("no VCC files found - neither embedded nor in filesystem locations: %v", possibleDirs)
-}
-
-// LoadUserVCCFile loads a user-provided VCC file (for custom VMODs)
-func (r *Registry) LoadUserVCCFile(filename string) error {
-	return r.LoadVCCFile(filename)
-}
-
-// Init initializes the default registry with embedded VCC files
-func Init() error {
-	return DefaultRegistry.LoadEmbeddedVCCs()
-}
-
-// init automatically loads embedded VCC files when the package is imported
-func init() {
-	// Load embedded VCCs automatically, but don't fail if it doesn't work
-	// This ensures the registry is always populated with standard VMODs
-	_ = DefaultRegistry.LoadEmbeddedVCCs()
 }

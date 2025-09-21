@@ -195,15 +195,11 @@ func main() {
 		log.Fatalf("Parse error: %v", err)
 	}
 
-	// Initialize VMOD registry and perform validation
+	// Perform validation using the default VMOD registry
 	var validationErrors []string
-	if err := vmod.Init(); err != nil {
-		validationErrors = []string{"Warning: VMOD validation unavailable - " + err.Error()}
-	} else {
-		validationErrors, err = analyzer.ValidateVCLFile(program, vmod.DefaultRegistry)
-		if err != nil {
-			log.Printf("VMOD validation error: %v", err)
-		}
+	validationErrors, err = analyzer.ValidateVCLFile(program, vmod.DefaultRegistry)
+	if err != nil {
+		log.Printf("VMOD validation error: %v", err)
 	}
 
 	// Show validation results

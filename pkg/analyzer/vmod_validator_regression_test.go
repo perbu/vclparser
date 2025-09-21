@@ -52,9 +52,13 @@ $Function TIME real2time(REAL r, TIME base)`
 	}
 
 	// Load VCC files
-	err = registry.LoadVCCDirectory(tmpDir)
+	err = registry.LoadVCCFile(utilsFile)
 	if err != nil {
-		t.Fatalf("Failed to load VCC files: %v", err)
+		t.Fatalf("Failed to load utils.vcc: %v", err)
+	}
+	err = registry.LoadVCCFile(stdFile)
+	if err != nil {
+		t.Fatalf("Failed to load std.vcc: %v", err)
 	}
 
 	tests := []struct {
@@ -206,9 +210,9 @@ Function with optional parameter gaps.`
 	}
 
 	// Load VCC files
-	err = registry.LoadVCCDirectory(tmpDir)
+	err = registry.LoadVCCFile(testFile)
 	if err != nil {
-		t.Fatalf("Failed to load VCC files: %v", err)
+		t.Fatalf("Failed to load test.vcc: %v", err)
 	}
 
 	tests := []struct {
