@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -39,16 +38,18 @@ func (ml *MetadataLoader) LoadFromFile(filepath string) error {
 	return nil
 }
 
-// LoadDefault loads metadata from the default location in the project
+// LoadDefault loads metadata from embedded data
 func (ml *MetadataLoader) LoadDefault() error {
-	// Find the project root by looking for go.mod
-	projectRoot, err := findProjectRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find project root: %w", err)
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+
+	var metadata VCLMetadata
+	if err := json.Unmarshal(embeddedMetadata, &metadata); err != nil {
+		return fmt.Errorf("failed to parse embedded metadata: %w", err)
 	}
 
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-	return ml.LoadFromFile(metadataPath)
+	ml.metadata = &metadata
+	return nil
 }
 
 // GetMetadata returns the loaded metadata (thread-safe)
@@ -209,30 +210,6 @@ func (ml *MetadataLoader) GetMethodsForContext(context ContextType) ([]string, e
 	}
 
 	return result, nil
-}
-
-// findProjectRoot finds the project root by looking for go.mod file
-func findProjectRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	for {
-		goModPath := filepath.Join(dir, "go.mod")
-		if _, err := os.Stat(goModPath); err == nil {
-			return dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			// Reached filesystem root
-			break
-		}
-		dir = parent
-	}
-
-	return "", fmt.Errorf("go.mod not found in any parent directory")
 }
 
 // Global instance for convenience
