@@ -60,6 +60,7 @@ func main() {
 	}
 }
 
+//nolint:nilaway
 func printHelp() {
 	fmt.Println("VCL Parser with Include Resolution")
 	fmt.Println()
