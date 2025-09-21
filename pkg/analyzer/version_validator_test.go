@@ -21,7 +21,7 @@ func TestVersionValidatorExtractVCLVersion(t *testing.T) {
 		{"Invalid minor", "4.x", 0},
 	}
 
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	validator := NewVersionValidator(loader)
 
 	for _, tt := range tests {
@@ -42,7 +42,7 @@ func TestVersionValidatorExtractVCLVersion(t *testing.T) {
 }
 
 func TestVersionValidatorValidateVariableVersions(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	err := loader.LoadDefault()
 	if err != nil {
 		t.Fatalf("Failed to load metadata: %v", err)
@@ -123,7 +123,7 @@ func TestVersionValidatorValidateVariableVersions(t *testing.T) {
 }
 
 func TestVersionValidatorNormalizeDynamicVariableName(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	validator := NewVersionValidator(loader)
 
 	tests := []struct {

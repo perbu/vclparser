@@ -12,7 +12,7 @@ import (
 )
 
 func TestVariableAccessValidator_ValidateVariableAccesses(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -197,7 +197,7 @@ func TestVariableAccessValidator_ValidateVariableAccesses(t *testing.T) {
 }
 
 func TestVariableAccessValidator_ExtractVariableName(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	symbolTable := types.NewSymbolTable()
 	validator := NewVariableAccessValidator(loader, symbolTable)
 
@@ -250,7 +250,7 @@ func TestVariableAccessValidator_ExtractVariableName(t *testing.T) {
 }
 
 func TestVariableAccessValidator_ExtractMemberVariableName(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	symbolTable := types.NewSymbolTable()
 	validator := NewVariableAccessValidator(loader, symbolTable)
 

@@ -11,7 +11,7 @@ import (
 )
 
 func TestReturnActionValidator_ValidateReturnActions(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -167,7 +167,7 @@ func TestReturnActionValidator_ValidateReturnActions(t *testing.T) {
 }
 
 func TestReturnActionValidator_ExtractActionName(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	validator := NewReturnActionValidator(loader)
 
 	tests := []struct {
@@ -223,7 +223,7 @@ func TestReturnActionValidator_ExtractActionName(t *testing.T) {
 }
 
 func TestReturnActionValidator_FindReturnStatements(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	validator := NewReturnActionValidator(loader)
 
 	// Create test statements

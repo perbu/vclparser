@@ -8,7 +8,7 @@ import (
 )
 
 func TestMetadataSymbolTable_LoadBuiltinSymbols(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -43,7 +43,7 @@ func TestMetadataSymbolTable_LoadBuiltinSymbols(t *testing.T) {
 }
 
 func TestMetadataSymbolTable_ValidateVariableAccess(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -89,7 +89,7 @@ func TestMetadataSymbolTable_ValidateVariableAccess(t *testing.T) {
 }
 
 func TestMetadataSymbolTable_ValidateReturnAction(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -133,7 +133,7 @@ func TestMetadataSymbolTable_ValidateReturnAction(t *testing.T) {
 }
 
 func TestMetadataSymbolTable_LookupWithAccess(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -180,7 +180,7 @@ func TestMetadataSymbolTable_LookupWithAccess(t *testing.T) {
 }
 
 func TestMetadataSymbolTable_HandleDynamicVariable(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -227,7 +227,7 @@ func TestMetadataSymbolTable_HandleDynamicVariable(t *testing.T) {
 }
 
 func TestMetadataSymbolTable_GetMethodContext(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 

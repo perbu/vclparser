@@ -8,7 +8,7 @@ import (
 )
 
 func TestMetadataLoader_LoadFromFile(t *testing.T) {
-	loader := NewMetadataLoader()
+	loader := New()
 
 	// Get the test metadata file path relative to project root
 	projectRoot := "../../" // From pkg/metadata/ to project root
@@ -47,7 +47,7 @@ func TestMetadataLoader_LoadFromFile(t *testing.T) {
 }
 
 func TestMetadataLoader_ValidateReturnAction(t *testing.T) {
-	loader := NewMetadataLoader()
+	loader := New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -83,7 +83,7 @@ func TestMetadataLoader_ValidateReturnAction(t *testing.T) {
 }
 
 func TestMetadataLoader_ValidateVariableAccess(t *testing.T) {
-	loader := NewMetadataLoader()
+	loader := New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -333,7 +333,7 @@ func TestVCLVariable_ContextResolution(t *testing.T) {
 }
 
 func TestMetadataLoader_ConcurrentAccess(t *testing.T) {
-	loader := NewMetadataLoader()
+	loader := New()
 
 	const numGoroutines = 10
 	const numOperations = 100
@@ -401,7 +401,7 @@ func TestMetadataLoader_ConcurrentAccess(t *testing.T) {
 
 func TestMetadataLoader_ErrorConditions(t *testing.T) {
 	t.Run("access before loading", func(t *testing.T) {
-		loader := NewMetadataLoader()
+		loader := New()
 
 		_, err := loader.GetMetadata()
 		if err == nil || err.Error() != "metadata not loaded - call LoadFromFile or LoadDefault first" {
@@ -420,7 +420,7 @@ func TestMetadataLoader_ErrorConditions(t *testing.T) {
 	})
 
 	t.Run("invalid file path", func(t *testing.T) {
-		loader := NewMetadataLoader()
+		loader := New()
 
 		err := loader.LoadFromFile("/nonexistent/path/metadata.json")
 		if err == nil {
@@ -435,7 +435,7 @@ func TestMetadataLoader_ErrorConditions(t *testing.T) {
 	t.Run("invalid JSON content", func(t *testing.T) {
 		// This would require creating a temporary file with invalid JSON
 		// For now, we'll test that the error handling exists
-		loader := NewMetadataLoader()
+		loader := New()
 
 		// Try to load from a directory (will fail)
 		err := loader.LoadFromFile(".")
@@ -445,7 +445,7 @@ func TestMetadataLoader_ErrorConditions(t *testing.T) {
 	})
 
 	t.Run("unknown method validation", func(t *testing.T) {
-		loader := NewMetadataLoader()
+		loader := New()
 		err := loader.LoadDefault()
 		if err != nil {
 			t.Fatalf("LoadDefault failed: %v", err)
@@ -463,7 +463,7 @@ func TestMetadataLoader_ErrorConditions(t *testing.T) {
 	})
 
 	t.Run("invalid access type", func(t *testing.T) {
-		loader := NewMetadataLoader()
+		loader := New()
 		err := loader.LoadDefault()
 		if err != nil {
 			t.Fatalf("LoadDefault failed: %v", err)
@@ -547,7 +547,7 @@ func TestVCLVariable_VersionEdgeCases(t *testing.T) {
 }
 
 func TestStorageVariablePatterns(t *testing.T) {
-	loader := NewMetadataLoader()
+	loader := New()
 	err := loader.LoadDefault()
 	if err != nil {
 		t.Fatalf("LoadDefault failed: %v", err)
@@ -626,7 +626,7 @@ func TestStorageVariablePatterns(t *testing.T) {
 
 func TestLoadDefaultVsLoadFromFile(t *testing.T) {
 	t.Run("LoadDefault then LoadFromFile", func(t *testing.T) {
-		loader := NewMetadataLoader()
+		loader := New()
 
 		// Load default first
 		err := loader.LoadDefault()
@@ -660,7 +660,7 @@ func TestLoadDefaultVsLoadFromFile(t *testing.T) {
 	})
 
 	t.Run("LoadFromFile then LoadDefault", func(t *testing.T) {
-		loader := NewMetadataLoader()
+		loader := New()
 
 		// Load from file first
 		projectRoot := "../../"
@@ -694,7 +694,7 @@ func TestLoadDefaultVsLoadFromFile(t *testing.T) {
 	})
 
 	t.Run("multiple LoadDefault calls", func(t *testing.T) {
-		loader := NewMetadataLoader()
+		loader := New()
 
 		// Multiple calls should be safe
 		for i := 0; i < 3; i++ {

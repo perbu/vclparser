@@ -8,7 +8,7 @@ import (
 )
 
 func TestMetadataTypeSystem_LoadTypes(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -40,7 +40,7 @@ func TestMetadataTypeSystem_LoadTypes(t *testing.T) {
 }
 
 func TestMetadataTypeSystem_GetType(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -75,7 +75,7 @@ func TestMetadataTypeSystem_GetType(t *testing.T) {
 }
 
 func TestMetadataTypeSystem_IsValidType(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 
@@ -106,7 +106,7 @@ func TestMetadataTypeSystem_IsValidType(t *testing.T) {
 }
 
 func TestMetadataTypeSystem_GetCType(t *testing.T) {
-	loader := metadata.NewMetadataLoader()
+	loader := metadata.New()
 	projectRoot := "../../"
 	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
 

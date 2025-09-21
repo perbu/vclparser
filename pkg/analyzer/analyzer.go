@@ -27,7 +27,7 @@ func NewAnalyzer(registry *vmod.Registry) *Analyzer {
 	vmodValidator := NewVMODValidator(registry, symbolTable)
 
 	// Load metadata for return action validation
-	metadataLoader := metadata.NewMetadataLoader()
+	metadataLoader := metadata.New()
 	if err := metadataLoader.LoadDefault(); err != nil {
 		// Log warning but continue - return validation will be disabled
 		fmt.Printf("Warning: Could not load VCL metadata: %v\n", err)
