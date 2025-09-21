@@ -7,6 +7,7 @@ A VCL (Varnish Configuration Language) parser implemented in Go that parses VCL 
 - Complete lexical analysis of VCL syntax
 - Recursive descent parser with error recovery
 - Type-safe AST representation
+- Post-parse resolution of include statements
 - Symbol table and semantic analysis
 - Visitor pattern for AST traversal
 - Support for VCL 4.0 and 4.1 syntax
@@ -76,7 +77,3 @@ This parser supports the full VCL language including:
 ```bash
 go test ./...
 ```
-
-## License
-
-This project follows the same license as Varnish Cache Plus.
