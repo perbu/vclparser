@@ -20,7 +20,6 @@ sub vcl_recv {
 }`
 
 	program, err := parser.Parse(vclCode, "test.vcl")
-
 	if err != nil {
 		if strings.Contains(err.Error(), "call") || strings.Contains(err.Error(), "unexpected token") {
 			t.Fatal("Call statement parsing not yet implemented")
