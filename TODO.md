@@ -6,55 +6,102 @@ Parses VCL files into an AST. Can be given VCC files to validate VMOD usage.
 
 ### Parser Limitations
 
-#### Return Statement Action Keywords
-- **Standard**: VCL requires parentheses around return actions
-- **Current**: `return (lookup);` works and is the correct VCL syntax
-- **Files**: Parser correctly expects parenthesized expressions for return actions
+None.
 
-#### Object Literal Parsing
-- **Issue**: Complex backend properties like inline probes are not fully supported
-- **Current**: Simple properties work, nested object literals fail
-- **Files**: Object literal parsing needs enhancement
+## Missing Parser Features for LSP Support
 
-#### Advanced Expression Parsing
-- **Issue**: Some complex expressions may not parse correctly
-- **Current**: Basic expressions work, edge cases in complex nested expressions
+### Core Parser Enhancements Needed
 
-#### Call Statement Implementation
-- **Status**: Basic call statements implemented
-- **Current**: `call subroutine_name;` works for simple subroutine calls
-- **Note**: VCL does not support parameterized subroutine calls
-- **Semantic Validation**: No validation that called subroutines exist
+#### Comment Preservation in AST
+- Issue: Comments are currently skipped during parsing (`parser.go:82-84`)
+- Need: Preserve comments in AST for documentation hover and code formatting
+- Implementation: Add comment nodes to AST, attach to relevant declarations
+- Files: `pkg/parser/parser.go`, `pkg/ast/node.go`
 
-### Known Edge Cases (VMOD Type Inference)
+#### Partial/Incremental Parsing
+- Issue: Parser requires complete, valid VCL files
+- Need: Parse incomplete/invalid code for real-time editing in IDEs
+- Implementation: Add error recovery modes, partial AST construction
+- Files: `pkg/parser/parser.go`, `pkg/parser/error.go`
 
-#### Named Argument Mapping Issue
-- **Issue**: `utils.time_format("%format", time = std.real2time(-1, now))` causes format string to be mapped to wrong parameter position
-- **Error**: "argument 2: expected BOOL, got STRING"
-- **Root Cause**: Named argument mapping logic in `buildCompleteArgumentList` needs refinement
-- **Files**: `analyzer/vmod_validator.go:228-295`
+#### Token-to-AST Node Mapping
+- Issue: No bidirectional mapping between tokens and AST nodes
+- Need: Efficient position-to-node lookup for LSP features (hover, completion)
+- Implementation: Add token ranges to all AST nodes, position index
+- Files: `pkg/ast/node.go`, `pkg/parser/parser.go`
+
+#### Documentation Comment Parsing
+- Issue: No support for documentation comments (/ */, ///)
+- Need: Parse and attach documentation to declarations for hover info
+- Implementation: Recognize doc comment patterns, associate with following declarations
+- Files: `pkg/lexer/lexer.go`, `pkg/ast/node.go`
+
+#### Semantic Token Classification
+- Issue: No token classification beyond basic lexing
+- Need: Classify tokens for semantic syntax highlighting (keywords, variables, functions)
+- Implementation: Add semantic analysis pass, token classification visitor
+- Files: New `pkg/semantics/tokens.go`
+
+#### Scope Analysis at Position
+- Issue: No way to determine scope context at arbitrary positions
+- Need: LSP completion needs to know what symbols are available at cursor
+- Implementation: Position-aware scope resolution, context detection
+- Files: `pkg/types/symbol_table.go`, new `pkg/scope/analyzer.go`
+
+#### Cross-Reference Index
+- Issue: No efficient way to find all references to a symbol
+- Need: "Find References" and "Rename" LSP features
+- Implementation: Build reference index during parsing, track symbol usage
+- Files: New `pkg/index/references.go`
+
+#### Type Inference Enhancement
+- Issue: Limited type inference for expressions
+- Need: Complete type information for hover and completion
+- Implementation: Enhance type checker, infer types for all expressions
+- Files: `pkg/types/types.go`, `pkg/analyzer/analyzer.go`
+
+#### AST Diff/Merge Support
+- Issue: No support for incremental AST updates
+- Need: Efficient updates for document changes in LSP
+- Implementation: AST node diffing, selective re-parsing
+- Files: New `pkg/ast/diff.go`
+
+#### Whitespace and Formatting Preservation
+- Issue: AST doesn't preserve formatting information
+- Need: Code formatter needs original formatting context
+- Implementation: Store whitespace info in AST, formatting-aware parser
+- Files: `pkg/ast/node.go`, new `pkg/format/preserving_parser.go`
+
+#### Call Graph Construction
+- Issue: No analysis of subroutine call relationships
+- Need: LSP code lens, call hierarchy features
+- Implementation: Build call graph during analysis, track subroutine relationships
+- Files: New `pkg/analysis/callgraph.go`
+
+#### Completion Context Detection
+- Issue: No way to determine what completions are valid at a position
+- Need: Context-aware completion (expressions vs statements vs declarations)
+- Implementation: Context analysis visitor, completion scope detection
+- Files: New `pkg/completion/context.go`
+
+#### Error Recovery Improvements
+- Issue: Parser stops on first error, doesn't recover well
+- Need: Continue parsing after errors for better IDE experience
+- Implementation: Enhanced error recovery strategies, partial AST construction
+- Files: `pkg/parser/parser.go`, `pkg/parser/error.go`
+
+#### Dependency Graph for Includes
+- Issue: No efficient tracking of include dependencies
+- Need: LSP workspace analysis, change propagation
+- Implementation: Build dependency graph, change impact analysis
+- Files: `pkg/include/dependencies.go`
 
 ## Future Enhancements
 
-### Potential Parser Improvements
-- Enhanced object literal parsing for complex backend/probe definitions
-- Enhanced error recovery and partial parsing
-
-### Developer Experience
-- Language Server Protocol (LSP) implementation
-- VCL formatter
-- IDE integration and VS Code extension
-- Testing tools (fuzzing, performance benchmarks, compliance testing)
-
-## VMOD Support
-
-- 64/64 VMODs successfully loaded from vcclib directory (100% success rate)
-- 605 functions and 37 objects available for validation
-- Type-safe argument validation and error detection
-- Support for all core VMODs: std, directors, crypto, ykey, vha, brotli, utils, etc.
-- VCC file parsing and module registry system
-- Enhanced type inference for VMOD function return types
-- Context-aware enum literal recognition
+### Potential downstream products
+- VCL compiler, naturally
+- VCL formatter with whitespace preservation
+- LSP
 
 ## Performance
 

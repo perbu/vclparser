@@ -13,6 +13,7 @@ pkg
 ├── analyzer/    # Semantic analysis
 ├── vmod/        # VMOD registry and management
 ├── vcc/         # VCC file parsing (VMOD definitions)
+├── metadata/    # VCL compiler metadata and validation
 ```
 
 ## Core Parsing Pipeline
@@ -82,13 +83,28 @@ Purpose: VCC file parsing for VMOD definitions
 
 Parses Varnish VCC (Varnish C Compiler) files that define VMOD interfaces and function signatures.
 
+### pkg/metadata/
+Purpose: VCL compiler metadata for semantic validation
+- `types.go`: Type definitions for VCL metadata structures
+- `loader.go`: Embedded metadata loading and validation APIs
+- `metadata.json`: JSON metadata exported from varnishd's generate.py
+- `README.md`: Documentation of metadata format and usage
+
+Provides embedded VCL metadata from the official Varnish compiler including:
+- VCL methods with allowed return actions
+- VCL variables with type information and access permissions
+- VCL type system definitions
+- Lexical tokens
+- Storage-engine specific variables
+
 ## Data Flow
 
 1. Tokenization: `lexer` converts VCL source to token stream
 2. Parsing: `parser` builds AST from tokens using `ast` node types
 3. Type Resolution: `types` provides type checking infrastructure
 4. VMOD Loading: `vmod` registry loads definitions via `vcc` parser
-5. Analysis: `analyzer` performs semantic validation using symbol tables and VMOD registry
+5. Metadata Loading: `metadata` provides embedded VCL compiler metadata
+6. Analysis: `analyzer` performs semantic validation using symbol tables, VMOD registry, and VCL metadata
 
 ## Integration Points
 
@@ -97,7 +113,9 @@ Parses Varnish VCC (Varnish C Compiler) files that define VMOD interfaces and fu
 - parser → vmod: Parser validates VMOD calls against registry
 - analyzer → vmod: Analyzer uses registry for semantic validation
 - analyzer → types: Analyzer uses type system for validation
+- analyzer → metadata: Analyzer uses VCL metadata for variable/method validation
 - vmod → vcc: Registry loads VMOD definitions via VCC parser
+- metadata → embedded: Metadata loads from embedded JSON data at compile time
 
 ## Extension Points
 
@@ -105,6 +123,7 @@ Parses Varnish VCC (Varnish C Compiler) files that define VMOD interfaces and fu
 - analyzer/: Add semantic checks by extending analyzer
 - types/: Extend type system for custom types
 - vmod/: Add VMOD loading from other sources beyond VCC files
+- metadata/: Update embedded metadata when varnishd definitions change
 
 ## Testing Structure
 
