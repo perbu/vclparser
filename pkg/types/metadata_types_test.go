@@ -173,7 +173,7 @@ func TestInitializeWithMetadata(t *testing.T) {
 		t.Error("Expected MetadataString to be initialized")
 	}
 
-	if MetadataString.String() != "STRING" {
+	if MetadataString != nil && MetadataString.String() != "STRING" {
 		t.Errorf("Expected MetadataString to be STRING, got %s", MetadataString.String())
 	}
 

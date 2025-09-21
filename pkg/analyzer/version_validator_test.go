@@ -151,6 +151,9 @@ func TestVersionValidatorNormalizeDynamicVariableName(t *testing.T) {
 // Helper function to create variable expressions for testing
 func createVariableExpression(varName string) ast.Expression {
 	parts := strings.Split(varName, ".")
+	if len(parts) == 0 {
+		return &ast.Identifier{Name: varName}
+	}
 	if len(parts) == 1 {
 		return &ast.Identifier{Name: parts[0]}
 	}

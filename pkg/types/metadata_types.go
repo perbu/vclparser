@@ -52,6 +52,9 @@ func (mts *MetadataTypeSystem) LoadTypes() error {
 
 // GetType returns a type by name, loading it from metadata if necessary
 func (mts *MetadataTypeSystem) GetType(name string) (Type, error) {
+	if mts == nil {
+		return nil, fmt.Errorf("MetadataTypeSystem is nil")
+	}
 	mts.mu.RLock()
 	if typ, exists := mts.typeCache[name]; exists {
 		mts.mu.RUnlock()
