@@ -1,23 +1,13 @@
 package metadata
 
 import (
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
 
-func TestMetadataLoader_LoadFromFile(t *testing.T) {
+func TestMetadataLoader_GetMetadata(t *testing.T) {
 	loader := New()
-
-	// Get the test metadata file path relative to project root
-	projectRoot := "../../" // From pkg/metadata/ to project root
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	metadata, err := loader.GetMetadata()
 	if err != nil {
@@ -48,13 +38,6 @@ func TestMetadataLoader_LoadFromFile(t *testing.T) {
 
 func TestMetadataLoader_ValidateReturnAction(t *testing.T) {
 	loader := New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	tests := []struct {
 		method   string
@@ -84,13 +67,6 @@ func TestMetadataLoader_ValidateReturnAction(t *testing.T) {
 
 func TestMetadataLoader_ValidateVariableAccess(t *testing.T) {
 	loader := New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	// Test some basic variable access patterns
 	tests := []struct {
@@ -341,13 +317,7 @@ func TestMetadataLoader_ConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Load default metadata in one goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := loader.LoadDefault(); err != nil {
-			t.Errorf("LoadDefault failed: %v", err)
-		}
-	}()
+	// No need to load metadata concurrently - it's automatically loaded
 
 	// Concurrently try to access metadata
 	for i := 0; i < numGoroutines; i++ {
@@ -360,22 +330,22 @@ func TestMetadataLoader_ConcurrentAccess(t *testing.T) {
 				switch j % 4 {
 				case 0:
 					_, err := loader.GetMetadata()
-					if err != nil && err.Error() != "metadata not loaded - call LoadFromFile or LoadDefault first" {
+					if err != nil {
 						t.Errorf("Goroutine %d: GetMetadata failed: %v", id, err)
 					}
 				case 1:
 					_, err := loader.GetMethods()
-					if err != nil && err.Error() != "metadata not loaded - call LoadFromFile or LoadDefault first" {
+					if err != nil {
 						t.Errorf("Goroutine %d: GetMethods failed: %v", id, err)
 					}
 				case 2:
 					_, err := loader.GetVariables()
-					if err != nil && err.Error() != "metadata not loaded - call LoadFromFile or LoadDefault first" {
+					if err != nil {
 						t.Errorf("Goroutine %d: GetVariables failed: %v", id, err)
 					}
 				case 3:
 					err := loader.ValidateReturnAction("recv", "hash")
-					if err != nil && err.Error() != "metadata not loaded - call LoadFromFile or LoadDefault first" {
+					if err != nil {
 						t.Errorf("Goroutine %d: ValidateReturnAction failed: %v", id, err)
 					}
 				}
@@ -400,58 +370,10 @@ func TestMetadataLoader_ConcurrentAccess(t *testing.T) {
 }
 
 func TestMetadataLoader_ErrorConditions(t *testing.T) {
-	t.Run("access before loading", func(t *testing.T) {
-		loader := New()
-
-		_, err := loader.GetMetadata()
-		if err == nil || err.Error() != "metadata not loaded - call LoadFromFile or LoadDefault first" {
-			t.Errorf("Expected specific error for unloaded metadata, got: %v", err)
-		}
-
-		_, err = loader.GetMethods()
-		if err == nil {
-			t.Error("Expected error when accessing methods before loading")
-		}
-
-		_, err = loader.GetVariables()
-		if err == nil {
-			t.Error("Expected error when accessing variables before loading")
-		}
-	})
-
-	t.Run("invalid file path", func(t *testing.T) {
-		loader := New()
-
-		err := loader.LoadFromFile("/nonexistent/path/metadata.json")
-		if err == nil {
-			t.Error("Expected error for nonexistent file")
-		}
-
-		if err != nil && !filepath.IsAbs("/nonexistent/path/metadata.json") {
-			t.Error("Error handling should work with absolute paths")
-		}
-	})
-
-	t.Run("invalid JSON content", func(t *testing.T) {
-		// This would require creating a temporary file with invalid JSON
-		// For now, we'll test that the error handling exists
-		loader := New()
-
-		// Try to load from a directory (will fail)
-		err := loader.LoadFromFile(".")
-		if err == nil {
-			t.Error("Expected error when trying to load directory as JSON")
-		}
-	})
-
 	t.Run("unknown method validation", func(t *testing.T) {
 		loader := New()
-		err := loader.LoadDefault()
-		if err != nil {
-			t.Fatalf("LoadDefault failed: %v", err)
-		}
 
-		err = loader.ValidateReturnAction("nonexistent_method", "hash")
+		err := loader.ValidateReturnAction("nonexistent_method", "hash")
 		if err == nil {
 			t.Error("Expected error for unknown method")
 		}
@@ -464,12 +386,8 @@ func TestMetadataLoader_ErrorConditions(t *testing.T) {
 
 	t.Run("invalid access type", func(t *testing.T) {
 		loader := New()
-		err := loader.LoadDefault()
-		if err != nil {
-			t.Fatalf("LoadDefault failed: %v", err)
-		}
 
-		err = loader.ValidateVariableAccess("req.url", "recv", "invalid_access")
+		err := loader.ValidateVariableAccess("req.url", "recv", "invalid_access")
 		if err == nil {
 			t.Error("Expected error for invalid access type")
 		}
@@ -548,10 +466,7 @@ func TestVCLVariable_VersionEdgeCases(t *testing.T) {
 
 func TestStorageVariablePatterns(t *testing.T) {
 	loader := New()
-	err := loader.LoadDefault()
-	if err != nil {
-		t.Fatalf("LoadDefault failed: %v", err)
-	}
+	// No need to load metadata - it's automatically loaded
 
 	storageVars, err := loader.GetStorageVariables()
 	if err != nil {
@@ -624,114 +539,29 @@ func TestStorageVariablePatterns(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultVsLoadFromFile(t *testing.T) {
-	t.Run("LoadDefault then LoadFromFile", func(t *testing.T) {
-		loader := New()
+func TestMetadataLoader_EmbeddedMetadata(t *testing.T) {
+	t.Run("multiple loader instances", func(t *testing.T) {
+		// Test that multiple loader instances work independently
+		loader1 := New()
+		loader2 := New()
 
-		// Load default first
-		err := loader.LoadDefault()
+		metadata1, err := loader1.GetMetadata()
 		if err != nil {
-			t.Fatalf("LoadDefault failed: %v", err)
+			t.Fatalf("GetMetadata failed for loader1: %v", err)
 		}
 
-		defaultMetadata, err := loader.GetMetadata()
+		metadata2, err := loader2.GetMetadata()
 		if err != nil {
-			t.Fatalf("GetMetadata after LoadDefault failed: %v", err)
+			t.Fatalf("GetMetadata failed for loader2: %v", err)
 		}
 
-		// Try to load from file (should replace default)
-		projectRoot := "../../"
-		metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-		err = loader.LoadFromFile(metadataPath)
-		if err != nil {
-			t.Fatalf("LoadFromFile failed: %v", err)
+		// Both should have the same embedded data
+		if len(metadata1.VCLMethods) != len(metadata2.VCLMethods) {
+			t.Error("Expected both loaders to have same number of VCL methods")
 		}
 
-		fileMetadata, err := loader.GetMetadata()
-		if err != nil {
-			t.Fatalf("GetMetadata after LoadFromFile failed: %v", err)
-		}
-
-		// Both should have similar structure (assuming metadata.json matches embedded)
-		if len(defaultMetadata.VCLMethods) == 0 || len(fileMetadata.VCLMethods) == 0 {
-			t.Error("Both metadata sources should have VCL methods")
-		}
-	})
-
-	t.Run("LoadFromFile then LoadDefault", func(t *testing.T) {
-		loader := New()
-
-		// Load from file first
-		projectRoot := "../../"
-		metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-		err := loader.LoadFromFile(metadataPath)
-		if err != nil {
-			t.Fatalf("LoadFromFile failed: %v", err)
-		}
-
-		fileMetadata, err := loader.GetMetadata()
-		if err != nil {
-			t.Fatalf("GetMetadata after LoadFromFile failed: %v", err)
-		}
-
-		// Load default (should replace file metadata)
-		err = loader.LoadDefault()
-		if err != nil {
-			t.Fatalf("LoadDefault failed: %v", err)
-		}
-
-		defaultMetadata, err := loader.GetMetadata()
-		if err != nil {
-			t.Fatalf("GetMetadata after LoadDefault failed: %v", err)
-		}
-
-		// Verify metadata was replaced
-		if len(fileMetadata.VCLMethods) == 0 || len(defaultMetadata.VCLMethods) == 0 {
-			t.Error("Both metadata sources should have VCL methods")
-		}
-	})
-
-	t.Run("multiple LoadDefault calls", func(t *testing.T) {
-		loader := New()
-
-		// Multiple calls should be safe
-		for i := 0; i < 3; i++ {
-			err := loader.LoadDefault()
-			if err != nil {
-				t.Fatalf("LoadDefault call %d failed: %v", i+1, err)
-			}
-
-			metadata, err := loader.GetMetadata()
-			if err != nil {
-				t.Fatalf("GetMetadata after LoadDefault call %d failed: %v", i+1, err)
-			}
-
-			if metadata == nil {
-				t.Fatalf("Expected metadata to be non-nil after LoadDefault call %d", i+1)
-			}
-		}
-	})
-
-	t.Run("global convenience functions", func(t *testing.T) {
-		// Test the global DefaultLoader convenience functions
-		err := LoadDefault()
-		if err != nil {
-			t.Fatalf("Global LoadDefault failed: %v", err)
-		}
-
-		metadata, err := GetMetadata()
-		if err != nil {
-			t.Fatalf("Global GetMetadata failed: %v", err)
-		}
-
-		if metadata == nil {
-			t.Error("Expected global metadata to be non-nil")
-		}
-
-		if len(metadata.VCLMethods) == 0 {
-			t.Error("Expected global metadata to have VCL methods")
+		if len(metadata1.VCLVariables) != len(metadata2.VCLVariables) {
+			t.Error("Expected both loaders to have same number of VCL variables")
 		}
 	})
 }

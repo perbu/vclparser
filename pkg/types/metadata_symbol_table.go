@@ -260,15 +260,13 @@ func (mst *MetadataSymbolTable) GetMethodContext(method string) (metadata.Contex
 
 // CreateDefault creates a default metadata symbol table with loaded symbols
 func CreateDefault() (*MetadataSymbolTable, error) {
-	if err := metadata.LoadDefault(); err != nil {
-		return nil, fmt.Errorf("failed to load metadata: %w", err)
-	}
+	loader := metadata.New()
 
 	if err := InitializeMetadataTypes(); err != nil {
 		return nil, fmt.Errorf("failed to initialize types: %w", err)
 	}
 
-	mst := NewMetadataSymbolTable(metadata.DefaultLoader, DefaultMetadataTypeSystem)
+	mst := NewMetadataSymbolTable(loader, DefaultMetadataTypeSystem)
 	if err := mst.LoadBuiltinSymbols(); err != nil {
 		return nil, fmt.Errorf("failed to load builtin symbols: %w", err)
 	}

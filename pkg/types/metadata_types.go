@@ -135,11 +135,8 @@ var DefaultMetadataTypeSystem *MetadataTypeSystem
 
 // InitializeMetadataTypes initializes the global metadata type system
 func InitializeMetadataTypes() error {
-	if err := metadata.LoadDefault(); err != nil {
-		return fmt.Errorf("failed to load metadata: %w", err)
-	}
-
-	DefaultMetadataTypeSystem = NewMetadataTypeSystem(metadata.DefaultLoader)
+	loader := metadata.New()
+	DefaultMetadataTypeSystem = NewMetadataTypeSystem(loader)
 	return DefaultMetadataTypeSystem.LoadTypes()
 }
 

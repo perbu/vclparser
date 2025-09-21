@@ -1,7 +1,6 @@
 package analyzer
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/perbu/vclparser/pkg/ast"
@@ -12,13 +11,6 @@ import (
 
 func TestReturnActionValidator_ValidateReturnActions(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	tests := []struct {
 		name        string

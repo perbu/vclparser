@@ -34,7 +34,7 @@ func (ml *MetadataLoader) GetMetadata() (*VCLMetadata, error) {
 	defer ml.mu.RUnlock()
 
 	if ml.metadata == nil {
-		return nil, fmt.Errorf("metadata not loaded - call LoadFromFile or LoadDefault first")
+		return nil, fmt.Errorf("metadata not available - failed to initialize embedded metadata")
 	}
 
 	return ml.metadata, nil

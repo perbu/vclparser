@@ -43,10 +43,6 @@ func TestVersionValidatorExtractVCLVersion(t *testing.T) {
 
 func TestVersionValidatorValidateVariableVersions(t *testing.T) {
 	loader := metadata.New()
-	err := loader.LoadDefault()
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	tests := []struct {
 		name          string

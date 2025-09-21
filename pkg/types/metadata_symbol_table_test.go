@@ -1,7 +1,6 @@
 package types
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/perbu/vclparser/pkg/metadata"
@@ -9,16 +8,9 @@ import (
 
 func TestMetadataSymbolTable_LoadBuiltinSymbols(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	typeSystem := NewMetadataTypeSystem(loader)
-	err = typeSystem.LoadTypes()
+	err := typeSystem.LoadTypes()
 	if err != nil {
 		t.Fatalf("Failed to load types: %v", err)
 	}
@@ -44,16 +36,9 @@ func TestMetadataSymbolTable_LoadBuiltinSymbols(t *testing.T) {
 
 func TestMetadataSymbolTable_ValidateVariableAccess(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	typeSystem := NewMetadataTypeSystem(loader)
-	err = typeSystem.LoadTypes()
+	err := typeSystem.LoadTypes()
 	if err != nil {
 		t.Fatalf("Failed to load types: %v", err)
 	}
@@ -90,16 +75,9 @@ func TestMetadataSymbolTable_ValidateVariableAccess(t *testing.T) {
 
 func TestMetadataSymbolTable_ValidateReturnAction(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	typeSystem := NewMetadataTypeSystem(loader)
-	err = typeSystem.LoadTypes()
+	err := typeSystem.LoadTypes()
 	if err != nil {
 		t.Fatalf("Failed to load types: %v", err)
 	}
@@ -134,16 +112,9 @@ func TestMetadataSymbolTable_ValidateReturnAction(t *testing.T) {
 
 func TestMetadataSymbolTable_LookupWithAccess(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	typeSystem := NewMetadataTypeSystem(loader)
-	err = typeSystem.LoadTypes()
+	err := typeSystem.LoadTypes()
 	if err != nil {
 		t.Fatalf("Failed to load types: %v", err)
 	}
@@ -181,16 +152,9 @@ func TestMetadataSymbolTable_LookupWithAccess(t *testing.T) {
 
 func TestMetadataSymbolTable_HandleDynamicVariable(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	typeSystem := NewMetadataTypeSystem(loader)
-	err = typeSystem.LoadTypes()
+	err := typeSystem.LoadTypes()
 	if err != nil {
 		t.Fatalf("Failed to load types: %v", err)
 	}
@@ -228,13 +192,6 @@ func TestMetadataSymbolTable_HandleDynamicVariable(t *testing.T) {
 
 func TestMetadataSymbolTable_GetMethodContext(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	typeSystem := NewMetadataTypeSystem(loader)
 	mst := NewMetadataSymbolTable(loader, typeSystem)

@@ -1,7 +1,6 @@
 package types
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/perbu/vclparser/pkg/metadata"
@@ -9,16 +8,9 @@ import (
 
 func TestMetadataTypeSystem_LoadTypes(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	mts := NewMetadataTypeSystem(loader)
-	err = mts.LoadTypes()
+	err := mts.LoadTypes()
 	if err != nil {
 		t.Fatalf("Failed to load types: %v", err)
 	}
@@ -41,13 +33,6 @@ func TestMetadataTypeSystem_LoadTypes(t *testing.T) {
 
 func TestMetadataTypeSystem_GetType(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	mts := NewMetadataTypeSystem(loader)
 
@@ -76,13 +61,6 @@ func TestMetadataTypeSystem_GetType(t *testing.T) {
 
 func TestMetadataTypeSystem_IsValidType(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	mts := NewMetadataTypeSystem(loader)
 
@@ -107,13 +85,6 @@ func TestMetadataTypeSystem_IsValidType(t *testing.T) {
 
 func TestMetadataTypeSystem_GetCType(t *testing.T) {
 	loader := metadata.New()
-	projectRoot := "../../"
-	metadataPath := filepath.Join(projectRoot, "metadata", "metadata.json")
-
-	err := loader.LoadFromFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to load metadata: %v", err)
-	}
 
 	mts := NewMetadataTypeSystem(loader)
 

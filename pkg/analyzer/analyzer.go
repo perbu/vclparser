@@ -28,10 +28,6 @@ func NewAnalyzer(registry *vmod.Registry) *Analyzer {
 
 	// Load metadata for return action validation
 	metadataLoader := metadata.New()
-	if err := metadataLoader.LoadDefault(); err != nil {
-		// Log warning but continue - return validation will be disabled
-		fmt.Printf("Warning: Could not load VCL metadata: %v\n", err)
-	}
 
 	returnValidator := NewReturnActionValidator(metadataLoader)
 	variableValidator := NewVariableAccessValidator(metadataLoader, symbolTable)
