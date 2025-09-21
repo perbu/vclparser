@@ -61,7 +61,6 @@ func TestTestdataVCLFilesSummary(t *testing.T) {
 		t.Fatalf("Failed to find VCL files: %v", err)
 	}
 
-	t.Logf("Found %d VCL test files:", len(vclFiles))
 	for _, filePath := range vclFiles {
 		content, err := os.ReadFile(filePath)
 		if err != nil {

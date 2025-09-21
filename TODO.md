@@ -4,6 +4,28 @@ Parses VCL files into an AST. Can be given VCC files to validate VMOD usage.
 
 ## Missing Features
 
+### Parser Limitations
+
+#### Return Statement Action Keywords
+- **Standard**: VCL requires parentheses around return actions
+- **Current**: `return (lookup);` works and is the correct VCL syntax
+- **Files**: Parser correctly expects parenthesized expressions for return actions
+
+#### Object Literal Parsing
+- **Issue**: Complex backend properties like inline probes are not fully supported
+- **Current**: Simple properties work, nested object literals fail
+- **Files**: Object literal parsing needs enhancement
+
+#### Advanced Expression Parsing
+- **Issue**: Some complex expressions may not parse correctly
+- **Current**: Basic expressions work, edge cases in complex nested expressions
+
+#### Call Statement Implementation
+- **Status**: Basic call statements implemented
+- **Current**: `call subroutine_name;` works for simple subroutine calls
+- **Note**: VCL does not support parameterized subroutine calls
+- **Semantic Validation**: No validation that called subroutines exist
+
 ### Known Edge Cases (VMOD Type Inference)
 
 #### Named Argument Mapping Issue

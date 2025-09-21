@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"fmt"
+
 	ast2 "github.com/perbu/vclparser/pkg/ast"
 	"github.com/perbu/vclparser/pkg/lexer"
 )
@@ -198,9 +200,26 @@ func (p *Parser) parseCallStatement() *ast2.CallStatement {
 	}
 
 	p.nextToken() // move past 'call'
-	stmt.Function = p.parseExpression()
+
+	// Expect an identifier (subroutine name)
+	if !p.currentTokenIs(lexer.ID) {
+		p.addError(fmt.Sprintf("expected identifier after 'call', got %s", p.currentToken.Type))
+		return nil
+	}
+
+	// Create identifier for the subroutine name
+	stmt.Function = &ast2.Identifier{
+		BaseNode: ast2.BaseNode{
+			StartPos: p.currentToken.Start,
+			EndPos:   p.currentToken.End,
+		},
+		Name: p.currentToken.Value,
+	}
+
 	stmt.EndPos = p.currentToken.End
 
+	// Advance past the identifier before checking for semicolon
+	p.nextToken()
 	p.skipSemicolon()
 	return stmt
 }
@@ -221,10 +240,6 @@ func (p *Parser) parseReturnStatement() *ast2.ReturnStatement {
 		if !p.expectPeek(lexer.RPAREN) {
 			return nil
 		}
-	} else if !p.peekTokenIs(lexer.SEMICOLON) {
-		// return with action but no parentheses
-		p.nextToken() // move past 'return'
-		stmt.Action = p.parseExpression()
 	}
 
 	stmt.EndPos = p.currentToken.End

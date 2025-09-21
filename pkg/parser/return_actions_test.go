@@ -13,30 +13,24 @@ func TestReturnActions(t *testing.T) {
 		input  string
 		action string
 	}{
-		// Basic return actions without parentheses
-		{"naked lookup", `vcl 4.1; sub test { return lookup; }`, "lookup"},
-		{"naked hash", `vcl 4.1; sub test { return hash; }`, "hash"},
-		{"naked pass", `vcl 4.1; sub test { return pass; }`, "pass"},
-		{"naked pipe", `vcl 4.1; sub test { return pipe; }`, "pipe"},
-		{"naked purge", `vcl 4.1; sub test { return purge; }`, "purge"},
-		{"naked deliver", `vcl 4.1; sub test { return deliver; }`, "deliver"},
-		{"naked restart", `vcl 4.1; sub test { return restart; }`, "restart"},
-		{"naked fetch", `vcl 4.1; sub test { return fetch; }`, "fetch"},
-		{"naked miss", `vcl 4.1; sub test { return miss; }`, "miss"},
-		{"naked hit", `vcl 4.1; sub test { return hit; }`, "hit"},
-		{"naked synth", `vcl 4.1; sub test { return synth; }`, "synth"},
-		{"naked abandon", `vcl 4.1; sub test { return abandon; }`, "abandon"},
-		{"naked retry", `vcl 4.1; sub test { return retry; }`, "retry"},
-		{"naked error", `vcl 4.1; sub test { return error; }`, "error"},
-		{"naked ok", `vcl 4.1; sub test { return ok; }`, "ok"},
-		{"naked fail", `vcl 4.1; sub test { return fail; }`, "fail"},
-		{"naked vcl", `vcl 4.1; sub test { return vcl; }`, "vcl"},
-
-		// Return actions with parentheses (backward compatibility)
+		// Return actions with parentheses (required syntax)
 		{"parenthesized lookup", `vcl 4.1; sub test { return (lookup); }`, "lookup"},
 		{"parenthesized hash", `vcl 4.1; sub test { return (hash); }`, "hash"},
 		{"parenthesized pass", `vcl 4.1; sub test { return (pass); }`, "pass"},
+		{"parenthesized pipe", `vcl 4.1; sub test { return (pipe); }`, "pipe"},
+		{"parenthesized purge", `vcl 4.1; sub test { return (purge); }`, "purge"},
 		{"parenthesized deliver", `vcl 4.1; sub test { return (deliver); }`, "deliver"},
+		{"parenthesized restart", `vcl 4.1; sub test { return (restart); }`, "restart"},
+		{"parenthesized fetch", `vcl 4.1; sub test { return (fetch); }`, "fetch"},
+		{"parenthesized miss", `vcl 4.1; sub test { return (miss); }`, "miss"},
+		{"parenthesized hit", `vcl 4.1; sub test { return (hit); }`, "hit"},
+		{"parenthesized synth", `vcl 4.1; sub test { return (synth); }`, "synth"},
+		{"parenthesized abandon", `vcl 4.1; sub test { return (abandon); }`, "abandon"},
+		{"parenthesized retry", `vcl 4.1; sub test { return (retry); }`, "retry"},
+		{"parenthesized error", `vcl 4.1; sub test { return (error); }`, "error"},
+		{"parenthesized ok", `vcl 4.1; sub test { return (ok); }`, "ok"},
+		{"parenthesized fail", `vcl 4.1; sub test { return (fail); }`, "fail"},
+		{"parenthesized vcl", `vcl 4.1; sub test { return (vcl); }`, "vcl"},
 	}
 
 	for _, tt := range tests {
@@ -97,8 +91,8 @@ func TestReturnActionsWithArguments(t *testing.T) {
 		input string
 	}{
 		// Return actions with function call syntax
-		{"synth with args", `vcl 4.1; sub test { return synth(404, "Not Found"); }`},
-		{"error with args", `vcl 4.1; sub test { return error(500); }`},
+		{"synth with args", `vcl 4.1; sub test { return (synth(404, "Not Found")); }`},
+		{"error with args", `vcl 4.1; sub test { return (error(500)); }`},
 		{"parenthesized synth with args", `vcl 4.1; sub test { return (synth(404, "Not Found")); }`},
 	}
 
@@ -157,18 +151,51 @@ func TestReturnActionsWithArguments(t *testing.T) {
 }
 
 func TestReturnActionsSyntaxError(t *testing.T) {
-	// Test that invalid return statements still fail appropriately
-	input := `vcl 4.1; sub test { return unknown_action; }`
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"naked return rejected", `vcl 4.1; sub test { return lookup; }`},
+		{"naked return with semicolon rejected", `vcl 4.1; sub test { return hash; }`},
+	}
 
-	l := lexer.New(input, "test.vcl")
-	p := New(l, input, "test.vcl")
-	program := p.ParseProgram()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input, "test.vcl")
+			p := New(l, tt.input, "test.vcl")
+			program := p.ParseProgram()
 
-	// This should parse successfully because "unknown_action" is just an identifier
-	// The semantic analysis should catch invalid return actions, not the parser
-	checkParserErrors(t, p)
+			if program == nil {
+				t.Fatalf("program is nil")
+			}
 
-	if program == nil {
-		t.Fatalf("program is nil")
+			// Find the subroutine
+			var sub *ast2.SubDecl
+			for _, decl := range program.Declarations {
+				if s, ok := decl.(*ast2.SubDecl); ok && s.Name == "test" {
+					sub = s
+					break
+				}
+			}
+
+			if sub == nil {
+				t.Fatalf("subroutine 'test' not found")
+			}
+
+			// Find the return statement
+			if len(sub.Body.Statements) == 0 {
+				t.Fatalf("no statements in subroutine body")
+			}
+
+			retStmt, ok := sub.Body.Statements[0].(*ast2.ReturnStatement)
+			if !ok {
+				t.Fatalf("first statement is not a return statement, got %T", sub.Body.Statements[0])
+			}
+
+			// With naked returns removed, the action should be nil
+			if retStmt.Action != nil {
+				t.Errorf("expected return statement to have no action, but got %T", retStmt.Action)
+			}
+		})
 	}
 }
