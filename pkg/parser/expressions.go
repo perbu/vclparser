@@ -93,6 +93,31 @@ func (p *Parser) parseExpression() ast2.Expression {
 // Termination conditions check for syntactic boundaries where expressions end:
 // semicolons (statement end), parentheses/braces (grouping end), commas (argument separator).
 func (p *Parser) parseExpressionWithPrecedence(precedence int) ast2.Expression {
+	if p.maxErrorsReached {
+		return &ast2.ErrorExpression{
+			BaseNode: ast2.BaseNode{
+				StartPos: p.currentToken.Start,
+				EndPos:   p.currentToken.End,
+			},
+			Message: "max errors reached",
+		}
+	}
+
+	if p.panicMode {
+		p.skipToSynchronizationPoint(
+			lexer.SEMICOLON, lexer.COMMA, lexer.RPAREN,
+			lexer.RBRACE, lexer.CAND, lexer.COR,
+		)
+		p.synchronize()
+		return &ast2.ErrorExpression{
+			BaseNode: ast2.BaseNode{
+				StartPos: p.currentToken.Start,
+				EndPos:   p.currentToken.End,
+			},
+			Message: "expression recovery",
+		}
+	}
+
 	left := p.parsePrefixExpression()
 	if left == nil {
 		return nil

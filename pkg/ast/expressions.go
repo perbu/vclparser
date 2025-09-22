@@ -153,3 +153,12 @@ type IPExpression struct {
 
 func (ie *IPExpression) String() string  { return "IPExpression(" + ie.Value + ")" }
 func (ie *IPExpression) expressionNode() {}
+
+// ErrorExpression represents a placeholder expression used during error recovery
+type ErrorExpression struct {
+	BaseNode
+	Message string
+}
+
+func (ee *ErrorExpression) String() string  { return "ErrorExpression(" + ee.Message + ")" }
+func (ee *ErrorExpression) expressionNode() {}

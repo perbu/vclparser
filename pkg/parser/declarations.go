@@ -40,8 +40,11 @@ func (p *Parser) parseBackendDecl() *ast.BackendDecl {
 			decl.Properties = append(decl.Properties, prop)
 			// parseBackendProperty already advances past the semicolon
 		} else {
-			// Skip to next token if parsing failed
-			p.nextToken()
+			// Error recovery: skip to next property or closing brace
+			p.skipToSynchronizationPoint(lexer.DOT, lexer.RBRACE, lexer.SEMICOLON)
+			if p.currentTokenIs(lexer.SEMICOLON) {
+				p.nextToken() // consume semicolon and continue
+			}
 		}
 	}
 
@@ -56,7 +59,7 @@ func (p *Parser) parseBackendDecl() *ast.BackendDecl {
 // parseBackendProperty parses a backend property
 func (p *Parser) parseBackendProperty() *ast.BackendProperty {
 	if !p.currentTokenIs(lexer.DOT) {
-		p.addError("backend property must start with '.'")
+		p.reportError("backend property must start with '.'")
 		return nil
 	}
 
@@ -72,7 +75,7 @@ func (p *Parser) parseBackendProperty() *ast.BackendProperty {
 	if p.currentTokenIs(lexer.ID) || p.currentTokenIs(lexer.PROBE_KW) {
 		prop.Name = p.currentToken.Value
 	} else {
-		p.addError("expected property name after '.'")
+		p.reportError("expected property name after '.'")
 		return nil
 	}
 

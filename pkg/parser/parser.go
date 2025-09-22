@@ -21,7 +21,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		DisableInlineC: false,
-		MaxErrors:      0, // No limit by default
+		MaxErrors:      8, // Stop after 8 errors by default
 	}
 }
 
@@ -36,6 +36,11 @@ type Parser struct {
 
 	currentToken lexer.Token
 	peekToken    lexer.Token
+
+	// Recovery state
+	panicMode        bool // Are we currently in error recovery?
+	synchronizing    bool // Are we synchronizing to a recovery point?
+	maxErrorsReached bool // Have we reached the maximum error limit?
 }
 
 // New creates a new parser with default configuration
@@ -125,6 +130,9 @@ func (p *Parser) addError(message string) {
 		Filename: p.filename,
 		Source:   p.input,
 	})
+	if p.hasReachedMaxErrors() {
+		p.maxErrorsReached = true
+	}
 }
 
 // addPeekError adds a parsing error using the peek token's position
@@ -136,6 +144,31 @@ func (p *Parser) addPeekError(message string) {
 		Filename: p.filename,
 		Source:   p.input,
 	})
+	if p.hasReachedMaxErrors() {
+		p.maxErrorsReached = true
+	}
+}
+
+// reportError adds error and enters panic mode if not already synchronizing
+func (p *Parser) reportError(message string) {
+	p.addError(message)
+	if !p.synchronizing {
+		p.panicMode = true
+	}
+}
+
+// synchronize exits panic mode when reaching a recovery point
+func (p *Parser) synchronize() {
+	p.panicMode = false
+	p.synchronizing = false
+}
+
+// hasReachedMaxErrors checks if the parser has reached the maximum error limit
+func (p *Parser) hasReachedMaxErrors() bool {
+	if p.config.MaxErrors == 0 {
+		return false // 0 means unlimited
+	}
+	return len(p.errors) >= p.config.MaxErrors
 }
 
 // expectToken checks if current token matches expected type
@@ -174,6 +207,18 @@ func (p *Parser) skipSemicolon() {
 	}
 }
 
+// skipToSynchronizationPoint advances tokens until finding a recovery point
+func (p *Parser) skipToSynchronizationPoint(syncTokens ...lexer.TokenType) {
+	for !p.currentTokenIs(lexer.EOF) {
+		for _, token := range syncTokens {
+			if p.currentTokenIs(token) {
+				return
+			}
+		}
+		p.nextToken()
+	}
+}
+
 // ParseProgram parses the entire VCL program
 func (p *Parser) ParseProgram() *ast.Program {
 	program := &ast.Program{
@@ -201,7 +246,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 	}
 
 	// Parse declarations
-	for !p.currentTokenIs(lexer.EOF) {
+	for !p.currentTokenIs(lexer.EOF) && !p.maxErrorsReached {
 		if p.currentTokenIs(lexer.COMMENT) {
 			p.nextToken()
 			continue
@@ -224,6 +269,22 @@ func (p *Parser) ParseProgram() *ast.Program {
 
 // parseDeclaration parses a top-level declaration
 func (p *Parser) parseDeclaration() ast.Declaration {
+	if p.maxErrorsReached {
+		return nil
+	}
+
+	if p.panicMode {
+		p.skipToSynchronizationPoint(
+			lexer.BACKEND_KW, lexer.SUB_KW, lexer.ACL_KW,
+			lexer.PROBE_KW, lexer.IMPORT_KW, lexer.INCLUDE_KW,
+			lexer.RBRACE, lexer.EOF,
+		)
+		p.synchronize()
+		if p.currentTokenIs(lexer.EOF) || p.currentTokenIs(lexer.RBRACE) {
+			return nil
+		}
+	}
+
 	switch p.currentToken.Type {
 	case lexer.IMPORT_KW:
 		return p.parseImportDecl()
@@ -238,7 +299,7 @@ func (p *Parser) parseDeclaration() ast.Declaration {
 	case lexer.SUB_KW:
 		return p.parseSubDecl()
 	default:
-		p.addError(fmt.Sprintf("unexpected token %s", p.currentToken.Type))
+		p.reportError(fmt.Sprintf("unexpected token %s", p.currentToken.Type))
 		return nil
 	}
 }

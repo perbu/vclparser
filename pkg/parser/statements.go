@@ -10,6 +10,25 @@ import (
 
 // parseStatement parses a statement
 func (p *Parser) parseStatement() ast2.Statement {
+	if p.maxErrorsReached {
+		return nil
+	}
+
+	if p.panicMode {
+		p.skipToSynchronizationPoint(
+			lexer.SEMICOLON, lexer.RBRACE,
+			lexer.IF_KW, lexer.SET_KW, lexer.UNSET_KW, lexer.RETURN_KW,
+			lexer.CALL_KW, lexer.SYNTHETIC_KW, lexer.ERROR_KW, lexer.RESTART_KW, lexer.NEW_KW,
+		)
+		p.synchronize()
+		if p.currentTokenIs(lexer.SEMICOLON) {
+			p.nextToken() // consume semicolon
+		}
+		if p.currentTokenIs(lexer.RBRACE) || p.currentTokenIs(lexer.EOF) {
+			return nil
+		}
+	}
+
 	switch p.currentToken.Type {
 	case lexer.IF_KW:
 		return p.parseIfStatement()
@@ -33,7 +52,7 @@ func (p *Parser) parseStatement() ast2.Statement {
 		return p.parseBlockStatement()
 	case lexer.CSRC:
 		if p.config.DisableInlineC {
-			p.addError("inline C code blocks are disabled")
+			p.reportError("inline C code blocks are disabled")
 			return nil
 		}
 		return p.parseCSourceStatement()
@@ -57,16 +76,26 @@ func (p *Parser) parseBlockStatement() *ast2.BlockStatement {
 
 	p.nextToken() // move past '{'
 
-	for !p.currentTokenIs(lexer.RBRACE) && !p.currentTokenIs(lexer.EOF) {
+	for !p.currentTokenIs(lexer.RBRACE) && !p.currentTokenIs(lexer.EOF) && !p.maxErrorsReached {
 		if p.currentTokenIs(lexer.COMMENT) {
 			p.nextToken()
 			continue
 		}
 
 		statement := p.parseStatement()
-		stmt.Statements = append(stmt.Statements, statement)
-
-		p.nextToken()
+		if statement != nil {
+			stmt.Statements = append(stmt.Statements, statement)
+			p.nextToken()
+		} else {
+			// Error recovery: skip to next statement or closing brace
+			p.skipToSynchronizationPoint(
+				lexer.SEMICOLON, lexer.RBRACE,
+				lexer.IF_KW, lexer.SET_KW, lexer.UNSET_KW, lexer.RETURN_KW,
+			)
+			if p.currentTokenIs(lexer.SEMICOLON) {
+				p.nextToken() // consume semicolon and continue
+			}
+		}
 	}
 
 	if !p.expectToken(lexer.RBRACE) {
