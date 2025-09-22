@@ -9,6 +9,22 @@ import (
 	"github.com/perbu/vclparser/pkg/types"
 )
 
+// Config contains parser configuration options
+type Config struct {
+	// DisableInlineC disables parsing of C code blocks (C{ }C)
+	DisableInlineC bool
+	// MaxErrors limits the number of errors before stopping parsing (0 = no limit)
+	MaxErrors int
+}
+
+// DefaultConfig returns the default parser configuration
+func DefaultConfig() *Config {
+	return &Config{
+		DisableInlineC: false,
+		MaxErrors:      0, // No limit by default
+	}
+}
+
 // Parser implements a recursive descent parser for VCL
 type Parser struct {
 	lexer       *lexer.Lexer
@@ -16,19 +32,30 @@ type Parser struct {
 	input       string // Store original VCL source for error context
 	filename    string // Store filename for error reporting
 	symbolTable *types.SymbolTable
+	config      *Config // Parser configuration
 
 	currentToken lexer.Token
 	peekToken    lexer.Token
 }
 
-// New creates a new parser
+// New creates a new parser with default configuration
 func New(l *lexer.Lexer, input, filename string) *Parser {
+	return NewWithConfig(l, input, filename, DefaultConfig())
+}
+
+// NewWithConfig creates a new parser with the specified configuration
+func NewWithConfig(l *lexer.Lexer, input, filename string, config *Config) *Parser {
+	if config == nil {
+		config = DefaultConfig()
+	}
+
 	p := &Parser{
 		lexer:       l,
 		errors:      []DetailedError{},
 		input:       input,
 		filename:    filename,
 		symbolTable: types.NewSymbolTable(),
+		config:      config,
 	}
 
 	// Read two tokens, so currentToken and peekToken are both set
@@ -38,10 +65,15 @@ func New(l *lexer.Lexer, input, filename string) *Parser {
 	return p
 }
 
-// Parse parses the input and returns the AST
+// Parse parses the input and returns the AST using default configuration
 func Parse(input, filename string) (*ast.Program, error) {
+	return ParseWithConfig(input, filename, DefaultConfig())
+}
+
+// ParseWithConfig parses the input and returns the AST using the specified configuration
+func ParseWithConfig(input, filename string, config *Config) (*ast.Program, error) {
 	l := lexer.New(input, filename)
-	p := New(l, input, filename)
+	p := NewWithConfig(l, input, filename, config)
 	program := p.ParseProgram()
 
 	if len(p.errors) > 0 {

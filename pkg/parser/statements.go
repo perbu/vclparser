@@ -32,6 +32,10 @@ func (p *Parser) parseStatement() ast2.Statement {
 	case lexer.LBRACE:
 		return p.parseBlockStatement()
 	case lexer.CSRC:
+		if p.config.DisableInlineC {
+			p.addError("inline C code blocks are disabled")
+			return nil
+		}
 		return p.parseCSourceStatement()
 	default:
 		// Try to parse as expression statement
