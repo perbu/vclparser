@@ -34,20 +34,12 @@ func TestAllTestdataVCLFiles(t *testing.T) {
 			// Parse the VCL content
 			program, err := parser.Parse(string(content), filePath)
 			if err != nil {
-				// Log parse error but don't fail the test - some files may contain
-				// intentionally problematic VCL for testing error handling
-				t.Logf("Parse error in %s: %v", filepath.Base(filePath), err)
-				return
+				t.Fatalf("Parse error in %s: %v", filepath.Base(filePath), err)
 			}
-
 			// Basic validation that we got a program
 			if program == nil {
-				t.Errorf("Parser returned nil program for %s", filePath)
-				return
+				t.Fatalf("Parser returned nil program for %s", filePath)
 			}
-
-			// Log successful parsing for visibility
-			t.Logf("Successfully parsed %s", filepath.Base(filePath))
 		})
 	}
 }

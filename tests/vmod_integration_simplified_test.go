@@ -442,7 +442,6 @@ func TestVMODWithEmbeddedVCCLib(t *testing.T) {
 	for _, moduleName := range commonModules {
 		if vmod.DefaultRegistry.ModuleExists(moduleName) {
 			loadedCount++
-			t.Logf("Successfully loaded embedded module: %s", moduleName)
 		}
 	}
 
@@ -452,7 +451,6 @@ func TestVMODWithEmbeddedVCCLib(t *testing.T) {
 
 	// Test that we can get stats
 	stats := vmod.DefaultRegistry.GetModuleStats()
-	t.Logf("Loaded %d modules from embedded VCC files", len(stats))
 
 	// Verify we have a reasonable number of modules
 	if len(stats) < 5 {
@@ -460,8 +458,7 @@ func TestVMODWithEmbeddedVCCLib(t *testing.T) {
 	}
 
 	// Print some module info for debugging
-	for name, stat := range stats {
-		t.Logf("Module %s: %d functions, %d objects", name, stat.FunctionCount, stat.ObjectCount)
+	for name := range stats {
 		if name == "std" || name == "directors" {
 			// Test validation with a real module
 			err := vmod.DefaultRegistry.ValidateImport(name)

@@ -156,7 +156,6 @@ sub vcl_recv {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Logf("Testing: %s", tt.description)
 
 			l := lexer.New(tt.vcl, "test.vcl")
 			p := parser.New(l, tt.vcl, "test.vcl")
@@ -164,10 +163,7 @@ sub vcl_recv {
 
 			// Check for parse errors first
 			if len(p.Errors()) > 0 {
-				if tt.expectErrors {
-					t.Logf("Parse failed as expected: %v", p.Errors()[0])
-					return
-				} else {
+				if !tt.expectErrors {
 					t.Fatalf("Unexpected parse error: %v", p.Errors()[0])
 				}
 			}
@@ -200,72 +196,9 @@ sub vcl_recv {
 	}
 }
 
-// Test that demonstrates the differences between vmod-vcl.md examples and what actually works
-func TestVMODExampleLimitations(t *testing.T) {
-	t.Log("=== Analysis of vmod-vcl.md Examples vs Parser Capabilities ===")
-
-	limitations := []struct {
-		category    string
-		description string
-		examples    []string
-	}{
-		{
-			category:    "Named Parameters (Not Supported)",
-			description: "VCL parser doesn't support named parameter syntax",
-			examples: []string{
-				"s3.verify(access_key_id = \"KEY\", secret_key = \"SECRET\")",
-				"utils.time_format(\"%Y-%m-%d\", time = now)",
-				"headerplus.as_list(NAME, \";\", name_case = LOWER)",
-			},
-		},
-		{
-			category:    "Type System Validation (Working Correctly)",
-			description: "VMOD validator correctly catches type mismatches",
-			examples: []string{
-				"crypto.hex_encode(\"string\") // Should be BLOB",
-				"crypto.hash(sha256, \"data\") // sha256 should be \"sha256\"",
-				"crypto.hmac(sha256, \"key\") // First param should be ENUM string",
-			},
-		},
-		{
-			category:    "Complex VCC Types (Partially Supported)",
-			description: "Some advanced VCC types may not be fully implemented",
-			examples: []string{
-				"BEREQ type in headerplus.init(BEREQ bereq)",
-				"Complex ENUM definitions with defaults",
-				"PRIV_TASK parameters",
-			},
-		},
-		{
-			category:    "Working Examples",
-			description: "These patterns from vmod-vcl.md DO work",
-			examples: []string{
-				"crypto.secret() // Simple functions work",
-				"ykey.add_key(\"tag\") // Basic VMOD calls work",
-				"std.log(\"message\") // Standard library works",
-				"new obj = directors.round_robin() // Object instantiation works",
-			},
-		},
-	}
-
-	for _, limitation := range limitations {
-		t.Logf("\n--- %s ---", limitation.category)
-		t.Logf("Description: %s", limitation.description)
-		for _, example := range limitation.examples {
-			t.Logf("  • %s", example)
-		}
-	}
-
-	t.Log("\n=== Conclusion ===")
-	t.Log("Most failures in vmod_real_world_test.go are due to:")
-	t.Log("1. Parser limitations (named parameters not supported)")
-	t.Log("2. Test VCL using wrong types (which VMOD validation correctly catches)")
-	t.Log("3. Some VCC syntax not yet fully supported")
-	t.Log("\nThe VMOD system is working correctly - it's catching real type errors!")
-}
-
 // Demonstrate that VMOD validation is working by showing expected vs actual behavior
 func TestVMODValidationIsWorking(t *testing.T) {
+	// TODO: Use the tempdir in t
 	registry := vmod.NewRegistry()
 
 	tmpDir, err := os.MkdirTemp("", "vmod_validation_test_*")
@@ -383,12 +316,6 @@ sub vcl_recv {
 				if !found {
 					t.Errorf("Expected error containing '%s' but not found in: %v", expectedError, errors)
 				}
-			}
-
-			if tt.shouldPass {
-				t.Logf("✅ Validation correctly passed for valid VCL")
-			} else {
-				t.Logf("✅ Validation correctly caught errors: %v", errors)
 			}
 		})
 	}

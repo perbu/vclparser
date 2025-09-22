@@ -11,18 +11,6 @@ import (
 	"github.com/perbu/vclparser/pkg/parser"
 )
 
-// IMPORTANT: This test demonstrates include statement limitations and solutions
-//
-// The core parser currently only creates IncludeDecl AST nodes but does NOT
-// resolve the included files. This test:
-//
-// 1. Shows the current limitation (CoreParserIncludeLimitation)
-// 2. Provides a working solution (IncludeResolver)
-// 3. Serves as documentation for users on how to handle includes
-//
-// When include resolution is built into the core parser, the first test
-// should be updated to reflect the new capability.
-
 // IncludeResolver handles parsing VCL files with include statements
 type IncludeResolver struct {
 	basePath      string
@@ -160,10 +148,7 @@ func findDeclarationByName(program *ast.Program, declType, name string) ast.Decl
 
 func TestIncludeIntegration(t *testing.T) {
 	testDataDir := filepath.Join("testdata", "includes")
-
 	t.Run("CoreParserIncludeLimitation", func(t *testing.T) {
-		// First, demonstrate that the core parser doesn't resolve includes
-		// It should parse the file but leave IncludeDecl nodes in the AST
 		mainVCLPath := filepath.Join(testDataDir, "main.vcl")
 		content, err := os.ReadFile(mainVCLPath)
 		if err != nil {
@@ -178,13 +163,8 @@ func TestIncludeIntegration(t *testing.T) {
 		// Count include declarations - they should still be present
 		counts := countDeclarationsByType(program)
 		if counts["include"] == 0 {
-			t.Error("UNEXPECTED: Core parser resolved includes automatically - this test needs updating!")
-			t.Error("If include resolution is now built into the core parser, this is great news!")
-		} else {
-			t.Logf("✓ As expected: Core parser left %d include declarations unresolved", counts["include"])
-			t.Log("✓ This demonstrates that include resolution needs to be handled manually")
+			t.Error("Core parser resolved includes automatically - this test needs updating!")
 		}
-
 		// Verify we only have declarations from main.vcl, not included files
 		expectedSubroutines := 2 // Only from main.vcl
 		if counts["subroutine"] != expectedSubroutines {
@@ -196,8 +176,6 @@ func TestIncludeIntegration(t *testing.T) {
 		web1Backend := findDeclarationByName(program, "backend", "web1")
 		if web1Backend != nil {
 			t.Error("UNEXPECTED: Found backend from included file - core parser may have resolved includes!")
-		} else {
-			t.Log("✓ As expected: Backends from included files not found in core parser result")
 		}
 	})
 
@@ -264,8 +242,6 @@ func TestIncludeIntegration(t *testing.T) {
 		if counts["include"] != 0 {
 			t.Errorf("Expected 0 include declarations after processing, got %d", counts["include"])
 		}
-
-		t.Logf("Successfully parsed VCL with includes. Declaration counts: %+v", counts)
 	})
 
 	t.Run("NestedIncludes", func(t *testing.T) {
@@ -294,23 +270,17 @@ func TestIncludeIntegration(t *testing.T) {
 		if level2Backend == nil {
 			t.Error("Expected to find level2_backend from deeply nested include")
 		}
-
-		t.Logf("Successfully parsed nested includes. Declaration counts: %+v", counts)
 	})
 
 	t.Run("CircularIncludeDetection", func(t *testing.T) {
 		resolver := NewIncludeResolver(testDataDir)
 		_, err := resolver.ParseWithIncludes("circular1.vcl")
-
 		if err == nil {
 			t.Fatal("Expected circular include detection to fail, but it succeeded")
 		}
-
 		if !strings.Contains(err.Error(), "circular include") {
 			t.Errorf("Expected circular include error, got: %v", err)
 		}
-
-		t.Logf("Correctly detected circular include: %v", err)
 	})
 
 	t.Run("MissingFileHandling", func(t *testing.T) {
@@ -336,49 +306,17 @@ include "nonexistent.vcl";
 			t.Errorf("Expected missing file error, got: %v", err)
 		}
 
-		t.Logf("Correctly handled missing file: %v", err)
 	})
 }
 
 // TestIncludeResolverExample demonstrates how to use the include resolver
 func TestIncludeResolverExample(t *testing.T) {
 	testDataDir := filepath.Join("testdata", "includes")
-
 	// Example: Parse VCL with includes and inspect the result
 	resolver := NewIncludeResolver(testDataDir)
-	program, err := resolver.ParseWithIncludes("main.vcl")
-
-	if err != nil {
+	if _, err := resolver.ParseWithIncludes("main.vcl"); err != nil {
 		t.Fatalf("Example failed: %v", err)
 	}
-
-	// Example: Walk through declarations and print what we found
-	t.Log("=== Example: Include Resolution Results ===")
-	t.Logf("VCL Version: %s", program.VCLVersion.Version)
-
-	counts := countDeclarationsByType(program)
-	for declType, count := range counts {
-		t.Logf("Found %d %s declarations", count, declType)
-	}
-
-	// Example: Find specific declarations
-	if backend := findDeclarationByName(program, "backend", "web1"); backend != nil {
-		t.Log("✓ Found web1 backend from included file")
-	}
-
-	if sub := findDeclarationByName(program, "subroutine", "normalize_headers"); sub != nil {
-		t.Log("✓ Found normalize_headers subroutine from included file")
-	}
-
-	// Example: Verify include statements were resolved
-	includeCount := counts["include"]
-	if includeCount == 0 {
-		t.Log("✓ All include statements were successfully resolved")
-	} else {
-		t.Logf("⚠ %d include statements remain unresolved", includeCount)
-	}
-
-	t.Log("=== Example completed successfully ===")
 }
 
 // BenchmarkIncludeResolution benchmarks the include resolution performance

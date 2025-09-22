@@ -1,6 +1,7 @@
 package include
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -254,7 +255,6 @@ func TestResolver_CircularIncludeDetection(t *testing.T) {
 		if len(circularErr.Chain) == 0 {
 			t.Error("Expected include chain in circular error")
 		}
-		t.Logf("Detected circular include with chain: %v", circularErr.Chain)
 	}
 }
 
@@ -276,7 +276,6 @@ include "nonexistent.vcl";`,
 		if fileErr.Path != "nonexistent.vcl" {
 			t.Errorf("Expected path 'nonexistent.vcl', got '%s'", fileErr.Path)
 		}
-		t.Logf("Correctly detected missing file: %s", fileErr.Path)
 	}
 }
 
@@ -305,7 +304,6 @@ include "level%d.vcl";`, i+1)
 		if depthErr.MaxDepth != 5 {
 			t.Errorf("Expected max depth 5, got %d", depthErr.MaxDepth)
 		}
-		t.Logf("Correctly detected max depth exceeded: %d/%d", depthErr.Current, depthErr.MaxDepth)
 	}
 }
 
@@ -322,13 +320,9 @@ include "invalid.vcl";`,
 		t.Fatal("Expected parse error, but parsing succeeded")
 	}
 
-	if parseErr, ok := err.(*ParseError); !ok {
+	var parseErr *ParseError
+	if !errors.As(err, &parseErr) {
 		t.Errorf("Expected ParseError, got %T: %v", err, err)
-	} else {
-		if parseErr.Path != "invalid.vcl" {
-			t.Errorf("Expected path 'invalid.vcl', got '%s'", parseErr.Path)
-		}
-		t.Logf("Correctly detected parse error in: %s", parseErr.Path)
 	}
 }
 

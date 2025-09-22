@@ -30,10 +30,6 @@ func TestMetadataLoader_GetMetadata(t *testing.T) {
 	if len(metadata.VCLTokens) == 0 {
 		t.Error("Expected VCL tokens to be loaded")
 	}
-
-	t.Logf("Loaded %d methods, %d variables, %d types, %d tokens",
-		len(metadata.VCLMethods), len(metadata.VCLVariables),
-		len(metadata.VCLTypes), len(metadata.VCLTokens))
 }
 
 func TestMetadataLoader_ValidateReturnAction(t *testing.T) {
