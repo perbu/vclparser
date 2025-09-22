@@ -5,7 +5,7 @@ A VCL (Varnish Configuration Language) parser implemented in Go that parses VCL 
 ## Features
 
 - Complete lexical analysis of VCL syntax
-- Recursive descent parser with (very limited) error recovery 
+- Recursive descent parser with error recovery 
 - Type-safe AST representation
 - Post-parse resolution of include statements
 - Symbol table and semantic analysis
