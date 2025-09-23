@@ -52,14 +52,18 @@ func (vav *VariableAccessValidator) validateSubroutineVariableAccess(sub *ast.Su
 	vav.walkStatements(sub.Body.Statements)
 }
 
-// walkStatements recursively walks statement AST nodes to find variable accesses
+// walkStatements recursively traverses a list of statement AST nodes to identify and validate
+// variable accesses. This is the main entry point for the statement-level AST traversal that
+// drives the entire variable access validation process for a subroutine.
 func (vav *VariableAccessValidator) walkStatements(statements []ast.Statement) {
 	for _, stmt := range statements {
 		vav.walkStatement(stmt)
 	}
 }
 
-// walkStatement walks a single statement to find variable accesses
+// walkStatement analyzes a single statement AST node to find variable accesses and validate
+// them against metadata permissions. Handles different statement types (set, unset, if, etc.)
+// and recursively processes nested statements and expressions for comprehensive validation.
 func (vav *VariableAccessValidator) walkStatement(stmt ast.Statement) {
 	switch s := stmt.(type) {
 	case *ast.SetStatement:
@@ -129,7 +133,9 @@ func (vav *VariableAccessValidator) walkStatement(stmt ast.Statement) {
 	}
 }
 
-// walkExpression walks expression AST nodes to find variable reads
+// walkExpression traverses expression AST nodes to identify variable read accesses, distinguishing
+// between regular VCL variables and VMOD function calls or object methods. Recursively processes
+// complex expressions while avoiding false positives for return actions and built-in functions.
 func (vav *VariableAccessValidator) walkExpression(expr ast.Expression) {
 	if expr == nil {
 		return
@@ -214,7 +220,9 @@ func (vav *VariableAccessValidator) walkExpression(expr ast.Expression) {
 	}
 }
 
-// isVMODAccess checks if an expression is a VMOD function call or object method
+// isVMODAccess determines if an expression represents a VMOD function call or object method access
+// by examining the base identifier and checking the symbol table for imported modules or VMOD objects.
+// Essential for distinguishing VMOD calls from regular variable access during validation.
 func (vav *VariableAccessValidator) isVMODAccess(expr ast.Expression) bool {
 	if expr == nil {
 		return false
@@ -251,7 +259,9 @@ func (vav *VariableAccessValidator) isBackendOrVMODObject(name string) bool {
 	return false
 }
 
-// getBaseIdentifier extracts the base identifier from a member expression chain
+// getBaseIdentifier extracts the leftmost identifier from a potentially nested member expression
+// chain by recursively traversing the object hierarchy. Used to determine the root module or
+// object name for VMOD access detection in complex expressions like 'module.object.method'.
 func (vav *VariableAccessValidator) getBaseIdentifier(expr *ast.MemberExpression) string {
 	current := expr
 	for current != nil {
@@ -278,7 +288,9 @@ func (vav *VariableAccessValidator) extractVariableName(expr ast.Expression) str
 	}
 }
 
-// extractMemberVariableName extracts full variable name from member expression
+// extractMemberVariableName constructs the complete variable path from a member expression by
+// walking the expression chain and joining identifiers with dots. Builds full variable names
+// like 'req.http.host' or 'beresp.ttl' for validation against metadata permissions.
 func (vav *VariableAccessValidator) extractMemberVariableName(expr *ast.MemberExpression) string {
 	var parts []string
 
@@ -314,7 +326,9 @@ func (vav *VariableAccessValidator) validateVariableAccess(varName, accessType s
 	return nil
 }
 
-// isReturnActionOrBuiltin checks if an identifier is a return action or built-in function
+// isReturnActionOrBuiltin determines if an identifier represents a VCL return action, built-in
+// function, or language keyword rather than a user variable. Uses predefined lists to avoid
+// false positive variable access violations for legitimate VCL language constructs.
 func (vav *VariableAccessValidator) isReturnActionOrBuiltin(name string) bool {
 	// Common return actions
 	returnActions := map[string]bool{

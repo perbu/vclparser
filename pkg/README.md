@@ -1,11 +1,19 @@
-# DEVELOPMENT.md
+# VCL Parser Package Architecture
 
-## Package Architecture
+The VCL parser implements a complete VCL (Varnish Configuration Language) parsing pipeline through a modular package architecture. The packages work together to transform VCL source code into validated abstract syntax trees through a multi-stage process:
 
-The VCL parser is organized into distinct packages with clear separation of concerns:
+1. Lexical Analysis (`lexer/`) - Converts raw VCL source into tokens - tokenization.
+2. Syntax Parsing (`parser/`) - Builds abstract syntax trees from tokens
+3. AST Representation (`ast/`) - Provides type-safe AST node definitions
+4. Type System (`types/`) - Handles VCL's type system and symbol tables
+5. VMOD Integration (`vmod/`, `vcc/`) - Loads and validates Varnish modules
+6. Metadata Integration (`metadata/`) - Provides embedded VCL compiler metadata
+7. Semantic Analysis (`analyzer/`) - Validates semantics using all components above
+
+## Package Organization
 
 ```
-pkg
+.
 ├── lexer/       # Tokenization
 ├── parser/      # Recursive descent parsing
 ├── ast/         # Abstract syntax tree definitions
@@ -13,12 +21,12 @@ pkg
 ├── analyzer/    # Semantic analysis
 ├── vmod/        # VMOD registry and management
 ├── vcc/         # VCC file parsing (VMOD definitions)
-├── metadata/    # VCL compiler metadata and validation
+└── metadata/    # VCL compiler metadata and validation
 ```
 
 ## Core Parsing Pipeline
 
-### pkg/lexer/
+### lexer/
 Purpose: Tokenizes VCL source code into lexical tokens
 - `lexer.go`: Main lexer implementation with position tracking
 - `token.go`: Token definitions and types
@@ -26,7 +34,7 @@ Purpose: Tokenizes VCL source code into lexical tokens
 
 The lexer performs character-by-character scanning with lookahead support. Tracks line/column positions for error reporting.
 
-### pkg/parser/
+### parser/
 Purpose: Recursive descent parser that converts tokens to AST
 - `parser.go`: Main parser entry point and infrastructure
 - `expressions.go`: Expression parsing with operator precedence
@@ -39,7 +47,7 @@ Purpose: Recursive descent parser that converts tokens to AST
 
 Parser follows grammar productions closely. Implements error recovery to continue parsing after syntax errors.
 
-### pkg/ast/
+### ast/
 Purpose: AST node definitions and visitor pattern implementation
 - `node.go`: Base AST node interfaces and common types
 - `expressions.go`: Expression AST nodes (binary ops, calls, literals)
@@ -48,7 +56,7 @@ Purpose: AST node definitions and visitor pattern implementation
 
 All nodes implement position tracking for source mapping. Visitor pattern enables multiple analysis passes.
 
-### pkg/types/
+### types/
 Purpose: Type system and symbol table management
 - `types.go`: VCL type definitions (STRING, INT, BACKEND, etc.)
 - `symbol_table.go`: Scoped symbol table for variables and functions
@@ -57,7 +65,7 @@ Implements VCL's type system including built-in types and type checking rules.
 
 ## Extended Functionality
 
-### pkg/analyzer/
+### analyzer/
 Purpose: Semantic analysis on parsed AST
 - `analyzer.go`: Main semantic analysis coordinator
 - `vmod_validator.go`: VMOD usage validation and type checking
@@ -65,7 +73,7 @@ Purpose: Semantic analysis on parsed AST
 
 Validates VMOD function calls, parameter types, and usage patterns. Extensible for additional semantic checks.
 
-### pkg/vmod/
+### vmod/
 Purpose: VMOD registry and definition management
 - `registry.go`: VMOD definition loading and lookup
 - `registry_test.go`: Registry functionality tests
@@ -73,7 +81,7 @@ Purpose: VMOD registry and definition management
 
 Loads VMOD definitions from VCC files and provides runtime lookup for validation.
 
-### pkg/vcc/
+### vcc/
 Purpose: VCC file parsing for VMOD definitions
 - `parser.go`: VCC file parser
 - `types.go`: VCC-specific types and structures
@@ -83,7 +91,7 @@ Purpose: VCC file parsing for VMOD definitions
 
 Parses Varnish VCC (Varnish C Compiler) files that define VMOD interfaces and function signatures.
 
-### pkg/metadata/
+### metadata/
 Purpose: VCL compiler metadata for semantic validation
 - `types.go`: Type definitions for VCL metadata structures
 - `loader.go`: Embedded metadata loading and validation APIs
@@ -119,15 +127,15 @@ Provides embedded VCL metadata from the official Varnish compiler including:
 
 ## Extension Points
 
-- ast/visitor.go: Add new analysis passes by implementing Visitor interface
-- analyzer/: Add semantic checks by extending analyzer
-- types/: Extend type system for custom types
-- vmod/: Add VMOD loading from other sources beyond VCC files
-- metadata/: Update embedded metadata when varnishd definitions change
+- `ast/visitor.go`: Add new analysis passes by implementing Visitor interface
+- `analyzer/`: Add semantic checks by extending analyzer
+- `types/`: Extend type system for custom types
+- `vmod/`: Add VMOD loading from other sources beyond VCC files
+- `metadata/`: Update embedded metadata when varnishd definitions change
 
 ## Testing Structure
 
 - Unit tests in each package test individual components
-- `tests/` contains integration tests exercising full parsing pipeline
-- Test data in `tests/testdata/` provides real VCL examples
-- VMOD tests use fixtures from `vcclib/` directory
+- `../tests/` contains integration tests exercising full parsing pipeline
+- Test data in `../tests/testdata/` provides real VCL examples
+- VMOD tests use fixtures from `../vcclib/` directory

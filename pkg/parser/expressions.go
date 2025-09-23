@@ -345,7 +345,10 @@ func (p *Parser) parseRegexMatchExpression(left ast2.Expression) *ast2.RegexMatc
 	return expr
 }
 
-// parseCallExpression parses a function call expression
+// parseCallExpression parses a function call expression with support for both
+// positional and named arguments. Uses two-phase parsing: first collects all
+// positional arguments, then processes named arguments (name=value pairs).
+// Validates against duplicate named arguments and maintains VCL compatibility.
 func (p *Parser) parseCallExpression(fn ast2.Expression) *ast2.CallExpression {
 	if fn == nil {
 		p.addError("function expression is nil")
@@ -453,7 +456,10 @@ func (p *Parser) parseMemberExpression(obj ast2.Expression) *ast2.MemberExpressi
 	return expr
 }
 
-// parseObjectExpression parses object literals (for backend properties)
+// parseObjectExpression parses VCL object literals used in backend and probe definitions.
+// Handles dot-notation properties (.url, .port) and supports both simple values
+// and complex nested structures. Properties are separated by semicolons following
+// VCL syntax conventions.
 func (p *Parser) parseObjectExpression() *ast2.ObjectExpression {
 	expr := &ast2.ObjectExpression{
 		BaseNode: ast2.BaseNode{

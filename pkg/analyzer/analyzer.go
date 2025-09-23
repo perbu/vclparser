@@ -71,7 +71,9 @@ func (a *Analyzer) Analyze(program *ast.Program) []string {
 	return a.errors
 }
 
-// AnalyzeWithSymbolTable performs analysis and returns both errors and symbol table
+// AnalyzeWithSymbolTable performs complete semantic analysis on an AST and returns validation errors
+// along with the populated symbol table. This is useful when external code needs access to the
+// symbol table for additional processing or symbol lookups after validation.
 func (a *Analyzer) AnalyzeWithSymbolTable(program *ast.Program) ([]string, *types.SymbolTable) {
 	errors := a.Analyze(program)
 	return errors, a.symbolTable
@@ -82,19 +84,24 @@ func (a *Analyzer) GetSymbolTable() *types.SymbolTable {
 	return a.symbolTable
 }
 
-// ValidateVCLFile validates a VCL file with VMOD support
+// ValidateVCLFile validates a VCL file with VMOD support using the provided registry.
+// This is a convenience function that creates an analyzer instance and performs complete
+// semantic validation. Returns validation errors and an error if validation fails.
+// Use this when you have a VMOD registry and want simple file validation.
+// Returns a list of error messages and an error if validation fails.
 func ValidateVCLFile(program *ast.Program, registry *vmod.Registry) ([]string, error) {
 	analyzer := NewAnalyzer(registry)
 	errors := analyzer.Analyze(program)
-
 	if len(errors) > 0 {
 		return errors, fmt.Errorf("validation failed with %d error(s)", len(errors))
 	}
-
 	return nil, nil
 }
 
-// ParseWithCustomVMODValidation parses VCL input and performs VMOD validation with a custom registry
+// ParseWithCustomVMODValidation parses VCL input and performs comprehensive semantic validation
+// using a custom VMOD registry. This combines parsing and validation in a single operation,
+// returning the AST, validation errors, and any parse errors. Useful when you need both
+// parsing and validation with specific VMOD configurations in one step.
 func ParseWithCustomVMODValidation(input, filename string, registry *vmod.Registry) (*ast.Program, []string, error) {
 	// Parse the VCL code
 	program, err := parser.Parse(input, filename)

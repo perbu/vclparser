@@ -157,7 +157,9 @@ func (p *Parser) reportError(message string) {
 	}
 }
 
-// synchronize exits panic mode when reaching a recovery point
+// synchronize exits panic mode when reaching a recovery point.
+// Resets parser state to normal operation after error recovery,
+// allowing parsing to continue from a stable syntactic position.
 func (p *Parser) synchronize() {
 	p.panicMode = false
 	p.synchronizing = false
@@ -207,7 +209,10 @@ func (p *Parser) skipSemicolon() {
 	}
 }
 
-// skipToSynchronizationPoint advances tokens until finding a recovery point
+// skipToSynchronizationPoint advances tokens until finding a recovery point.
+// Used during error recovery to skip past malformed syntax until reaching
+// a token that likely represents the start of a new syntactic construct
+// (e.g., statement keywords, braces, semicolons).
 func (p *Parser) skipToSynchronizationPoint(syncTokens ...lexer.TokenType) {
 	for !p.currentTokenIs(lexer.EOF) {
 		for _, token := range syncTokens {

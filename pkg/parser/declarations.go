@@ -56,7 +56,10 @@ func (p *Parser) parseBackendDecl() *ast.BackendDecl {
 	return decl
 }
 
-// parseBackendProperty parses a backend property
+// parseBackendProperty parses individual backend configuration properties.
+// Handles special cases like probe properties that can contain nested object
+// expressions, while treating other properties as simple value assignments.
+// All properties must start with dot notation (.url, .port, .probe).
 func (p *Parser) parseBackendProperty() *ast.BackendProperty {
 	if !p.currentTokenIs(lexer.DOT) {
 		p.reportError("backend property must start with '.'")
@@ -261,7 +264,10 @@ func (p *Parser) parseACLEntry() *ast.ACLEntry {
 	return entry
 }
 
-// parseSubDecl parses a subroutine declaration
+// parseSubDecl parses subroutine declarations and registers them in the symbol table.
+// Creates a new scope for the subroutine body and validates that subroutine names
+// are unique within the current scope. Supports both built-in VCL subroutines
+// (vcl_recv, vcl_backend_fetch) and user-defined subroutines.
 func (p *Parser) parseSubDecl() *ast.SubDecl {
 	decl := &ast.SubDecl{
 		BaseNode: ast.BaseNode{

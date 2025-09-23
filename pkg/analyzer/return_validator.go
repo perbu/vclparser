@@ -37,7 +37,9 @@ func (rav *ReturnActionValidator) Validate(program *ast.Program) []string {
 	return rav.errors
 }
 
-// validateSubroutineReturns validates return statements in a subroutine
+// validateSubroutineReturns validates return statements in VCL built-in subroutines only.
+// Extracts the method name from the subroutine (removing vcl_ prefix) and validates each
+// return statement's action against the metadata for that VCL method context.
 func (rav *ReturnActionValidator) validateSubroutineReturns(sub *ast.SubDecl) {
 	// Only validate built-in VCL subroutines (those starting with vcl_)
 	if !isBuiltinSubroutine(sub.Name) {
@@ -78,7 +80,9 @@ func (rav *ReturnActionValidator) validateReturnStatement(stmt *ast.ReturnStatem
 	return nil
 }
 
-// extractActionName extracts the action name from a return expression
+// extractActionName extracts the action name from a return expression, handling both simple
+// identifiers (like 'pass', 'lookup') and function calls (like 'synth(200, "OK")'). Returns
+// the action name for metadata validation or an error for unsupported expression types.
 func (rav *ReturnActionValidator) extractActionName(expr ast.Expression) (string, error) {
 	switch e := expr.(type) {
 	case *ast.Identifier:
@@ -94,7 +98,9 @@ func (rav *ReturnActionValidator) extractActionName(expr ast.Expression) (string
 	}
 }
 
-// findReturnStatements recursively finds all return statements in a statement list
+// findReturnStatements recursively traverses the AST to find all return statements within
+// a statement list, including those nested in if/else blocks and other control structures.
+// Essential for comprehensive return action validation in complex subroutines.
 func (rav *ReturnActionValidator) findReturnStatements(statements []ast.Statement) []*ast.ReturnStatement {
 	var returns []*ast.ReturnStatement
 

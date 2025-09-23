@@ -16,7 +16,10 @@ type DetailedError struct {
 	Source   string // Full VCL source code for context
 }
 
-// Error implements the error interface with rich context formatting
+// Error implements the error interface with rich context formatting.
+// Displays the error with surrounding source code lines, a caret pointer
+// indicating the exact error position, and comprehensive location information.
+// Provides developer-friendly error messages for debugging VCL syntax issues.
 func (e DetailedError) Error() string {
 	var result strings.Builder
 

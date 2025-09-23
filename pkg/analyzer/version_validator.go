@@ -40,7 +40,9 @@ func (vv *VersionValidator) Validate(program *ast.Program) []string {
 	return vv.errors
 }
 
-// extractVCLVersion extracts the VCL version number from the program
+// extractVCLVersion extracts and parses the VCL version declaration from the program AST,
+// converting version strings like "4.0" or "4.1" into metadata format integers (40, 41).
+// Returns 0 if no version is specified, enabling appropriate default handling.
 func (vv *VersionValidator) extractVCLVersion(program *ast.Program) int {
 	if program.VCLVersion == nil {
 		return 0 // No version specified
@@ -71,7 +73,9 @@ func (vv *VersionValidator) extractVCLVersion(program *ast.Program) int {
 	return major*10 + minor
 }
 
-// validateVariableVersions validates all variable accesses against version constraints
+// validateVariableVersions performs comprehensive version compatibility checking for all variable
+// accesses in the program against the specified VCL version. Validates that variables are available
+// in the target version and haven't been deprecated beyond the version limits.
 func (vv *VersionValidator) validateVariableVersions(program *ast.Program, vclVersion int) {
 	// Visit all subroutines and validate variable version compatibility
 	for _, decl := range program.Declarations {
@@ -87,7 +91,9 @@ func (vv *VersionValidator) validateSubroutineVariableVersions(sub *ast.SubDecl,
 	vv.walkStatementsForVersion(sub.Body.Statements, vclVersion)
 }
 
-// walkStatementsForVersion walks statement nodes to find variable accesses
+// walkStatementsForVersion traverses statement AST nodes to identify variable references and
+// validate their version compatibility. Recursively processes control structures and nested
+// statements to ensure comprehensive version validation coverage.
 func (vv *VersionValidator) walkStatementsForVersion(statements []ast.Statement, vclVersion int) {
 	for _, stmt := range statements {
 		switch s := stmt.(type) {
@@ -223,7 +229,9 @@ func (vv *VersionValidator) extractMemberVariableName(expr *ast.MemberExpression
 	return strings.Join(parts, ".")
 }
 
-// normalizeDynamicVariableName normalizes dynamic variable names for metadata lookup
+// normalizeDynamicVariableName converts specific variable instances like 'req.http.host' or
+// 'storage.memory.free_space' into their generic metadata patterns like 'req.http.' or 'storage.*'.
+// Essential for validating dynamic VCL variables against their template definitions.
 func (vv *VersionValidator) normalizeDynamicVariableName(varName string) string {
 	// Handle req.http.*, bereq.http.*, beresp.http.*, resp.http.*, obj.http.*
 	if strings.Contains(varName, ".http.") {

@@ -62,7 +62,10 @@ func (p *Parser) parseStatement() ast2.Statement {
 	}
 }
 
-// parseBlockStatement parses a block statement
+// parseBlockStatement parses a block statement (enclosed in braces).
+// Implements error recovery by skipping to synchronization points when
+// individual statements fail to parse, allowing the parser to continue
+// processing the remaining statements in the block.
 func (p *Parser) parseBlockStatement() *ast2.BlockStatement {
 	stmt := &ast2.BlockStatement{
 		BaseNode: ast2.BaseNode{
@@ -106,7 +109,10 @@ func (p *Parser) parseBlockStatement() *ast2.BlockStatement {
 	return stmt
 }
 
-// parseIfStatement parses an if statement
+// parseIfStatement parses if/else conditional statements.
+// Supports multiple else variants (else, elseif, elsif, elif) and handles
+// nested if-else chains. Automatically converts "else if" into nested
+// IfStatement structures for consistent AST representation.
 func (p *Parser) parseIfStatement() *ast2.IfStatement {
 	stmt := &ast2.IfStatement{
 		BaseNode: ast2.BaseNode{
@@ -158,7 +164,10 @@ func (p *Parser) parseIfStatement() *ast2.IfStatement {
 	return stmt
 }
 
-// parseSetStatement parses a set statement
+// parseSetStatement parses variable assignment statements.
+// Supports multiple assignment operators (=, +=, -=, *=, /=) for different
+// types of value modifications. Handles both simple and complex expressions
+// as assignment targets and values.
 func (p *Parser) parseSetStatement() *ast2.SetStatement {
 	stmt := &ast2.SetStatement{
 		BaseNode: ast2.BaseNode{
