@@ -397,7 +397,8 @@ func (p *Parser) parseCallExpression(fn ast2.Expression) *ast2.CallExpression {
 		}
 
 		// Phase 2: Parse named arguments
-		for p.currentTokenIs(lexer.ID) && p.peekTokenIs(lexer.ASSIGN) {
+		// Named parameters can use keywords as names (e.g., probe=, backend=, port=)
+		for (p.currentTokenIs(lexer.ID) || p.isKeywordToken(p.currentToken.Type)) && p.peekTokenIs(lexer.ASSIGN) {
 			// Parse named argument
 			argName := p.currentToken.Value
 			p.nextToken() // move to '='
@@ -450,10 +451,91 @@ func (p *Parser) parseMemberExpression(obj ast2.Expression) *ast2.MemberExpressi
 	p.nextToken() // move to '.'
 	p.nextToken() // move past '.'
 
-	expr.Property = p.parseIdentifier()
+	// Check if we're parsing an HTTP header name (e.g., req.http.X-Forwarded-For)
+	// HTTP headers can contain hyphens and VCL keywords as part of their names
+	if p.isHTTPHeaderContext(obj) {
+		expr.Property = p.parseHTTPHeaderName()
+	} else {
+		expr.Property = p.parseIdentifier()
+	}
 	expr.EndPos = p.currentToken.End
 
 	return expr
+}
+
+// isHTTPHeaderContext checks if we're in a context where we should parse HTTP headers
+// This is true when the object is a member expression with property "http"
+func (p *Parser) isHTTPHeaderContext(obj ast2.Expression) bool {
+	if memberExpr, ok := obj.(*ast2.MemberExpression); ok {
+		if prop, ok := memberExpr.Property.(*ast2.Identifier); ok {
+			return prop.Name == "http"
+		}
+	}
+	return false
+}
+
+// parseHTTPHeaderName parses HTTP header names which can contain hyphens and keywords
+// Examples: X-Forwarded-For, Content-Type, x-default-backend-selected, X-1
+func (p *Parser) parseHTTPHeaderName() *ast2.Identifier {
+	start := p.currentToken.Start
+	var nameParts []string
+
+	// Read the first part (must be an identifier, keyword, or number)
+	if p.currentToken.Type == lexer.ID || p.isKeywordToken(p.currentToken.Type) || p.isNumberToken(p.currentToken.Type) {
+		nameParts = append(nameParts, p.currentToken.Value)
+	} else {
+		p.addError("expected identifier for HTTP header name")
+		return nil
+	}
+
+	// Continue reading identifiers/keywords/numbers and hyphens
+	for p.peekTokenIs(lexer.MINUS) {
+		p.nextToken() // move to hyphen
+		nameParts = append(nameParts, "-")
+
+		p.nextToken() // move past hyphen to next part
+		if p.currentToken.Type == lexer.ID || p.isKeywordToken(p.currentToken.Type) || p.isNumberToken(p.currentToken.Type) {
+			nameParts = append(nameParts, p.currentToken.Value)
+		} else {
+			p.addError("expected identifier, keyword, or number after hyphen in HTTP header name")
+			return nil
+		}
+	}
+
+	// Join all parts into final header name
+	headerName := strings.Join(nameParts, "")
+
+	return &ast2.Identifier{
+		BaseNode: ast2.BaseNode{
+			StartPos: start,
+			EndPos:   p.currentToken.End,
+		},
+		Name: headerName,
+	}
+}
+
+// isKeywordToken checks if a token type is a VCL keyword
+// Keywords can appear as part of HTTP header names
+func (p *Parser) isKeywordToken(tokenType lexer.TokenType) bool {
+	switch tokenType {
+	case lexer.BACKEND_KW, lexer.PROBE_KW, lexer.ACL_KW, lexer.SUB_KW,
+		lexer.IF_KW, lexer.ELSE_KW, lexer.ELSIF_KW, lexer.ELSEIF_KW, lexer.ELIF_KW,
+		lexer.SET_KW, lexer.UNSET_KW, lexer.INCLUDE_KW,
+		lexer.IMPORT_KW, lexer.RETURN_KW, lexer.CALL_KW,
+		lexer.HASH_KW, lexer.PASS_KW, lexer.PIPE_KW, lexer.FETCH_KW,
+		lexer.HIT_KW, lexer.MISS_KW, lexer.DELIVER_KW, lexer.PURGE_KW,
+		lexer.SYNTH_KW, lexer.SYNTHETIC_KW, lexer.ABANDON_KW, lexer.RETRY_KW,
+		lexer.OK_KW, lexer.FAIL_KW, lexer.ERROR_KW, lexer.RESTART_KW,
+		lexer.LOOKUP_KW, lexer.VCL_KW, lexer.NEW_KW:
+		return true
+	}
+	return false
+}
+
+// isNumberToken checks if a token type is a number
+// Numbers can appear as part of HTTP header names (e.g., X-1, timestamp-2)
+func (p *Parser) isNumberToken(tokenType lexer.TokenType) bool {
+	return tokenType == lexer.CNUM || tokenType == lexer.FNUM
 }
 
 // parseObjectExpression parses VCL object literals used in backend and probe definitions.
@@ -629,5 +711,7 @@ func (p *Parser) isIPLiteral() bool {
 
 // isNamedArgument checks if current token is the start of a named argument (ID followed by =)
 func (p *Parser) isNamedArgument() bool {
-	return p.currentTokenIs(lexer.ID) && p.peekTokenIs(lexer.ASSIGN)
+	// Named arguments can be identifiers or keywords (e.g., probe=value, ssl=true)
+	isValidParamName := p.currentTokenIs(lexer.ID) || p.isKeywordToken(p.currentToken.Type)
+	return isValidParamName && p.peekTokenIs(lexer.ASSIGN)
 }

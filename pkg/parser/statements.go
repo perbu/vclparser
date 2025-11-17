@@ -259,13 +259,15 @@ func (p *Parser) parseCallStatement() *ast2.CallStatement {
 		Name: p.currentToken.Value,
 	}
 
-	// Validate that the called subroutine exists
-	if symbol := p.symbolTable.Lookup(p.currentToken.Value); symbol == nil {
-		p.addError(fmt.Sprintf("undefined subroutine: %s", p.currentToken.Value))
-		return nil
-	} else if symbol.Kind != types.SymbolSubroutine {
-		p.addError(fmt.Sprintf("'%s' is not a subroutine", p.currentToken.Value))
-		return nil
+	// Validate that the called subroutine exists (unless validation is disabled)
+	if !p.config.SkipSubroutineValidation {
+		if symbol := p.symbolTable.Lookup(p.currentToken.Value); symbol == nil {
+			p.addError(fmt.Sprintf("undefined subroutine: %s", p.currentToken.Value))
+			return nil
+		} else if symbol.Kind != types.SymbolSubroutine {
+			p.addError(fmt.Sprintf("'%s' is not a subroutine", p.currentToken.Value))
+			return nil
+		}
 	}
 
 	stmt.EndPos = p.currentToken.End

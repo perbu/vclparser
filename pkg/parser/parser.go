@@ -15,6 +15,12 @@ type Config struct {
 	DisableInlineC bool
 	// MaxErrors limits the number of errors before stopping parsing (0 = no limit)
 	MaxErrors int
+	// AllowMissingVersion allows parsing VCL files without version declarations
+	// This is useful for included files which don't need their own version declaration
+	AllowMissingVersion bool
+	// SkipSubroutineValidation skips validation of subroutine calls during parsing
+	// This is useful for included files where subroutines may be defined in other files
+	SkipSubroutineValidation bool
 }
 
 // DefaultConfig returns the default parser configuration
@@ -242,14 +248,14 @@ func (p *Parser) ParseProgram() *ast.Program {
 		p.nextToken()
 	}
 
-	// Parse VCL version declaration (required first)
+	// Parse VCL version declaration (required for main files, optional for includes)
 	if p.currentTokenIs(lexer.VCL_KW) {
 		program.VCLVersion = p.parseVCLVersionDecl()
 		if program.VCLVersion == nil {
 			return program
 		}
 		p.nextToken() // Move past the semicolon
-	} else {
+	} else if !p.config.AllowMissingVersion {
 		p.addError("VCL program must start with version declaration")
 		return program
 	}

@@ -131,7 +131,13 @@ func (r *Resolver) resolveFile(filename string) (*ast.Program, error) {
 	}
 
 	// Parse the file
-	program, err := parser.Parse(string(content), filename)
+	// For included files:
+	// - Allow missing version declarations (only main file needs one)
+	// - Skip subroutine validation (subroutines may be defined in other files)
+	config := parser.DefaultConfig()
+	config.AllowMissingVersion = true
+	config.SkipSubroutineValidation = true
+	program, err := parser.ParseWithConfig(string(content), filename, config)
 	if err != nil {
 		return nil, &ParseError{
 			Path:  filename,
