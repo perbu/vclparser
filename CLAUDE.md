@@ -71,6 +71,7 @@ The parser supports the complete VCL specification including:
 - Version declarations (`vcl 4.0;`, `vcl 4.1;`)
 - Backend definitions with properties
 - Subroutine definitions (`sub vcl_recv { }`)
+- **Multiple subroutine definitions** - Same subroutine can be defined multiple times, bodies are merged in order
 - Control flow statements (if/else, return, call)
 - Variable assignments (set, unset)
 - Expression parsing with proper operator precedence

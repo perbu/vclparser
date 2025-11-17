@@ -1,8 +1,6 @@
 package parser
 
 import (
-	"fmt"
-
 	"github.com/perbu/vclparser/pkg/ast"
 	"github.com/perbu/vclparser/pkg/lexer"
 	"github.com/perbu/vclparser/pkg/types"
@@ -265,40 +263,58 @@ func (p *Parser) parseACLEntry() *ast.ACLEntry {
 }
 
 // parseSubDecl parses subroutine declarations and registers them in the symbol table.
-// Creates a new scope for the subroutine body and validates that subroutine names
-// are unique within the current scope. Supports both built-in VCL subroutines
-// (vcl_recv, vcl_backend_fetch) and user-defined subroutines.
+// VCL allows multiple definitions of the same subroutine, which are merged together
+// in the order they appear. This is commonly used with built-in subroutines
+// (vcl_recv, vcl_backend_fetch) across multiple include files.
 func (p *Parser) parseSubDecl() *ast.SubDecl {
-	decl := &ast.SubDecl{
-		BaseNode: ast.BaseNode{
-			StartPos: p.currentToken.Start,
-		},
-	}
+	startPos := p.currentToken.Start
 
 	if !p.expectPeek(lexer.ID) {
 		return nil
 	}
 
-	decl.Name = p.currentToken.Value
+	subroutineName := p.currentToken.Value
 
 	if !p.expectPeek(lexer.LBRACE) {
 		return nil
 	}
 
-	// Register the subroutine in the symbol table
+	// Parse the subroutine body
+	body := p.parseBlockStatement()
+	endPos := p.currentToken.End
+
+	// Check if this subroutine already exists
+	existing := p.findSubroutineDecl(subroutineName)
+
+	// Register in symbol table (allows duplicates for subroutines)
 	symbol := &types.Symbol{
-		Name:     decl.Name,
+		Name:     subroutineName,
 		Kind:     types.SymbolSubroutine,
 		Type:     types.Void,
-		Position: p.currentToken.Start,
+		Position: startPos,
 	}
-	if err := p.symbolTable.Define(symbol); err != nil {
-		p.addError(fmt.Sprintf("subroutine %s already defined: %s", decl.Name, err.Error()))
+	_ = p.symbolTable.Define(symbol) // Won't error for duplicate subroutines
+
+	if existing != nil {
+		// Merge: append new body statements to existing subroutine
+		if body != nil && existing.Body != nil && len(body.Statements) > 0 {
+			existing.Body.Statements = append(existing.Body.Statements, body.Statements...)
+			// Update end position to reflect merged content
+			existing.EndPos = endPos
+		}
+		// Return nil so this declaration isn't added to program.Declarations again
+		return nil
 	}
 
-	// Parse the subroutine body
-	decl.Body = p.parseBlockStatement()
-	decl.EndPos = p.currentToken.End
+	// First definition - create new declaration
+	decl := &ast.SubDecl{
+		BaseNode: ast.BaseNode{
+			StartPos: startPos,
+			EndPos:   endPos,
+		},
+		Name: subroutineName,
+		Body: body,
+	}
 
 	return decl
 }

@@ -58,6 +58,9 @@ type Symbol struct {
 	Unsetable bool
 	Methods   []string // VCL methods where this symbol is accessible
 
+	// Subroutine-specific metadata
+	Occurrences []lexer.Position // All positions where this subroutine is defined (for multiple definitions)
+
 	// VMOD-specific metadata
 	ModuleName  string   // For VMOD objects and functions
 	ObjectType  string   // For VMOD objects, the object type name
@@ -86,8 +89,19 @@ func NewScope(name string, parent *Scope) *Scope {
 
 // Define adds a symbol to the scope
 func (s *Scope) Define(symbol *Symbol) error {
-	if _, exists := s.Symbols[symbol.Name]; exists {
+	if existing, exists := s.Symbols[symbol.Name]; exists {
+		// Allow multiple definitions of subroutines (VCL feature)
+		if symbol.Kind == SymbolSubroutine && existing.Kind == SymbolSubroutine {
+			// Track this occurrence in the existing symbol
+			existing.Occurrences = append(existing.Occurrences, symbol.Position)
+			return nil
+		}
+		// For all other symbol kinds, duplicate definitions are errors
 		return fmt.Errorf("symbol %s already defined in scope %s", symbol.Name, s.Name)
+	}
+	// First definition - initialize Occurrences with the initial position for subroutines
+	if symbol.Kind == SymbolSubroutine {
+		symbol.Occurrences = []lexer.Position{symbol.Position}
 	}
 	s.Symbols[symbol.Name] = symbol
 	symbol.Scope = s.Name

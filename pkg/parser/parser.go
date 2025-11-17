@@ -32,7 +32,8 @@ type Parser struct {
 	input       string // Store original VCL source for error context
 	filename    string // Store filename for error reporting
 	symbolTable *types.SymbolTable
-	config      *Config // Parser configuration
+	config      *Config      // Parser configuration
+	program     *ast.Program // Current program being built (used for subroutine merging)
 
 	currentToken lexer.Token
 	peekToken    lexer.Token
@@ -233,6 +234,9 @@ func (p *Parser) ParseProgram() *ast.Program {
 		Declarations: []ast.Declaration{},
 	}
 
+	// Set program reference for subroutine merging
+	p.program = program
+
 	// Skip any initial comments
 	for p.currentTokenIs(lexer.COMMENT) {
 		p.nextToken()
@@ -272,6 +276,22 @@ func (p *Parser) ParseProgram() *ast.Program {
 	return program
 }
 
+// findSubroutineDecl searches for an existing subroutine declaration by name
+// in the current program's declarations. Returns the SubDecl if found, nil otherwise.
+func (p *Parser) findSubroutineDecl(name string) *ast.SubDecl {
+	if p.program == nil {
+		return nil
+	}
+	for _, decl := range p.program.Declarations {
+		if subDecl, ok := decl.(*ast.SubDecl); ok {
+			if subDecl.Name == name {
+				return subDecl
+			}
+		}
+	}
+	return nil
+}
+
 // parseDeclaration parses a top-level declaration
 func (p *Parser) parseDeclaration() ast.Declaration {
 	if p.maxErrorsReached {
@@ -302,7 +322,12 @@ func (p *Parser) parseDeclaration() ast.Declaration {
 	case lexer.ACL_KW:
 		return p.parseACLDecl()
 	case lexer.SUB_KW:
-		return p.parseSubDecl()
+		subDecl := p.parseSubDecl()
+		// Check for nil to avoid adding nil declarations (e.g., merged subroutines)
+		if subDecl == nil {
+			return nil
+		}
+		return subDecl
 	default:
 		p.reportError(fmt.Sprintf("unexpected token %s", p.currentToken.Type))
 		return nil
