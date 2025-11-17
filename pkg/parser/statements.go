@@ -331,7 +331,12 @@ func (p *Parser) parseSyntheticStatement() *ast2.SyntheticStatement {
 	}
 
 	stmt.EndPos = p.currentToken.End
-	p.skipSemicolon()
+
+	// Consume semicolon if present
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken()
+	}
+
 	return stmt
 }
 
