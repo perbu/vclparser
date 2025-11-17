@@ -169,6 +169,8 @@ func (p *Parser) parsePrefixExpression() ast2.Expression {
 		return p.parseFloatLiteral()
 	case lexer.CSTR:
 		return p.parseStringLiteral()
+	case lexer.LSTR:
+		return p.parseLongStringLiteral()
 	case lexer.BANG, lexer.MINUS, lexer.PLUS:
 		return p.parseUnaryExpression()
 	case lexer.LPAREN:
@@ -256,6 +258,23 @@ func (p *Parser) parseFloatLiteral() *ast2.FloatLiteral {
 func (p *Parser) parseStringLiteral() *ast2.StringLiteral {
 	// Remove quotes from string literal
 	value := strings.Trim(p.currentToken.Value, `"`)
+
+	return &ast2.StringLiteral{
+		BaseNode: ast2.BaseNode{
+			StartPos: p.currentToken.Start,
+			EndPos:   p.currentToken.End,
+		},
+		Value: value,
+	}
+}
+
+// parseLongStringLiteral parses a long string literal ({" ... "})
+func (p *Parser) parseLongStringLiteral() *ast2.StringLiteral {
+	// Remove {" and "} delimiters from long string literal
+	value := p.currentToken.Value
+	if strings.HasPrefix(value, `{"`) && strings.HasSuffix(value, `"}`) {
+		value = value[2 : len(value)-2]
+	}
 
 	return &ast2.StringLiteral{
 		BaseNode: ast2.BaseNode{

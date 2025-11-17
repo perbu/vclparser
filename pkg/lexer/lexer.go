@@ -151,7 +151,12 @@ func (l *Lexer) NextToken() Token {
 			tok = l.makeToken(PIPE)
 		}
 	case '{':
-		tok = l.makeToken(LBRACE)
+		// Check for long string literal {" ... "}
+		if l.peekChar() == '"' {
+			tok = l.readLongString()
+		} else {
+			tok = l.makeToken(LBRACE)
+		}
 	case '}':
 		tok = l.makeToken(RBRACE)
 	case '(':
@@ -367,6 +372,47 @@ func (l *Lexer) readCBlock() Token {
 
 	return Token{
 		Type:     CSRC,
+		Value:    value,
+		Start:    start,
+		End:      l.currentPosition(),
+		Filename: l.filename,
+	}
+}
+
+// readLongString reads a long string literal ({" ... "})
+// Long strings can span multiple lines and contain any character except NUL
+func (l *Lexer) readLongString() Token {
+	start := l.currentPosition()
+	startPos := l.pos
+
+	l.readChar() // consume '{'
+	l.readChar() // consume '"'
+
+	// Read until we find the closing "}
+	for l.ch != 0 {
+		if l.ch == '"' && l.peekChar() == '}' {
+			l.readChar() // consume '"', now l.ch is at '}'
+			break
+		}
+		l.readChar()
+	}
+
+	// Check if we reached EOF without finding the closing delimiter
+	if l.ch == 0 || l.ch != '}' {
+		return Token{
+			Type:     ILLEGAL,
+			Value:    "unterminated long string",
+			Start:    start,
+			End:      l.currentPosition(),
+			Filename: l.filename,
+		}
+	}
+
+	// Include the closing '}' in the value
+	value := l.input[startPos : l.pos+1]
+
+	return Token{
+		Type:     LSTR,
 		Value:    value,
 		Start:    start,
 		End:      l.currentPosition(),

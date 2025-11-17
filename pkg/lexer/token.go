@@ -41,6 +41,7 @@ const (
 	CNUM // integer number
 	FNUM // floating-point number
 	CSTR // string literal
+	LSTR // long string literal (multi-line)
 	CSRC // C source code block
 
 	// Multi-character operators (from tokens map in generate.py)
@@ -135,6 +136,8 @@ func (t TokenType) String() string {
 		return "FNUM"
 	case CSTR:
 		return "CSTR"
+	case LSTR:
+		return "LSTR"
 	case CSRC:
 		return "CSRC"
 	case INC:
