@@ -175,7 +175,9 @@ func (p *Parser) parseProbeProperty() *ast.ProbeProperty {
 	}
 
 	p.nextToken() // move to value
-	prop.Value = p.parseExpression()
+	// Use parsePropertyValue to support implicit string concatenation
+	// (multiple string literals in a row, especially for .request property)
+	prop.Value = p.parsePropertyValue()
 
 	// Move past the value to the semicolon
 	if p.peekTokenIs(lexer.SEMICOLON) {

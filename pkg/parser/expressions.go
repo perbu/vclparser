@@ -470,67 +470,12 @@ func (p *Parser) parseMemberExpression(obj ast2.Expression) *ast2.MemberExpressi
 	p.nextToken() // move to '.'
 	p.nextToken() // move past '.'
 
-	// Check if we're parsing an HTTP header name (e.g., req.http.X-Forwarded-For)
-	// HTTP headers can contain hyphens and VCL keywords as part of their names
-	if p.isHTTPHeaderContext(obj) {
-		expr.Property = p.parseHTTPHeaderName()
-	} else {
-		expr.Property = p.parseIdentifier()
-	}
+	// Since the lexer now supports hyphens in identifiers natively,
+	// we can just parse as a regular identifier
+	expr.Property = p.parseIdentifier()
 	expr.EndPos = p.currentToken.End
 
 	return expr
-}
-
-// isHTTPHeaderContext checks if we're in a context where we should parse HTTP headers
-// This is true when the object is a member expression with property "http"
-func (p *Parser) isHTTPHeaderContext(obj ast2.Expression) bool {
-	if memberExpr, ok := obj.(*ast2.MemberExpression); ok {
-		if prop, ok := memberExpr.Property.(*ast2.Identifier); ok {
-			return prop.Name == "http"
-		}
-	}
-	return false
-}
-
-// parseHTTPHeaderName parses HTTP header names which can contain hyphens and keywords
-// Examples: X-Forwarded-For, Content-Type, x-default-backend-selected, X-1
-func (p *Parser) parseHTTPHeaderName() *ast2.Identifier {
-	start := p.currentToken.Start
-	var nameParts []string
-
-	// Read the first part (must be an identifier, keyword, or number)
-	if p.currentToken.Type == lexer.ID || p.isKeywordToken(p.currentToken.Type) || p.isNumberToken(p.currentToken.Type) {
-		nameParts = append(nameParts, p.currentToken.Value)
-	} else {
-		p.addError("expected identifier for HTTP header name")
-		return nil
-	}
-
-	// Continue reading identifiers/keywords/numbers and hyphens
-	for p.peekTokenIs(lexer.MINUS) {
-		p.nextToken() // move to hyphen
-		nameParts = append(nameParts, "-")
-
-		p.nextToken() // move past hyphen to next part
-		if p.currentToken.Type == lexer.ID || p.isKeywordToken(p.currentToken.Type) || p.isNumberToken(p.currentToken.Type) {
-			nameParts = append(nameParts, p.currentToken.Value)
-		} else {
-			p.addError("expected identifier, keyword, or number after hyphen in HTTP header name")
-			return nil
-		}
-	}
-
-	// Join all parts into final header name
-	headerName := strings.Join(nameParts, "")
-
-	return &ast2.Identifier{
-		BaseNode: ast2.BaseNode{
-			StartPos: start,
-			EndPos:   p.currentToken.End,
-		},
-		Name: headerName,
-	}
 }
 
 // isKeywordToken checks if a token type is a VCL keyword
@@ -555,6 +500,71 @@ func (p *Parser) isKeywordToken(tokenType lexer.TokenType) bool {
 // Numbers can appear as part of HTTP header names (e.g., X-1, timestamp-2)
 func (p *Parser) isNumberToken(tokenType lexer.TokenType) bool {
 	return tokenType == lexer.CNUM || tokenType == lexer.FNUM
+}
+
+// parsePropertyValue parses a property value in an object expression
+// VCL allows implicit string concatenation - multiple string literals in a row are concatenated
+func (p *Parser) parsePropertyValue() ast2.Expression {
+	firstExpr := p.parseExpression()
+	if firstExpr == nil {
+		return nil
+	}
+
+	// Check if this is a string literal followed by more string literals (implicit concatenation)
+	// Only concatenate CSTR and LSTR tokens
+	if !p.isStringLiteral(firstExpr) {
+		return firstExpr
+	}
+
+	// Collect all consecutive string literals
+	var stringParts []string
+
+	// Add the first string value
+	if strLit, ok := firstExpr.(*ast2.StringLiteral); ok {
+		stringParts = append(stringParts, strLit.Value)
+	}
+
+	// Keep reading while we see string literals (across lines, potentially)
+	for p.peekTokenIs(lexer.CSTR) || p.peekTokenIs(lexer.LSTR) {
+		p.nextToken() // move to the string token
+
+		if p.currentToken.Type == lexer.CSTR {
+			strValue := strings.Trim(p.currentToken.Value, `"`)
+			stringParts = append(stringParts, strValue)
+		} else if p.currentToken.Type == lexer.LSTR {
+			strValue := p.currentToken.Value
+			if strings.HasPrefix(strValue, `{"`) && strings.HasSuffix(strValue, `"}`) {
+				strValue = strValue[2 : len(strValue)-2]
+			}
+			stringParts = append(stringParts, strValue)
+		}
+	}
+
+	// If only one string, return the original expression
+	if len(stringParts) == 1 {
+		return firstExpr
+	}
+
+	// Concatenate all strings with newlines (for probe .request properties)
+	concatenated := stringParts[0]
+	for i := 1; i < len(stringParts); i++ {
+		concatenated += "\r\n" + stringParts[i]
+	}
+
+	// Return a single StringLiteral with the concatenated value
+	return &ast2.StringLiteral{
+		BaseNode: ast2.BaseNode{
+			StartPos: firstExpr.Start(),
+			EndPos:   p.currentToken.End,
+		},
+		Value: concatenated,
+	}
+}
+
+// isStringLiteral checks if an expression is a string literal
+func (p *Parser) isStringLiteral(expr ast2.Expression) bool {
+	_, ok := expr.(*ast2.StringLiteral)
+	return ok
 }
 
 // parseObjectExpression parses VCL object literals used in backend and probe definitions.
@@ -613,7 +623,10 @@ func (p *Parser) parseObjectExpression() *ast2.ObjectExpression {
 		}
 
 		p.nextToken() // move past '='
-		prop.Value = p.parseExpression()
+
+		// VCL allows implicit string concatenation in property values
+		// Multiple string literals in a row are concatenated
+		prop.Value = p.parsePropertyValue()
 		prop.EndPos = p.currentToken.End
 
 		expr.Properties = append(expr.Properties, prop)

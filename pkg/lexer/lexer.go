@@ -229,11 +229,13 @@ func (l *Lexer) makeTwoCharToken(tokenType TokenType) Token {
 }
 
 // readIdentifier reads an identifier or keyword
+// VCL identifiers match [A-Za-z][A-Za-z0-9_-]* (letters, digits, underscores, and hyphens)
 func (l *Lexer) readIdentifier() Token {
 	start := l.currentPosition()
 	startPos := l.pos
 
-	for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
+	// VCL allows hyphens in identifiers (e.g., backend-name, probe-test)
+	for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' || l.ch == '-' {
 		l.readChar()
 	}
 
