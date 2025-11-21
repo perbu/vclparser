@@ -14,6 +14,7 @@ The codebase follows a clean separation of concerns across four main packages:
 - **pkg/lexer/** - Tokenizes VCL source code into lexical tokens (`lexer.go`, `token.go`)
 - **pkg/parser/** - Recursive descent parser that converts tokens to AST (`parser.go`, `expressions.go`, `statements.go`, `declarations.go`)
 - **pkg/ast/** - AST node definitions and visitor pattern implementation (`node.go`, `expressions.go`, `statements.go`, `visitor.go`)
+- **pkg/renderer/** - Renders AST back to VCL source code (`renderer.go`)
 - **pkg/types/** - Type system and symbol table for semantic analysis (`types.go`, `symbol_table.go`)
 - **pkg/include/** - Include statement resolution with circular dependency detection (`resolver.go`, `api.go`, `errors.go`)
 
@@ -25,9 +26,11 @@ The codebase follows a clean separation of concerns across four main packages:
 
 ### Entry Points
 - **parser.Parse(input, filename)** - Main parsing function that returns `*ast.Program`
+- **renderer.Render(program)** - Renders an AST back to VCL source code
 - **include.ResolveFile(filename)** - Parse VCL file and resolve all include statements
-- **examples/parse_vcl.go** - CLI tool demonstrating basic parser usage with pretty-printing and JSON export
-- **examples/parse_with_includes.go** - CLI tool demonstrating include resolution with comprehensive options
+- **examples/parse/main.go** - CLI tool demonstrating basic parser usage with pretty-printing and JSON export
+- **examples/includes/main.go** - CLI tool demonstrating include resolution with comprehensive options
+- **examples/render/main.go** - CLI tool for rendering/formatting VCL files
 
 ## Common Commands
 
@@ -41,15 +44,22 @@ go test -run TestName ./parser   # Run specific test
 
 ### Building and Running
 ```bash
-go build ./examples/parse_vcl.go              # Build basic parser example
-go run ./examples/parse_vcl.go file.vcl       # Parse and pretty-print VCL file
-go run ./examples/parse_vcl.go file.vcl --json # Export AST as JSON
+# Parser examples
+go build ./examples/parse/main.go              # Build basic parser example
+go run ./examples/parse/main.go file.vcl       # Parse and pretty-print VCL file
+go run ./examples/parse/main.go file.vcl --json # Export AST as JSON
 
 # Include resolution examples
-go build ./examples/parse_with_includes.go    # Build include-aware parser
-go run ./examples/parse_with_includes.go -file main.vcl  # Parse with includes
-go run ./examples/parse_with_includes.go -file main.vcl -base /etc/varnish  # Set base path
-go run ./examples/parse_with_includes.go -file main.vcl -json > merged.json # Export merged AST
+go build ./examples/includes/main.go           # Build include-aware parser
+go run ./examples/includes/main.go -file main.vcl  # Parse with includes
+go run ./examples/includes/main.go -file main.vcl -base /etc/varnish  # Set base path
+go run ./examples/includes/main.go -file main.vcl -json > merged.json # Export merged AST
+
+# VCL Renderer examples
+go build ./examples/render/main.go             # Build VCL renderer
+go run ./examples/render/main.go -file input.vcl  # Format VCL file
+go run ./examples/render/main.go -file input.vcl -output formatted.vcl  # Save to file
+go run ./examples/render/main.go -file main.vcl -resolve-includes  # Merge includes into single file
 ```
 
 ### Code Quality
@@ -103,6 +113,14 @@ Based on TODO.md, current limitations include:
   - Circular dependency detection and configurable depth limits
   - Compatible with both single-file and multi-file VCL configurations
   - Examples: `include.ResolveFile("main.vcl")` or `include.ResolveProgram(ast)`
+
+- ✅ **VCL Renderer**: Convert AST back to VCL source code
+  - Visitor-based implementation for clean AST traversal
+  - Proper indentation and formatting
+  - Preserves semantic meaning while normalizing style
+  - Supports all VCL constructs including named parameters
+  - Use cases: code formatting, include merging, AST manipulation
+  - Examples: `renderer.Render(program)`
 
 ## Include Statement Handling
 

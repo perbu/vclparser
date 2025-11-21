@@ -5,8 +5,9 @@ A VCL (Varnish Configuration Language) parser implemented in Go that parses VCL 
 ## Features
 
 - Complete lexical analysis of VCL syntax
-- Recursive descent parser with error recovery 
+- Recursive descent parser with error recovery
 - Type-safe AST representation
+- **VCL renderer to convert AST back to source code**
 - Post-parse resolution of include statements
 - Symbol table and semantic analysis
 - Visitor pattern for AST traversal
@@ -22,6 +23,8 @@ time.
 
 ## Usage
 
+### Parsing VCL
+
 ```go
 package main
 
@@ -29,7 +32,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/varnish/vclparser/pkg/parser"
+	"github.com/perbu/vclparser/pkg/parser"
 )
 
 func main() {
@@ -48,13 +51,52 @@ func main() {
     }
     `
 
-	ast, err := parser.Parse(vclCode)
+	program, err := parser.Parse(vclCode, "example.vcl")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Parsed VCL with %d declarations\n", len(ast.Declarations))
+	fmt.Printf("Parsed VCL with %d declarations\n", len(program.Declarations))
 }
+```
+
+### Rendering VCL
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/perbu/vclparser/pkg/parser"
+	"github.com/perbu/vclparser/pkg/renderer"
+)
+
+func main() {
+	// Parse VCL
+	program, err := parser.Parse(vclCode, "example.vcl")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Render back to VCL source code
+	rendered := renderer.Render(program)
+	fmt.Println(rendered)
+}
+```
+
+### Command-Line Tools
+
+```bash
+# Format a VCL file
+go run ./examples/render/main.go -file input.vcl
+
+# Merge includes into a single file
+go run ./examples/render/main.go -file main.vcl -resolve-includes -output merged.vcl
+
+# Parse and analyze VCL
+go run ./examples/parse/main.go file.vcl
 ```
 
 ## Architecture
@@ -62,8 +104,10 @@ func main() {
 - `pkg/lexer/` - Lexical analysis and tokenization
 - `pkg/ast/` - AST node definitions and visitor pattern
 - `pkg/parser/` - Recursive descent parser implementation
+- `pkg/renderer/` - AST to VCL source code renderer
 - `pkg/types/` - Type system and symbol table
-- `examples/` - Usage examples
+- `pkg/include/` - Include statement resolution
+- `examples/` - Usage examples (parse, render, includes)
 - `tests/testdata/` - Test VCL files
 
 ## VCL Language Support
