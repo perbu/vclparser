@@ -60,6 +60,42 @@ func (r *VCLRenderer) indentDec() {
 	r.indent--
 }
 
+// renderLeadingComments renders comments that appear before a node
+func (r *VCLRenderer) renderLeadingComments(comments []ast.Comment) {
+	for _, comment := range comments {
+		r.writeIndent()
+		r.write(comment.Text)
+		r.newline()
+	}
+}
+
+// renderTrailingComment renders a comment that appears on the same line as a node
+func (r *VCLRenderer) renderTrailingComment(comment *ast.Comment) {
+	if comment != nil {
+		r.write(" ")
+		r.write(comment.Text)
+	}
+}
+
+// renderNodeComments renders both leading and trailing comments for a node
+func (r *VCLRenderer) renderNodeComments(node ast.Node, renderLeading bool) *ast.Comment {
+	if node == nil {
+		return nil
+	}
+	comments := node.GetComments()
+	if comments == nil {
+		return nil
+	}
+
+	// Render leading comments if requested
+	if renderLeading && len(comments.Leading) > 0 {
+		r.renderLeadingComments(comments.Leading)
+	}
+
+	// Return trailing comment for caller to render (after the node content)
+	return comments.Trailing
+}
+
 // Visitor implementations
 
 func (r *VCLRenderer) VisitProgram(node *ast.Program) interface{} {
@@ -81,26 +117,62 @@ func (r *VCLRenderer) VisitProgram(node *ast.Program) interface{} {
 }
 
 func (r *VCLRenderer) VisitVCLVersionDecl(node *ast.VCLVersionDecl) interface{} {
-	r.writeLine(fmt.Sprintf("vcl %s;", node.Version))
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
+	r.writeIndent()
+	r.write(fmt.Sprintf("vcl %s;", node.Version))
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
+	r.newline()
+
 	return nil
 }
 
 func (r *VCLRenderer) VisitImportDecl(node *ast.ImportDecl) interface{} {
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
+	r.writeIndent()
 	if node.Alias != "" {
-		r.writeLine(fmt.Sprintf("import %s as %s;", node.Module, node.Alias))
+		r.write(fmt.Sprintf("import %s as %s;", node.Module, node.Alias))
 	} else {
-		r.writeLine(fmt.Sprintf("import %s;", node.Module))
+		r.write(fmt.Sprintf("import %s;", node.Module))
 	}
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
+	r.newline()
+
 	return nil
 }
 
 func (r *VCLRenderer) VisitIncludeDecl(node *ast.IncludeDecl) interface{} {
-	r.writeLine(fmt.Sprintf("include \"%s\";", node.Path))
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
+	r.writeIndent()
+	r.write(fmt.Sprintf("include \"%s\";", node.Path))
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
+	r.newline()
+
 	return nil
 }
 
 func (r *VCLRenderer) VisitBackendDecl(node *ast.BackendDecl) interface{} {
-	r.writeLine(fmt.Sprintf("backend %s {", node.Name))
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
+	r.writeIndent()
+	r.write(fmt.Sprintf("backend %s {", node.Name))
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
+	r.newline()
+
 	r.indentInc()
 
 	for _, prop := range node.Properties {
@@ -117,7 +189,16 @@ func (r *VCLRenderer) VisitBackendDecl(node *ast.BackendDecl) interface{} {
 }
 
 func (r *VCLRenderer) VisitProbeDecl(node *ast.ProbeDecl) interface{} {
-	r.writeLine(fmt.Sprintf("probe %s {", node.Name))
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
+	r.writeIndent()
+	r.write(fmt.Sprintf("probe %s {", node.Name))
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
+	r.newline()
+
 	r.indentInc()
 
 	for _, prop := range node.Properties {
@@ -134,7 +215,16 @@ func (r *VCLRenderer) VisitProbeDecl(node *ast.ProbeDecl) interface{} {
 }
 
 func (r *VCLRenderer) VisitACLDecl(node *ast.ACLDecl) interface{} {
-	r.writeLine(fmt.Sprintf("acl %s {", node.Name))
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
+	r.writeIndent()
+	r.write(fmt.Sprintf("acl %s {", node.Name))
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
+	r.newline()
+
 	r.indentInc()
 
 	for _, entry := range node.Entries {
@@ -153,7 +243,16 @@ func (r *VCLRenderer) VisitACLDecl(node *ast.ACLDecl) interface{} {
 }
 
 func (r *VCLRenderer) VisitSubDecl(node *ast.SubDecl) interface{} {
-	r.writeLine(fmt.Sprintf("sub %s {", node.Name))
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
+	r.writeIndent()
+	r.write(fmt.Sprintf("sub %s {", node.Name))
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
+	r.newline()
+
 	r.indentInc()
 
 	if node.Body != nil {
@@ -185,18 +284,28 @@ func (r *VCLRenderer) VisitBlockStatement(node *ast.BlockStatement) interface{} 
 }
 
 func (r *VCLRenderer) VisitExpressionStatement(node *ast.ExpressionStatement) interface{} {
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
 	r.writeIndent()
 	ast.Accept(node.Expression, r)
 	r.write(";")
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
 	r.newline()
+
 	return nil
 }
 
 func (r *VCLRenderer) VisitIfStatement(node *ast.IfStatement) interface{} {
-	return r.renderIfStatement(node, true)
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
+	return r.renderIfStatement(node, true, trailing)
 }
 
-func (r *VCLRenderer) renderIfStatement(node *ast.IfStatement, writeIndent bool) interface{} {
+func (r *VCLRenderer) renderIfStatement(node *ast.IfStatement, writeIndent bool, trailing *ast.Comment) interface{} {
 	if writeIndent {
 		r.writeIndent()
 	}
@@ -207,8 +316,13 @@ func (r *VCLRenderer) renderIfStatement(node *ast.IfStatement, writeIndent bool)
 	// Handle single-statement then
 	if _, isBlock := node.Then.(*ast.BlockStatement); isBlock {
 		ast.Accept(node.Then, r)
+
+		// Render trailing comment after the block's closing brace
+		r.renderTrailingComment(trailing)
 		r.newline()
 	} else {
+		// Render trailing comment on the if line
+		r.renderTrailingComment(trailing)
 		r.newline()
 		r.indentInc()
 		ast.Accept(node.Then, r)
@@ -219,9 +333,10 @@ func (r *VCLRenderer) renderIfStatement(node *ast.IfStatement, writeIndent bool)
 	if node.Else != nil {
 		r.writeIndent()
 		if ifStmt, isIf := node.Else.(*ast.IfStatement); isIf {
-			// else if case
+			// else if case - get comments for the else if node
+			elseTrailing := r.renderNodeComments(node.Else, false)
 			r.write("else ")
-			r.renderIfStatement(ifStmt, false)
+			r.renderIfStatement(ifStmt, false, elseTrailing)
 		} else if _, isBlock := node.Else.(*ast.BlockStatement); isBlock {
 			r.write("else ")
 			ast.Accept(node.Else, r)
@@ -239,40 +354,68 @@ func (r *VCLRenderer) renderIfStatement(node *ast.IfStatement, writeIndent bool)
 }
 
 func (r *VCLRenderer) VisitSetStatement(node *ast.SetStatement) interface{} {
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
 	r.writeIndent()
 	r.write("set ")
 	ast.Accept(node.Variable, r)
 	r.write(fmt.Sprintf(" %s ", node.Operator))
 	ast.Accept(node.Value, r)
 	r.write(";")
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
 	r.newline()
+
 	return nil
 }
 
 func (r *VCLRenderer) VisitUnsetStatement(node *ast.UnsetStatement) interface{} {
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
 	r.writeIndent()
 	r.write("unset ")
 	ast.Accept(node.Variable, r)
 	r.write(";")
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
 	r.newline()
+
 	return nil
 }
 
 func (r *VCLRenderer) VisitCallStatement(node *ast.CallStatement) interface{} {
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
 	r.writeIndent()
 	r.write("call ")
 	ast.Accept(node.Function, r)
 	r.write(";")
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
 	r.newline()
+
 	return nil
 }
 
 func (r *VCLRenderer) VisitReturnStatement(node *ast.ReturnStatement) interface{} {
+	// Render leading comments
+	trailing := r.renderNodeComments(node, true)
+
 	r.writeIndent()
 	r.write("return(")
 	ast.Accept(node.Action, r)
 	r.write(");")
+
+	// Render trailing comment
+	r.renderTrailingComment(trailing)
 	r.newline()
+
 	return nil
 }
 

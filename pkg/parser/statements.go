@@ -80,13 +80,13 @@ func (p *Parser) parseBlockStatement() *ast2.BlockStatement {
 	p.nextToken() // move past '{'
 
 	for !p.currentTokenIs(lexer.RBRACE) && !p.currentTokenIs(lexer.EOF) && !p.maxErrorsReached {
-		if p.currentTokenIs(lexer.COMMENT) {
-			p.nextToken()
-			continue
-		}
+		// Collect leading comments for this statement
+		leading := p.consumeComments()
 
 		statement := p.parseStatement()
 		if statement != nil {
+			// Attach comments to the statement
+			p.attachCommentsToNode(statement, leading)
 			stmt.Statements = append(stmt.Statements, statement)
 			p.nextToken()
 		} else {
