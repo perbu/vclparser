@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/perbu/vclparser/pkg/ast"
@@ -48,6 +49,10 @@ type Parser struct {
 	panicMode        bool // Are we currently in error recovery?
 	synchronizing    bool // Are we synchronizing to a recovery point?
 	maxErrorsReached bool // Have we reached the maximum error limit?
+
+	// Comment handling
+	leadingComments []ast.Comment // Comments collected before the next node
+	lastLine        int           // Last line number of the previous token (for trailing comment detection)
 }
 
 // New creates a new parser with default configuration
@@ -117,15 +122,67 @@ func (p *Parser) Errors() []DetailedError {
 	return p.errors
 }
 
-// nextToken advances to the next token
+// nextToken advances to the next token and collects any comments
 func (p *Parser) nextToken() {
+	p.lastLine = p.currentToken.End.Line
 	p.currentToken = p.peekToken
 	p.peekToken = p.lexer.NextToken()
 
-	// Skip comments during parsing
+	// Collect comments instead of skipping them
 	for p.peekToken.Type == lexer.COMMENT {
+		comment := ast.Comment{
+			Text:    p.peekToken.Value,
+			Start:   p.peekToken.Start,
+			End:     p.peekToken.End,
+			IsBlock: len(p.peekToken.Value) >= 2 && p.peekToken.Value[0] == '/' && p.peekToken.Value[1] == '*',
+		}
+		p.leadingComments = append(p.leadingComments, comment)
 		p.peekToken = p.lexer.NextToken()
 	}
+}
+
+// consumeComments returns and clears the collected leading comments
+func (p *Parser) consumeComments() []ast.Comment {
+	comments := p.leadingComments
+	p.leadingComments = nil
+	return comments
+}
+
+// attachComments attaches collected comments to a node
+func (p *Parser) attachComments(node ast.Node, leading []ast.Comment) {
+	if len(leading) > 0 || p.hasTrailingComment() {
+		nodeComments := &ast.NodeComments{
+			Leading: leading,
+		}
+		node.SetComments(nodeComments)
+	}
+}
+
+// hasTrailingComment checks if there's a potential trailing comment on the same line
+func (p *Parser) hasTrailingComment() bool {
+	// Check if we have leading comments and the first one is on the same line as the last token
+	if len(p.leadingComments) > 0 {
+		firstComment := p.leadingComments[0]
+		// A trailing comment is on the same line as the previous token
+		if firstComment.Start.Line == p.lastLine {
+			return true
+		}
+	}
+	return false
+}
+
+// extractTrailingComment removes and returns a trailing comment if present
+func (p *Parser) extractTrailingComment() *ast.Comment {
+	if len(p.leadingComments) > 0 {
+		firstComment := p.leadingComments[0]
+		// A trailing comment is on the same line as the previous token
+		if firstComment.Start.Line == p.lastLine {
+			trailing := firstComment
+			p.leadingComments = p.leadingComments[1:]
+			return &trailing
+		}
+	}
+	return nil
 }
 
 // addError adds a parsing error
@@ -243,16 +300,17 @@ func (p *Parser) ParseProgram() *ast.Program {
 	// Set program reference for subroutine merging
 	p.program = program
 
-	// Skip any initial comments
-	for p.currentTokenIs(lexer.COMMENT) {
-		p.nextToken()
-	}
-
 	// Parse VCL version declaration (required for main files, optional for includes)
 	if p.currentTokenIs(lexer.VCL_KW) {
+		// Collect any leading comments for the version declaration
+		leading := p.consumeComments()
 		program.VCLVersion = p.parseVCLVersionDecl()
 		if program.VCLVersion == nil {
 			return program
+		}
+		// Attach comments to version declaration
+		if program.VCLVersion != nil {
+			p.attachCommentsToNode(program.VCLVersion, leading)
 		}
 		p.nextToken() // Move past the semicolon
 	} else if !p.config.AllowMissingVersion {
@@ -262,15 +320,16 @@ func (p *Parser) ParseProgram() *ast.Program {
 
 	// Parse declarations
 	for !p.currentTokenIs(lexer.EOF) && !p.maxErrorsReached {
-		if p.currentTokenIs(lexer.COMMENT) {
-			p.nextToken()
-			continue
-		}
+		// Collect leading comments before each declaration
+		leading := p.consumeComments()
 
 		decl := p.parseDeclaration()
 		if decl != nil {
+			// Attach comments to the declaration
+			p.attachCommentsToNode(decl, leading)
 			program.Declarations = append(program.Declarations, decl)
 		}
+		// Note: if decl is nil, leading comments are discarded (error recovery)
 
 		// Don't advance token if we're at EOF
 		if !p.currentTokenIs(lexer.EOF) {
@@ -280,6 +339,22 @@ func (p *Parser) ParseProgram() *ast.Program {
 
 	program.EndPos = p.currentToken.End
 	return program
+}
+
+// attachCommentsToNode attaches leading and trailing comments to a node
+func (p *Parser) attachCommentsToNode(node ast.Node, leading []ast.Comment) {
+	// Check if node is nil or if the underlying value is nil
+	if node == nil || reflect.ValueOf(node).IsNil() {
+		return
+	}
+	trailing := p.extractTrailingComment()
+	if len(leading) > 0 || trailing != nil {
+		nodeComments := &ast.NodeComments{
+			Leading:  leading,
+			Trailing: trailing,
+		}
+		node.SetComments(nodeComments)
+	}
 }
 
 // findSubroutineDecl searches for an existing subroutine declaration by name

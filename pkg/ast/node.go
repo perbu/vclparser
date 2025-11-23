@@ -4,21 +4,45 @@ import (
 	"github.com/perbu/vclparser/pkg/lexer"
 )
 
+// Comment represents a single comment in the VCL source
+type Comment struct {
+	Text     string          // The comment text (including // or /* */)
+	Start    lexer.Position  // Starting position
+	End      lexer.Position  // Ending position
+	IsBlock  bool            // true for /* */ comments, false for // and # comments
+}
+
+// CommentGroup represents a sequence of comments with no other tokens between them
+type CommentGroup struct {
+	Comments []Comment
+}
+
 // Node represents any node in the AST
 type Node interface {
 	String() string
 	Start() lexer.Position
 	End() lexer.Position
+	GetComments() *NodeComments
+	SetComments(*NodeComments)
+}
+
+// NodeComments holds comments associated with a node
+type NodeComments struct {
+	Leading  []Comment  // Comments before the node
+	Trailing *Comment   // Comment on the same line after the node
 }
 
 // BaseNode provides common functionality for all AST nodes
 type BaseNode struct {
 	StartPos lexer.Position
 	EndPos   lexer.Position
+	Comments *NodeComments
 }
 
 func (b BaseNode) Start() lexer.Position { return b.StartPos }
 func (b BaseNode) End() lexer.Position   { return b.EndPos }
+func (b BaseNode) GetComments() *NodeComments { return b.Comments }
+func (b *BaseNode) SetComments(c *NodeComments) { b.Comments = c }
 
 // Program represents the root of a VCL AST
 type Program struct {
