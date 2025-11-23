@@ -10,25 +10,54 @@ import (
 	"github.com/perbu/vclparser/pkg/types"
 )
 
-// Config contains parser configuration options
-type Config struct {
-	// DisableInlineC disables parsing of C code blocks (C{ }C)
-	DisableInlineC bool
-	// MaxErrors limits the number of errors before stopping parsing (0 = no limit)
-	MaxErrors int
-	// AllowMissingVersion allows parsing VCL files without version declarations
-	// This is useful for included files which don't need their own version declaration
-	AllowMissingVersion bool
-	// SkipSubroutineValidation skips validation of subroutine calls during parsing
-	// This is useful for included files where subroutines may be defined in other files
-	SkipSubroutineValidation bool
+// Option configures parser behavior
+type Option func(*Parser)
+
+// WithMaxErrors limits the number of errors before stopping parsing (0 = no limit)
+// Default: 8
+func WithMaxErrors(max int) Option {
+	return func(p *Parser) {
+		p.maxErrors = max
+	}
 }
 
-// DefaultConfig returns the default parser configuration
-func DefaultConfig() *Config {
-	return &Config{
-		DisableInlineC: false,
-		MaxErrors:      8, // Stop after 8 errors by default
+// WithDisableInlineC disables parsing of C code blocks (C{ }C)
+func WithDisableInlineC(disable bool) Option {
+	return func(p *Parser) {
+		p.disableInlineC = disable
+	}
+}
+
+// WithAllowMissingVersion allows parsing VCL files without version declarations
+// This is useful for included files which don't need their own version declaration
+func WithAllowMissingVersion(allow bool) Option {
+	return func(p *Parser) {
+		p.allowMissingVersion = allow
+	}
+}
+
+// WithSkipSubroutineValidation skips validation of subroutine calls during parsing
+// This is useful for included files where subroutines may be defined in other files
+func WithSkipSubroutineValidation(skip bool) Option {
+	return func(p *Parser) {
+		p.skipSubroutineValidation = skip
+	}
+}
+
+// WithResolveIncludes enables automatic resolution of include statements after parsing
+// The basePath parameter specifies the base directory for resolving relative include paths
+func WithResolveIncludes(basePath string) Option {
+	return func(p *Parser) {
+		p.resolveIncludes = true
+		p.includeBasePath = basePath
+	}
+}
+
+// WithIncludeMaxDepth sets the maximum depth for resolving nested includes
+// Default: 10
+func WithIncludeMaxDepth(depth int) Option {
+	return func(p *Parser) {
+		p.includeMaxDepth = depth
 	}
 }
 
@@ -39,11 +68,19 @@ type Parser struct {
 	input       string // Store original VCL source for error context
 	filename    string // Store filename for error reporting
 	symbolTable *types.SymbolTable
-	config      *Config      // Parser configuration
 	program     *ast.Program // Current program being built (used for subroutine merging)
 
 	currentToken lexer.Token
 	peekToken    lexer.Token
+
+	// Configuration options
+	maxErrors                int
+	disableInlineC           bool
+	allowMissingVersion      bool
+	skipSubroutineValidation bool
+	resolveIncludes          bool
+	includeBasePath          string
+	includeMaxDepth          int
 
 	// Recovery state
 	panicMode        bool // Are we currently in error recovery?
@@ -55,24 +92,21 @@ type Parser struct {
 	lastLine        int           // Last line number of the previous token (for trailing comment detection)
 }
 
-// New creates a new parser with default configuration
-func New(l *lexer.Lexer, input, filename string) *Parser {
-	return NewWithConfig(l, input, filename, DefaultConfig())
-}
-
-// NewWithConfig creates a new parser with the specified configuration
-func NewWithConfig(l *lexer.Lexer, input, filename string, config *Config) *Parser {
-	if config == nil {
-		config = DefaultConfig()
+// New creates a new parser with the given options
+func New(l *lexer.Lexer, input, filename string, opts ...Option) *Parser {
+	p := &Parser{
+		lexer:           l,
+		errors:          []DetailedError{},
+		input:           input,
+		filename:        filename,
+		symbolTable:     types.NewSymbolTable(),
+		maxErrors:       8, // Default: stop after 8 errors
+		includeMaxDepth: 10, // Default: max 10 levels of includes
 	}
 
-	p := &Parser{
-		lexer:       l,
-		errors:      []DetailedError{},
-		input:       input,
-		filename:    filename,
-		symbolTable: types.NewSymbolTable(),
-		config:      config,
+	// Apply options
+	for _, opt := range opts {
+		opt(p)
 	}
 
 	// Read two tokens, so currentToken and peekToken are both set
@@ -82,20 +116,22 @@ func NewWithConfig(l *lexer.Lexer, input, filename string, config *Config) *Pars
 	return p
 }
 
-// Parse parses the input and returns the AST using default configuration
-func Parse(input, filename string) (*ast.Program, error) {
-	return ParseWithConfig(input, filename, DefaultConfig())
-}
-
-// ParseWithConfig parses the input and returns the AST using the specified configuration
-func ParseWithConfig(input, filename string, config *Config) (*ast.Program, error) {
+// Parse parses the input and returns the AST with the given options
+func Parse(input, filename string, opts ...Option) (*ast.Program, error) {
 	l := lexer.New(input, filename)
-	p := NewWithConfig(l, input, filename, config)
+	p := New(l, input, filename, opts...)
 	program := p.ParseProgram()
 
 	if len(p.errors) > 0 {
 		// Return the first error
 		return program, p.errors[0]
+	}
+
+	// Resolve includes if requested
+	if p.resolveIncludes {
+		// Import the include package here to avoid circular dependency issues
+		// The import is at the top of the file
+		return p.resolveIncludesInProgram(program)
 	}
 
 	return program, nil
@@ -231,10 +267,10 @@ func (p *Parser) synchronize() {
 
 // hasReachedMaxErrors checks if the parser has reached the maximum error limit
 func (p *Parser) hasReachedMaxErrors() bool {
-	if p.config.MaxErrors == 0 {
+	if p.maxErrors == 0 {
 		return false // 0 means unlimited
 	}
-	return len(p.errors) >= p.config.MaxErrors
+	return len(p.errors) >= p.maxErrors
 }
 
 // expectToken checks if current token matches expected type
@@ -313,7 +349,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 			p.attachCommentsToNode(program.VCLVersion, leading)
 		}
 		p.nextToken() // Move past the semicolon
-	} else if !p.config.AllowMissingVersion {
+	} else if !p.allowMissingVersion {
 		p.addError("VCL program must start with version declaration")
 		return program
 	}

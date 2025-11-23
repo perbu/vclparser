@@ -50,12 +50,8 @@ backend
 backend
 backend`
 
-	config := &Config{
-		MaxErrors: 0, // Unlimited
-	}
-
 	l := NewLexer(vclWithManyErrors, "test.vcl")
-	p := NewWithConfig(l, vclWithManyErrors, "test.vcl", config)
+	p := New(l, vclWithManyErrors, "test.vcl", WithMaxErrors(0)) // Unlimited
 	p.ParseProgram()
 
 	// Should collect same or more errors than default case since no limit
@@ -73,12 +69,8 @@ backend
 backend
 backend`
 
-	config := &Config{
-		MaxErrors: 3,
-	}
-
 	l := NewLexer(vclWithManyErrors, "test.vcl")
-	p := NewWithConfig(l, vclWithManyErrors, "test.vcl", config)
+	p := New(l, vclWithManyErrors, "test.vcl", WithMaxErrors(3))
 	p.ParseProgram()
 
 	if len(p.errors) > 3 {
@@ -101,9 +93,8 @@ backend default {
 }`
 
 	// Test with very low MaxErrors limit
-	config := &Config{MaxErrors: 1}
 	l := NewLexer(vclWithErrors, "test.vcl")
-	p := NewWithConfig(l, vclWithErrors, "test.vcl", config)
+	p := New(l, vclWithErrors, "test.vcl", WithMaxErrors(1))
 	program := p.ParseProgram()
 
 	// Should stop after 1 error

@@ -51,7 +51,7 @@ func (p *Parser) parseStatement() ast2.Statement {
 	case lexer.LBRACE:
 		return p.parseBlockStatement()
 	case lexer.CSRC:
-		if p.config.DisableInlineC {
+		if p.disableInlineC {
 			p.reportError("inline C code blocks are disabled")
 			return nil
 		}
@@ -260,7 +260,7 @@ func (p *Parser) parseCallStatement() *ast2.CallStatement {
 	}
 
 	// Validate that the called subroutine exists (unless validation is disabled)
-	if !p.config.SkipSubroutineValidation {
+	if !p.skipSubroutineValidation {
 		if symbol := p.symbolTable.Lookup(p.currentToken.Value); symbol == nil {
 			p.addError(fmt.Sprintf("undefined subroutine: %s", p.currentToken.Value))
 			return nil

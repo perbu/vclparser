@@ -9,6 +9,7 @@ import (
 
 	"github.com/perbu/vclparser/pkg/ast"
 	"github.com/perbu/vclparser/pkg/include"
+	"github.com/perbu/vclparser/pkg/parser"
 )
 
 func main() {
@@ -17,6 +18,7 @@ func main() {
 		basePath   = flag.String("base", "", "Base path for resolving relative includes (defaults to file's directory)")
 		outputJSON = flag.Bool("json", false, "Output AST as JSON instead of pretty-printing")
 		maxDepth   = flag.Int("max-depth", 10, "Maximum include depth")
+		useParser  = flag.Bool("use-parser", true, "Use parser.Parse with options (simpler API)")
 		showHelp   = flag.Bool("help", false, "Show help message")
 	)
 	flag.Parse()
@@ -38,16 +40,33 @@ func main() {
 	fmt.Printf("Parsing VCL file: %s\n", *filename)
 	fmt.Printf("Base path: %s\n", resolveBasePath)
 	fmt.Printf("Max depth: %d\n", *maxDepth)
+	fmt.Printf("Using parser API: %v\n", *useParser)
 	fmt.Println()
 
-	// Create resolver with options
-	resolver := include.NewResolver(
-		include.WithBasePath(resolveBasePath),
-		include.WithMaxDepth(*maxDepth),
-	)
+	var program *ast.Program
+	var err error
 
-	// Parse and resolve includes
-	program, err := resolver.ResolveFile(filepath.Base(*filename))
+	if *useParser {
+		// New simplified API: use parser with include resolution option
+		content, readErr := os.ReadFile(*filename)
+		if readErr != nil {
+			fmt.Fprintf(os.Stderr, "Error reading file: %v\n", readErr)
+			os.Exit(1)
+		}
+
+		program, err = parser.Parse(string(content), *filename,
+			parser.WithResolveIncludes(resolveBasePath),
+			parser.WithIncludeMaxDepth(*maxDepth),
+		)
+	} else {
+		// Alternative API: use include resolver directly
+		resolver := include.NewResolver(
+			include.WithBasePath(resolveBasePath),
+			include.WithMaxDepth(*maxDepth),
+		)
+		program, err = resolver.ResolveFile(filepath.Base(*filename))
+	}
+
 	if err != nil {
 		handleError(err)
 		os.Exit(1)
@@ -78,10 +97,14 @@ func printHelp() {
 	fmt.Printf("  %s -file main.vcl -base /etc/varnish\n", os.Args[0])
 	fmt.Printf("  %s -file main.vcl -json > ast.json\n", os.Args[0])
 	fmt.Printf("  %s -file main.vcl -max-depth 5\n", os.Args[0])
+	fmt.Printf("  %s -file main.vcl -use-parser=false  # Use include resolver API\n", os.Args[0])
 	fmt.Println()
-	fmt.Println("The tool automatically resolves include statements and merges all")
-	fmt.Println("declarations into a single AST. Include paths are resolved relative")
-	fmt.Println("to the base path (defaults to the directory of the main file).")
+	fmt.Println("The tool demonstrates two ways to parse VCL with includes:")
+	fmt.Println("  1. Parser API (default): parser.Parse with WithResolveIncludes option")
+	fmt.Println("  2. Include resolver API: include.NewResolver and ResolveFile")
+	fmt.Println()
+	fmt.Println("Both approaches resolve include statements and merge all declarations")
+	fmt.Println("into a single AST. Include paths are resolved relative to the base path.")
 }
 
 func handleError(err error) {

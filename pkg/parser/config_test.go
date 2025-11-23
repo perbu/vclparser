@@ -7,13 +7,18 @@ import (
 	"github.com/perbu/vclparser/pkg/lexer"
 )
 
-func TestDefaultConfig(t *testing.T) {
-	config := DefaultConfig()
-	if config.DisableInlineC {
-		t.Error("Expected DisableInlineC to be false by default")
+func TestDefaultOptions(t *testing.T) {
+	l := lexer.New("vcl 4.1;", "test.vcl")
+	p := New(l, "vcl 4.1;", "test.vcl")
+
+	if p.disableInlineC {
+		t.Error("Expected disableInlineC to be false by default")
 	}
-	if config.MaxErrors != 8 {
-		t.Errorf("Expected MaxErrors to be 8 by default, got %d", config.MaxErrors)
+	if p.maxErrors != 8 {
+		t.Errorf("Expected maxErrors to be 8 by default, got %d", p.maxErrors)
+	}
+	if p.includeMaxDepth != 10 {
+		t.Errorf("Expected includeMaxDepth to be 10 by default, got %d", p.includeMaxDepth)
 	}
 }
 
@@ -32,11 +37,7 @@ sub vcl_recv {
 	}
 
 	// Test with inline C disabled
-	config := &Config{
-		DisableInlineC: true,
-		MaxErrors:      0,
-	}
-	_, err = ParseWithConfig(vclWithInlineC, "test.vcl", config)
+	_, err = Parse(vclWithInlineC, "test.vcl", WithDisableInlineC(true))
 	if err == nil {
 		t.Error("Expected parse to fail with inline C disabled")
 	}
@@ -45,32 +46,71 @@ sub vcl_recv {
 	}
 }
 
-func TestNewWithConfig(t *testing.T) {
-	config := &Config{
-		DisableInlineC: true,
-		MaxErrors:      10,
-	}
-
+func TestWithMaxErrors(t *testing.T) {
 	l := lexer.New("vcl 4.1;", "test.vcl")
-	p := NewWithConfig(l, "vcl 4.1;", "test.vcl", config)
+	p := New(l, "vcl 4.1;", "test.vcl", WithMaxErrors(10))
 
-	if !p.config.DisableInlineC {
-		t.Error("Expected parser to have DisableInlineC enabled")
-	}
-	if p.config.MaxErrors != 10 {
-		t.Errorf("Expected parser to have MaxErrors=10, got %d", p.config.MaxErrors)
+	if p.maxErrors != 10 {
+		t.Errorf("Expected parser to have maxErrors=10, got %d", p.maxErrors)
 	}
 }
 
-func TestNewWithConfigNil(t *testing.T) {
-	l := lexer.New("vcl 4.1;", "test.vcl")
-	p := NewWithConfig(l, "vcl 4.1;", "test.vcl", nil)
+func TestWithAllowMissingVersion(t *testing.T) {
+	vclWithoutVersion := `backend default {
+    .host = "127.0.0.1";
+    .port = "8080";
+}`
 
-	// Should use default config when nil is passed
-	if p.config.DisableInlineC {
-		t.Error("Expected parser to use default config when nil passed")
+	// Test without option (should fail)
+	_, err := Parse(vclWithoutVersion, "test.vcl")
+	if err == nil {
+		t.Error("Expected parse to fail without version declaration")
 	}
-	if p.config.MaxErrors != 8 {
-		t.Errorf("Expected parser to use default MaxErrors=8, got %d", p.config.MaxErrors)
+
+	// Test with option (should succeed)
+	_, err = Parse(vclWithoutVersion, "test.vcl", WithAllowMissingVersion(true))
+	if err != nil {
+		t.Errorf("Expected parse to succeed with WithAllowMissingVersion, got: %v", err)
+	}
+}
+
+func TestMultipleOptions(t *testing.T) {
+	l := lexer.New("vcl 4.1;", "test.vcl")
+	p := New(l, "vcl 4.1;", "test.vcl",
+		WithMaxErrors(5),
+		WithDisableInlineC(true),
+		WithAllowMissingVersion(true),
+		WithSkipSubroutineValidation(true),
+	)
+
+	if p.maxErrors != 5 {
+		t.Errorf("Expected maxErrors=5, got %d", p.maxErrors)
+	}
+	if !p.disableInlineC {
+		t.Error("Expected disableInlineC to be true")
+	}
+	if !p.allowMissingVersion {
+		t.Error("Expected allowMissingVersion to be true")
+	}
+	if !p.skipSubroutineValidation {
+		t.Error("Expected skipSubroutineValidation to be true")
+	}
+}
+
+func TestWithResolveIncludes(t *testing.T) {
+	l := lexer.New("vcl 4.1;", "test.vcl")
+	p := New(l, "vcl 4.1;", "test.vcl",
+		WithResolveIncludes("/etc/varnish"),
+		WithIncludeMaxDepth(5),
+	)
+
+	if !p.resolveIncludes {
+		t.Error("Expected resolveIncludes to be true")
+	}
+	if p.includeBasePath != "/etc/varnish" {
+		t.Errorf("Expected includeBasePath='/etc/varnish', got %s", p.includeBasePath)
+	}
+	if p.includeMaxDepth != 5 {
+		t.Errorf("Expected includeMaxDepth=5, got %d", p.includeMaxDepth)
 	}
 }

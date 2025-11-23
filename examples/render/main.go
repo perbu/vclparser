@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/perbu/vclparser/pkg/ast"
-	"github.com/perbu/vclparser/pkg/include"
 	"github.com/perbu/vclparser/pkg/parser"
 	"github.com/perbu/vclparser/pkg/renderer"
 )
@@ -53,25 +52,18 @@ func main() {
 		log.Fatalf("Error reading file %s: %v", *inputFile, err)
 	}
 
-	var program *ast.Program
-
+	// Parse with optional include resolution
+	var opts []parser.Option
 	if *resolveInc {
-		// Parse with include resolution
-		resolver := include.NewResolver(
-			include.WithBasePath(*basePath),
-		)
-		program, err = resolver.ResolveFile(*inputFile)
-		if err != nil {
-			log.Fatalf("Error resolving includes: %v", err)
-		}
-		fmt.Fprintf(os.Stderr, "✓ Parsed %s with includes resolved\n", *inputFile)
+		opts = append(opts, parser.WithResolveIncludes(*basePath))
+		fmt.Fprintf(os.Stderr, "✓ Parsing %s with includes resolved\n", *inputFile)
 	} else {
-		// Parse without include resolution
-		program, err = parser.Parse(string(content), *inputFile)
-		if err != nil {
-			log.Fatalf("Parse error: %v", err)
-		}
-		fmt.Fprintf(os.Stderr, "✓ Parsed %s\n", *inputFile)
+		fmt.Fprintf(os.Stderr, "✓ Parsing %s\n", *inputFile)
+	}
+
+	program, err := parser.Parse(string(content), *inputFile, opts...)
+	if err != nil {
+		log.Fatalf("Parse error: %v", err)
 	}
 
 	// Render the AST back to VCL
