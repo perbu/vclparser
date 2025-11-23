@@ -8,7 +8,8 @@ A VCL (Varnish Configuration Language) parser implemented in Go that parses VCL 
 - Recursive descent parser with error recovery
 - Type-safe AST representation
 - **VCL renderer to convert AST back to source code**
-- Post-parse resolution of include statements
+- **Integrated include resolution with parser options**
+- Functional options pattern for flexible configuration
 - Symbol table and semantic analysis
 - Visitor pattern for AST traversal
 - VMOD and variable semantics loaded from varnishd build
@@ -23,7 +24,7 @@ time.
 
 ## Usage
 
-### Parsing VCL
+### Basic Parsing
 
 ```go
 package main
@@ -57,6 +58,60 @@ func main() {
 	}
 
 	fmt.Printf("Parsed VCL with %d declarations\n", len(program.Declarations))
+}
+```
+
+### Parsing with Options
+
+The parser uses a functional options pattern for configuration:
+
+```go
+// Parse with custom error limit
+program, err := parser.Parse(vclCode, "example.vcl",
+    parser.WithMaxErrors(10),
+)
+
+// Parse included files (allow missing version declaration)
+program, err := parser.Parse(includedFileContent, "backend.vcl",
+    parser.WithAllowMissingVersion(true),
+)
+
+// Multiple options
+program, err := parser.Parse(vclCode, "example.vcl",
+    parser.WithMaxErrors(5),
+    parser.WithDisableInlineC(true),
+)
+```
+
+### Parsing with Include Resolution
+
+The parser can automatically resolve and merge include statements:
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/perbu/vclparser/pkg/parser"
+)
+
+func main() {
+	content, _ := os.ReadFile("main.vcl")
+
+	// Parse and automatically resolve all includes
+	program, err := parser.Parse(string(content), "main.vcl",
+		parser.WithResolveIncludes("/etc/varnish"),
+		parser.WithIncludeMaxDepth(10),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Parsed VCL with %d declarations (includes merged)\n",
+		len(program.Declarations))
 }
 ```
 

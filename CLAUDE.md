@@ -25,12 +25,13 @@ The codebase follows a clean separation of concerns across four main packages:
 - **Symbol Tables**: Track variable scope and built-in VCL functions/variables
 
 ### Entry Points
-- **parser.Parse(input, filename)** - Main parsing function that returns `*ast.Program`
+- **parser.Parse(input, filename, opts...)** - Main parsing function with functional options
+- **parser.New(lexer, input, filename, opts...)** - Create parser instance with options
 - **renderer.Render(program)** - Renders an AST back to VCL source code
-- **include.ResolveFile(filename)** - Parse VCL file and resolve all include statements
+- **include.ResolveFile(filename)** - Alternative API for include resolution (legacy)
 - **examples/parse/main.go** - CLI tool demonstrating basic parser usage with pretty-printing and JSON export
-- **examples/includes/main.go** - CLI tool demonstrating include resolution with comprehensive options
-- **examples/render/main.go** - CLI tool for rendering/formatting VCL files
+- **examples/includes/main.go** - CLI tool demonstrating both parser and include resolver APIs
+- **examples/render/main.go** - CLI tool for rendering/formatting VCL files with optional include resolution
 
 ## Common Commands
 
@@ -101,18 +102,25 @@ Based on TODO.md, current limitations include:
 
 ## Recent Improvements (2025)
 
+- ✅ **Functional Options Pattern**: Idiomatic Go API for parser configuration
+  - Replaced Config struct with functional options
+  - Single, clean API: `parser.Parse()` and `parser.New()` with variadic options
+  - Options: `WithMaxErrors()`, `WithDisableInlineC()`, `WithAllowMissingVersion()`, etc.
+  - Breaking change from previous Config-based API
+  - Examples: `parser.Parse(content, "file.vcl", parser.WithMaxErrors(10))`
+
+- ✅ **Integrated Include Resolution**: Parser can automatically resolve includes
+  - New options: `WithResolveIncludes(basePath)` and `WithIncludeMaxDepth(depth)`
+  - Include resolution logic integrated into parser package (avoids circular dependencies)
+  - Simplifies common use case: parse + resolve in one call
+  - Alternative: `pkg/include` package still available for advanced use cases
+  - Examples: `parser.Parse(content, "main.vcl", parser.WithResolveIncludes("/etc/varnish"))`
+
 - ✅ **Named Parameter Syntax**: Complete support for named arguments in VMOD function calls
   - Two-phase parsing (positional then named arguments)
   - Duplicate and unknown parameter detection
   - Compatible with varnishd argument parsing behavior
   - Examples: `headerplus.as_list(NAME, ";", name_case = LOWER)`
-
-- ✅ **Include Statement Resolution**: Two-phase approach for handling VCL include statements
-  - Core parser creates `IncludeDecl` AST nodes (preserves syntax tree structure)
-  - Separate `pkg/include` package provides resolution with error handling
-  - Circular dependency detection and configurable depth limits
-  - Compatible with both single-file and multi-file VCL configurations
-  - Examples: `include.ResolveFile("main.vcl")` or `include.ResolveProgram(ast)`
 
 - ✅ **VCL Renderer**: Convert AST back to VCL source code
   - Visitor-based implementation for clean AST traversal
@@ -124,42 +132,53 @@ Based on TODO.md, current limitations include:
 
 ## Include Statement Handling
 
-VCL include statements are handled using a **two-phase approach** that differs from Varnish's behavior but provides better separation of concerns:
+VCL include statements can be handled in two ways:
 
-### Phase 1: Parsing (pkg/parser)
-- Parser recognizes `include "file.vcl";` statements
-- Creates `IncludeDecl` AST nodes without resolving file contents
-- Parser remains pure (no file I/O) and focused on syntax
+### Approach 1: Integrated Parser API (Recommended)
 
-### Phase 2: Resolution (pkg/include)
-- `include.ResolveFile()` or `include.ResolveProgram()` processes `IncludeDecl` nodes
+Use parser options for automatic include resolution:
+
+```go
+// Read file and parse with includes resolved
+content, _ := os.ReadFile("main.vcl")
+program, err := parser.Parse(string(content), "main.vcl",
+    parser.WithResolveIncludes("/etc/varnish"),
+    parser.WithIncludeMaxDepth(10),
+)
+```
+
+This is the simplest approach for most use cases. The parser automatically:
+- Recognizes `include "file.vcl";` statements
 - Recursively reads and parses included files
 - Merges all declarations into a single AST
 - Handles errors: circular dependencies, missing files, syntax errors, depth limits
 
-### Usage Patterns
+### Approach 2: Separate Include Resolver (Advanced)
 
-**Simple API (most common):**
-```go
-// Parse main.vcl and all its includes
-program, err := include.ResolveFile("main.vcl")
-```
+For more control, use the `pkg/include` package directly:
 
-**Advanced API with options:**
 ```go
+// Parse first (creates IncludeDecl nodes)
+program, err := parser.Parse(content, "main.vcl")
+
+// Resolve later
 resolver := include.NewResolver(
     include.WithBasePath("/etc/varnish"),
     include.WithMaxDepth(5),
 )
-program, err := resolver.ResolveFile("main.vcl")
+resolved, err := resolver.ResolveProgram(program)
 ```
 
-**Post-parsing resolution:**
+Or use the convenience function:
+
 ```go
-// Parse first, resolve later
-program, err := parser.Parse(content, "main.vcl")
-resolved, err := include.ResolveProgram(program)
+// Parse and resolve in one call
+program, err := include.ResolveFile("main.vcl")
 ```
+
+This approach provides a two-phase workflow:
+- **Phase 1**: Parser creates `IncludeDecl` AST nodes (preserves syntax tree)
+- **Phase 2**: Resolver processes nodes and merges included files
 
 ### Error Handling
 - `CircularIncludeError` - Detects and reports include loops with full chain
