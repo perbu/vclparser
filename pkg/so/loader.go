@@ -3,10 +3,12 @@ package so
 import (
 	"bytes"
 	"debug/elf"
+	"debug/macho"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/perbu/vclparser/pkg/vcc"
@@ -19,21 +21,47 @@ const (
 	jsonLegacyEndMark   = byte(0x03)
 )
 
-// LoadModuleFromSO loads VMOD interface metadata from a Linux ELF shared object.
+// LoadModuleFromSO loads VMOD interface metadata from a shared object.
+// It supports both ELF and Mach-O binaries.
 // It extracts embedded VMOD JSON and converts it to the internal vcc.Module model.
 func LoadModuleFromSO(filename string) (*vcc.Module, error) {
+	module, err := loadModuleFromELFFile(filename)
+	if err == nil {
+		return module, nil
+	}
+	elfErr := err
+
+	module, err = loadModuleFromMachOFile(filename)
+	if err == nil {
+		return module, nil
+	}
+	machOErr := err
+
+	module, err = loadModuleFromFatMachOFile(filename)
+	if err == nil {
+		return module, nil
+	}
+	fatMachOErr := err
+
+	return nil, fmt.Errorf(
+		"failed to load %s as ELF or Mach-O shared object: ELF: %v; Mach-O: %v; Mach-O (fat): %v",
+		filename, elfErr, machOErr, fatMachOErr,
+	)
+}
+
+func loadModuleFromELFFile(filename string) (*vcc.Module, error) {
 	soFile, err := elf.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s as ELF shared object: %w", filename, err)
 	}
 	defer soFile.Close()
 
-	moduleName := inferModuleName(filename, soFile)
+	moduleName := inferModuleNameELF(filename, soFile)
 	if moduleName == "" {
 		return nil, fmt.Errorf("failed to infer module name from %s", filename)
 	}
 
-	blob, err := extractVMODJSON(filename, soFile)
+	blob, err := extractVMODJSONFromELF(filename, soFile)
 	if err != nil {
 		return nil, err
 	}
@@ -51,11 +79,100 @@ func LoadModuleFromSO(filename string) (*vcc.Module, error) {
 	return module, nil
 }
 
-func inferModuleName(filename string, soFile *elf.File) string {
+func loadModuleFromMachOFile(filename string) (*vcc.Module, error) {
+	soFile, err := macho.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s as Mach-O shared object: %w", filename, err)
+	}
+	defer soFile.Close()
+
+	return loadModuleFromMachO(filename, soFile)
+}
+
+func loadModuleFromFatMachOFile(filename string) (*vcc.Module, error) {
+	fatFile, err := macho.OpenFat(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s as Mach-O universal binary: %w", filename, err)
+	}
+	defer fatFile.Close()
+
+	file, err := selectMachOFatArch(fatFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select Mach-O architecture for %s: %w", filename, err)
+	}
+
+	return loadModuleFromMachO(filename, file)
+}
+
+func loadModuleFromMachO(filename string, soFile *macho.File) (*vcc.Module, error) {
+	moduleName := inferModuleNameMachO(filename, soFile)
+	if moduleName == "" {
+		return nil, fmt.Errorf("failed to infer module name from %s", filename)
+	}
+
+	blob, err := extractVMODJSONFromMachO(filename, soFile)
+	if err != nil {
+		return nil, err
+	}
+
+	stanzas, err := decodeJSONStanzas(blob)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode VMOD JSON from %s: %w", filename, err)
+	}
+
+	module, err := stanzasToModule(moduleName, stanzas)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse VMOD JSON interface from %s: %w", filename, err)
+	}
+
+	return module, nil
+}
+
+func selectMachOFatArch(fatFile *macho.FatFile) (*macho.File, error) {
+	if fatFile == nil || len(fatFile.Arches) == 0 {
+		return nil, fmt.Errorf("no architectures found")
+	}
+
+	preferredCPU, ok := preferredMachOCPU()
+	if ok {
+		for i := range fatFile.Arches {
+			if fatFile.Arches[i].Cpu == preferredCPU {
+				return fatFile.Arches[i].File, nil
+			}
+		}
+	}
+
+	return fatFile.Arches[0].File, nil
+}
+
+func preferredMachOCPU() (macho.Cpu, bool) {
+	switch runtime.GOARCH {
+	case "amd64":
+		return macho.CpuAmd64, true
+	case "arm64":
+		return macho.CpuArm64, true
+	default:
+		return 0, false
+	}
+}
+
+func inferModuleNameELF(filename string, soFile *elf.File) string {
 	if name := moduleNameFromDataSymbol(soFile); name != "" {
 		return strings.ToLower(name)
 	}
 
+	return inferModuleNameFromFilename(filename)
+}
+
+func inferModuleNameMachO(filename string, soFile *macho.File) string {
+	if name := moduleNameFromDataSymbolMachO(soFile); name != "" {
+		return strings.ToLower(name)
+	}
+
+	return inferModuleNameFromFilename(filename)
+}
+
+func inferModuleNameFromFilename(filename string) string {
 	base := filepath.Base(filename)
 	if strings.HasPrefix(base, "libvmod_") && strings.HasSuffix(base, ".so") {
 		base = strings.TrimPrefix(base, "libvmod_")
@@ -71,8 +188,9 @@ func moduleNameFromDataSymbol(soFile *elf.File) string {
 	dynSyms, err := soFile.DynamicSymbols()
 	if err == nil {
 		for _, sym := range dynSyms {
-			if strings.HasPrefix(sym.Name, "Vmod_") && strings.HasSuffix(sym.Name, "_Data") {
-				return strings.TrimSuffix(strings.TrimPrefix(sym.Name, "Vmod_"), "_Data")
+			name := normalizeSymbolName(sym.Name)
+			if strings.HasPrefix(name, "Vmod_") && strings.HasSuffix(name, "_Data") {
+				return strings.TrimSuffix(strings.TrimPrefix(name, "Vmod_"), "_Data")
 			}
 		}
 	}
@@ -82,15 +200,53 @@ func moduleNameFromDataSymbol(soFile *elf.File) string {
 		return ""
 	}
 	for _, sym := range syms {
-		if strings.HasPrefix(sym.Name, "Vmod_") && strings.HasSuffix(sym.Name, "_Data") {
-			return strings.TrimSuffix(strings.TrimPrefix(sym.Name, "Vmod_"), "_Data")
+		name := normalizeSymbolName(sym.Name)
+		if strings.HasPrefix(name, "Vmod_") && strings.HasSuffix(name, "_Data") {
+			return strings.TrimSuffix(strings.TrimPrefix(name, "Vmod_"), "_Data")
 		}
 	}
 	return ""
 }
 
-func extractVMODJSON(filename string, soFile *elf.File) ([]byte, error) {
-	blob, err := extractVMODJSONFromSymbol(soFile, jsonSymbolName)
+func moduleNameFromDataSymbolMachO(soFile *macho.File) string {
+	if soFile.Symtab == nil {
+		return ""
+	}
+
+	for _, sym := range soFile.Symtab.Syms {
+		name := normalizeSymbolName(sym.Name)
+		if strings.HasPrefix(name, "Vmod_") && strings.HasSuffix(name, "_Data") {
+			return strings.TrimSuffix(strings.TrimPrefix(name, "Vmod_"), "_Data")
+		}
+	}
+
+	return ""
+}
+
+func normalizeSymbolName(name string) string {
+	return strings.TrimLeft(name, "_")
+}
+
+func extractVMODJSONFromELF(filename string, soFile *elf.File) ([]byte, error) {
+	return extractVMODJSONWithFallback(
+		filename,
+		func() ([]byte, error) {
+			return extractVMODJSONFromELFSymbol(soFile, jsonSymbolName)
+		},
+	)
+}
+
+func extractVMODJSONFromMachO(filename string, soFile *macho.File) ([]byte, error) {
+	return extractVMODJSONWithFallback(
+		filename,
+		func() ([]byte, error) {
+			return extractVMODJSONFromMachOSymbol(soFile, jsonSymbolName)
+		},
+	)
+}
+
+func extractVMODJSONWithFallback(filename string, extractFromSymbol func() ([]byte, error)) ([]byte, error) {
+	blob, err := extractFromSymbol()
 	if err == nil {
 		return blob, nil
 	}
@@ -110,7 +266,7 @@ func extractVMODJSON(filename string, soFile *elf.File) ([]byte, error) {
 	return blob, nil
 }
 
-func extractVMODJSONFromSymbol(soFile *elf.File, symbolName string) ([]byte, error) {
+func extractVMODJSONFromELFSymbol(soFile *elf.File, symbolName string) ([]byte, error) {
 	symbols, err := soFile.Symbols()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read symbol table: %w", err)
@@ -118,7 +274,7 @@ func extractVMODJSONFromSymbol(soFile *elf.File, symbolName string) ([]byte, err
 
 	var vmodJSONSymbol *elf.Symbol
 	for i := range symbols {
-		if symbols[i].Name == symbolName {
+		if normalizeSymbolName(symbols[i].Name) == symbolName {
 			vmodJSONSymbol = &symbols[i]
 			break
 		}
@@ -128,7 +284,7 @@ func extractVMODJSONFromSymbol(soFile *elf.File, symbolName string) ([]byte, err
 		return nil, fmt.Errorf("symbol %s not found", symbolName)
 	}
 
-	data, err := readSymbolData(soFile, *vmodJSONSymbol)
+	data, err := readELFSymbolData(soFile, *vmodJSONSymbol)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read symbol %s: %w", symbolName, err)
 	}
@@ -140,7 +296,36 @@ func extractVMODJSONFromSymbol(soFile *elf.File, symbolName string) ([]byte, err
 	return blob, nil
 }
 
-func readSymbolData(soFile *elf.File, symbol elf.Symbol) ([]byte, error) {
+func extractVMODJSONFromMachOSymbol(soFile *macho.File, symbolName string) ([]byte, error) {
+	if soFile.Symtab == nil {
+		return nil, fmt.Errorf("symbol table not found")
+	}
+
+	var vmodJSONSymbol *macho.Symbol
+	for i := range soFile.Symtab.Syms {
+		if normalizeSymbolName(soFile.Symtab.Syms[i].Name) == symbolName {
+			vmodJSONSymbol = &soFile.Symtab.Syms[i]
+			break
+		}
+	}
+
+	if vmodJSONSymbol == nil {
+		return nil, fmt.Errorf("symbol %s not found", symbolName)
+	}
+
+	data, err := readMachOSymbolData(soFile, *vmodJSONSymbol)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read symbol %s: %w", symbolName, err)
+	}
+
+	blob, err := extractVMODJSONFromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("invalid data in symbol %s: %w", symbolName, err)
+	}
+	return blob, nil
+}
+
+func readELFSymbolData(soFile *elf.File, symbol elf.Symbol) ([]byte, error) {
 	if symbol.Section == elf.SHN_UNDEF {
 		return nil, fmt.Errorf("symbol %s is undefined", symbol.Name)
 	}
@@ -168,6 +353,34 @@ func readSymbolData(soFile *elf.File, symbol elf.Symbol) ([]byte, error) {
 	}
 
 	value := sectionData[offset:end]
+	return bytes.TrimRight(value, "\x00"), nil
+}
+
+func readMachOSymbolData(soFile *macho.File, symbol macho.Symbol) ([]byte, error) {
+	if symbol.Sect == 0 {
+		return nil, fmt.Errorf("symbol %s is undefined", symbol.Name)
+	}
+
+	sectionIndex := int(symbol.Sect) - 1
+	if sectionIndex < 0 || sectionIndex >= len(soFile.Sections) {
+		return nil, fmt.Errorf("invalid section index %d", symbol.Sect)
+	}
+
+	section := soFile.Sections[sectionIndex]
+	sectionData, err := section.Data()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read section data: %w", err)
+	}
+
+	if symbol.Value < section.Addr {
+		return nil, fmt.Errorf("symbol value %#x is before section start %#x", symbol.Value, section.Addr)
+	}
+	offset := symbol.Value - section.Addr
+	if offset > uint64(len(sectionData)) {
+		return nil, fmt.Errorf("symbol offset %d is outside section", offset)
+	}
+
+	value := sectionData[offset:]
 	return bytes.TrimRight(value, "\x00"), nil
 }
 

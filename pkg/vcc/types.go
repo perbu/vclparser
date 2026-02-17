@@ -31,6 +31,8 @@ const (
 	TypeSubroutine VCCType = "SUB"
 	TypeEnum       VCCType = "ENUM"
 	TypeHTTP       VCCType = "HTTP"
+	TypeRegex      VCCType = "REGEX"
+	TypeBody       VCCType = "BODY"
 	TypeStevedore  VCCType = "STEVEDORE"
 	TypePrivTop    VCCType = "PRIV_TOP"
 	TypeBereq      VCCType = "BEREQ"
@@ -333,6 +335,10 @@ func ParseVCCType(typeStr string) (VCCType, *Enum, error) {
 		return TypeSubroutine, nil, nil
 	case "HTTP":
 		return TypeHTTP, nil, nil
+	case "REGEX":
+		return TypeRegex, nil, nil
+	case "BODY":
+		return TypeBody, nil, nil
 	case "STEVEDORE":
 		return TypeStevedore, nil, nil
 	case "PRIV_TOP":

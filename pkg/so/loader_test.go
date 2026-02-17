@@ -3,7 +3,6 @@ package so
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/perbu/vclparser/pkg/vcc"
@@ -11,8 +10,8 @@ import (
 
 func TestLoadModuleFromSO_ParsesStdFunctions(t *testing.T) {
 	stdPath := mustFindFixture(t,
-		filepath.Join("..", "..", "vmods", "libvmod_std.so"),
-		filepath.Join("vmods", "libvmod_std.so"),
+		filepath.Join("testdata", "elf", "libvmod_std.so"),
+		filepath.Join("pkg", "so", "testdata", "elf", "libvmod_std.so"),
 	)
 
 	module, err := LoadModuleFromSO(stdPath)
@@ -34,8 +33,8 @@ func TestLoadModuleFromSO_ParsesStdFunctions(t *testing.T) {
 	if len(toupper.Parameters) != 1 {
 		t.Fatalf("expected toupper to have 1 parameter, got %d", len(toupper.Parameters))
 	}
-	if toupper.Parameters[0].Type != vcc.TypeStringList {
-		t.Fatalf("expected toupper parameter type STRING_LIST, got %s", toupper.Parameters[0].Type)
+	if toupper.Parameters[0].Type != vcc.TypeStringList && toupper.Parameters[0].Type != vcc.TypeStrands {
+		t.Fatalf("expected toupper parameter type STRING_LIST or STRANDS, got %s", toupper.Parameters[0].Type)
 	}
 
 	setIPTOS := module.FindFunction("set_ip_tos")
@@ -49,8 +48,8 @@ func TestLoadModuleFromSO_ParsesStdFunctions(t *testing.T) {
 
 func TestLoadModuleFromSO_ParsesObjectsAndMethods(t *testing.T) {
 	directorsPath := mustFindFixture(t,
-		filepath.Join("..", "..", "vmods", "libvmod_directors.so"),
-		filepath.Join("vmods", "libvmod_directors.so"),
+		filepath.Join("testdata", "elf", "libvmod_directors.so"),
+		filepath.Join("pkg", "so", "testdata", "elf", "libvmod_directors.so"),
 	)
 
 	module, err := LoadModuleFromSO(directorsPath)
@@ -82,59 +81,67 @@ func TestLoadModuleFromSO_ParsesObjectsAndMethods(t *testing.T) {
 }
 
 func TestLoadModuleFromSO_ParsesEnumAndOptionalParameters(t *testing.T) {
-	udoPath := mustFindFixture(t,
-		filepath.Join("..", "..", "vmods", "libvmod_udo.so"),
-		filepath.Join("vmods", "libvmod_udo.so"),
+	directorsPath := mustFindFixture(t,
+		filepath.Join("testdata", "elf", "libvmod_directors.so"),
+		filepath.Join("pkg", "so", "testdata", "elf", "libvmod_directors.so"),
 	)
 
-	module, err := LoadModuleFromSO(udoPath)
+	module, err := LoadModuleFromSO(directorsPath)
 	if err != nil {
 		t.Fatalf("LoadModuleFromSO failed: %v", err)
 	}
 
-	director := module.FindObject("director")
-	if director == nil {
-		t.Fatalf("expected object director to be present")
+	shard := module.FindObject("shard")
+	if shard == nil {
+		t.Fatalf("expected object shard to be present")
 	}
 
-	setType := director.FindMethod("set_type")
-	if setType == nil {
-		t.Fatalf("expected method set_type to be present")
+	backend := shard.FindMethod("backend")
+	if backend == nil {
+		t.Fatalf("expected method backend to be present")
 	}
-	if len(setType.Parameters) != 1 {
-		t.Fatalf("expected set_type to have 1 parameter, got %d", len(setType.Parameters))
+	if len(backend.Parameters) < 2 {
+		t.Fatalf("expected backend to have at least 2 parameters, got %d", len(backend.Parameters))
 	}
-	if setType.Parameters[0].Type != vcc.TypeEnum {
-		t.Fatalf("expected set_type parameter type ENUM, got %s", setType.Parameters[0].Type)
+	if backend.Parameters[0].Type != vcc.TypeEnum {
+		t.Fatalf("expected backend first parameter type ENUM, got %s", backend.Parameters[0].Type)
 	}
-	if setType.Parameters[0].Enum == nil || len(setType.Parameters[0].Enum.Values) == 0 {
-		t.Fatalf("expected set_type enum values to be present")
+	if backend.Parameters[0].Enum == nil || len(backend.Parameters[0].Enum.Values) == 0 {
+		t.Fatalf("expected backend first enum values to be present")
 	}
-
-	reset := director.FindMethod("reset")
-	if reset == nil {
-		t.Fatalf("expected method reset to be present")
-	}
-	if len(reset.Parameters) < 2 {
-		t.Fatalf("expected reset to have at least 2 parameters, got %d", len(reset.Parameters))
-	}
-	if !reset.Parameters[1].Optional {
-		t.Fatalf("expected reset second parameter to be optional")
+	if !backend.Parameters[1].Optional {
+		t.Fatalf("expected backend second parameter to be optional")
 	}
 }
 
-func TestLoadModuleFromSO_RejectsNonELFBinary(t *testing.T) {
+func TestLoadModuleFromSO_ParsesMachOBinary(t *testing.T) {
 	machoPath := mustFindFixture(t,
 		filepath.Join("testdata", "macho", "libvmod_std.so"),
 		filepath.Join("pkg", "so", "testdata", "macho", "libvmod_std.so"),
 	)
 
-	_, err := LoadModuleFromSO(machoPath)
-	if err == nil {
-		t.Fatalf("expected error when loading non-ELF shared object")
+	module, err := LoadModuleFromSO(machoPath)
+	if err != nil {
+		t.Fatalf("expected Mach-O shared object to load, got: %v", err)
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "elf") {
-		t.Fatalf("expected ELF-related error, got: %v", err)
+	if module.Name != "std" {
+		t.Fatalf("expected module name std, got %q", module.Name)
+	}
+	if module.FindFunction("toupper") == nil {
+		t.Fatalf("expected function toupper to be present in Mach-O fixture")
+	}
+}
+
+func TestLoadModuleFromSO_RejectsUnsupportedBinary(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "not-a-shared-object.so")
+	if err := os.WriteFile(filePath, []byte("not-a-binary"), 0o644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	_, err := LoadModuleFromSO(filePath)
+	if err == nil {
+		t.Fatalf("expected error when loading unsupported shared object format")
 	}
 }
 

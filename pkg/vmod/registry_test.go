@@ -313,8 +313,8 @@ func mustFindVMODFixture(t *testing.T, filename string) string {
 	t.Helper()
 
 	candidates := []string{
-		filepath.Join("..", "..", "vmods", filename),
-		filepath.Join("vmods", filename),
+		filepath.Join("..", "so", "testdata", "elf", filename),
+		filepath.Join("pkg", "so", "testdata", "elf", filename),
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {
@@ -330,8 +330,8 @@ func mustFindVMODFixtureDir(t *testing.T) string {
 	t.Helper()
 
 	candidates := []string{
-		filepath.Join("..", "..", "vmods"),
-		"vmods",
+		filepath.Join("..", "so", "testdata", "elf"),
+		filepath.Join("pkg", "so", "testdata", "elf"),
 	}
 	for _, candidate := range candidates {
 		info, err := os.Stat(candidate)
