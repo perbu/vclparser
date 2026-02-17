@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/perbu/vclparser"
+	"github.com/perbu/vclparser/pkg/so"
 	"github.com/perbu/vclparser/pkg/vcc"
 )
 
@@ -23,6 +26,8 @@ func NewRegistry() *Registry {
 	}
 	// Load embedded VCC files automatically
 	_ = r.LoadEmbeddedVCCs()
+	// Best-effort load of VMOD interfaces from shared objects in local vmods/ directories.
+	_ = r.loadDefaultSODirectories()
 	return r
 }
 
@@ -54,14 +59,102 @@ func (r *Registry) loadVCCFromReader(reader io.Reader, source string) error {
 		return fmt.Errorf("failed to parse VCC from %s: %v", source, err)
 	}
 
-	// Register the module
+	return r.registerModule(module, source, true)
+}
+
+// LoadSOFile loads a VMOD interface directly from a shared object (.so) file.
+func (r *Registry) LoadSOFile(filename string) error {
+	module, err := so.LoadModuleFromSO(filename)
+	if err != nil {
+		return fmt.Errorf("failed to load VMOD shared object %s: %v", filename, err)
+	}
+
+	return r.registerModule(module, filename, true)
+}
+
+// LoadSODirectory loads all libvmod_*.so files from a directory.
+func (r *Registry) LoadSODirectory(dir string) error {
+	return r.loadSODirectory(dir, true)
+}
+
+func (r *Registry) loadSODirectory(dir string, overwrite bool) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("failed to read VMOD shared object directory %s: %v", dir, err)
+	}
+
+	loaded := 0
+	errors := make([]string, 0)
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		filename := entry.Name()
+		lower := strings.ToLower(filename)
+		if !strings.HasPrefix(lower, "libvmod_") || !strings.HasSuffix(lower, ".so") {
+			continue
+		}
+
+		fullPath := filepath.Join(dir, filename)
+		module, loadErr := so.LoadModuleFromSO(fullPath)
+		if loadErr != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", filename, loadErr))
+			continue
+		}
+
+		registerErr := r.registerModule(module, fullPath, overwrite)
+		if registerErr != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", filename, registerErr))
+			continue
+		}
+		loaded++
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("loaded %d VMOD shared objects from %s with %d errors: %s",
+			loaded, dir, len(errors), strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+func (r *Registry) registerModule(module *vcc.Module, source string, overwrite bool) error {
+	if module == nil {
+		return fmt.Errorf("module from %s is nil", source)
+	}
+	if module.Name == "" {
+		return fmt.Errorf("module in %s has no name", source)
+	}
+
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	if module.Name != "" {
-		r.modules[module.Name] = module
-	} else {
-		return fmt.Errorf("module in %s has no name", source)
+	if !overwrite {
+		if _, exists := r.modules[module.Name]; exists {
+			return nil
+		}
+	}
+	r.modules[module.Name] = module
+	return nil
+}
+
+func (r *Registry) loadDefaultSODirectories() error {
+	defaultDirs := []string{
+		"vmods",
+		filepath.Join("..", "vmods"),
+		filepath.Join("..", "..", "vmods"),
+	}
+
+	for _, dir := range defaultDirs {
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		if err := r.loadSODirectory(dir, false); err == nil {
+			return nil
+		}
 	}
 
 	return nil

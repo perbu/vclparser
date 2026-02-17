@@ -2,6 +2,7 @@ package vmod
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/perbu/vclparser/pkg/vcc"
@@ -265,4 +266,80 @@ $Event event1`
 	if testStats.EventCount != 1 {
 		t.Errorf("Expected 1 event, got %d", testStats.EventCount)
 	}
+}
+
+func TestRegistryLoadSOFile(t *testing.T) {
+	registry := NewEmptyRegistry()
+
+	stdPath := mustFindVMODFixture(t, "libvmod_std.so")
+	if err := registry.LoadSOFile(stdPath); err != nil {
+		t.Fatalf("Failed to load SO file: %v", err)
+	}
+
+	module, exists := registry.GetModule("std")
+	if !exists {
+		t.Fatalf("Expected std module to exist")
+	}
+	if module == nil {
+		t.Fatalf("Expected std module to be non-nil")
+	}
+
+	function := module.FindFunction("toupper")
+	if function == nil {
+		t.Fatalf("Expected std.toupper function to exist")
+	}
+	if function.ReturnType != vcc.TypeString {
+		t.Fatalf("Expected std.toupper return type STRING, got %s", function.ReturnType)
+	}
+}
+
+func TestRegistryLoadSODirectory(t *testing.T) {
+	registry := NewEmptyRegistry()
+
+	vmodsDir := mustFindVMODFixtureDir(t)
+	if err := registry.LoadSODirectory(vmodsDir); err != nil {
+		t.Fatalf("Failed to load SO directory: %v", err)
+	}
+
+	if !registry.ModuleExists("std") {
+		t.Fatalf("Expected std module to be loaded from SO directory")
+	}
+	if !registry.ModuleExists("directors") {
+		t.Fatalf("Expected directors module to be loaded from SO directory")
+	}
+}
+
+func mustFindVMODFixture(t *testing.T, filename string) string {
+	t.Helper()
+
+	candidates := []string{
+		filepath.Join("..", "..", "vmods", filename),
+		filepath.Join("vmods", filename),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+
+	t.Skipf("VMOD fixture %s not found", filename)
+	return ""
+}
+
+func mustFindVMODFixtureDir(t *testing.T) string {
+	t.Helper()
+
+	candidates := []string{
+		filepath.Join("..", "..", "vmods"),
+		"vmods",
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+
+	t.Skip("VMOD fixtures directory not found")
+	return ""
 }
