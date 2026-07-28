@@ -175,10 +175,22 @@ type Identifier struct {
 func (i *Identifier) String() string  { return "Identifier(" + i.Name + ")" }
 func (i *Identifier) expressionNode() {}
 
-// StringLiteral represents a string literal
+// StringLiteral represents a string literal.
+//
+// Value holds the raw bytes between the delimiters, exactly as they appeared
+// in the source. VCL does not interpret backslash escapes inside strings —
+// varnish's own lexer copies the delimited bytes verbatim — so a regex written
+// as "\.jpg$" has the two characters \ and . in Value, and rendering it must
+// write them back unchanged.
+//
+// Long reports whether the source used the {"..."} form. A short "..." string
+// cannot contain a double quote or a newline, so a literal carrying either is
+// rendered in long form regardless of this flag; Long exists to preserve the
+// author's choice when the value would fit in both.
 type StringLiteral struct {
 	BaseNode
 	Value string
+	Long  bool
 }
 
 func (s *StringLiteral) String() string  { return "StringLiteral(" + s.Value + ")" }

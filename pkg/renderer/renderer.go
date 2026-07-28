@@ -618,14 +618,42 @@ func (r *VCLRenderer) VisitIdentifier(node *ast.Identifier) interface{} {
 }
 
 func (r *VCLRenderer) VisitStringLiteral(node *ast.StringLiteral) interface{} {
-	// Escape special characters in strings
-	escaped := strings.ReplaceAll(node.Value, "\\", "\\\\")
-	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
-	escaped = strings.ReplaceAll(escaped, "\n", "\\n")
-	escaped = strings.ReplaceAll(escaped, "\r", "\\r")
-	escaped = strings.ReplaceAll(escaped, "\t", "\\t")
-	r.write(fmt.Sprintf("\"%s\"", escaped))
+	r.write(FormatStringLiteral(node.Value, node.Long))
 	return nil
+}
+
+// FormatStringLiteral renders a VCL string literal, choosing a delimiter that
+// can carry the value unchanged.
+//
+// VCL has no escape sequences inside strings: varnish's lexer copies the bytes
+// between the delimiters verbatim (see vcc_decstr in lib/libvcc/vcc_token.c),
+// so the value must be written back as-is. Escaping it — as this function's
+// predecessor did — doubles every backslash and silently changes the meaning
+// of regexes, turning "\.jpg$" into a pattern matching a literal backslash
+// followed by any character.
+//
+// The trade-off is therefore in the delimiter, never in the content:
+//
+//   - "..." cannot contain a double quote or a line break
+//   - {"..."} can contain anything except the closing sequence "}
+//
+// preferLong keeps a value that would fit either form in the long form, so a
+// literal the author wrote as {"..."} is rendered back that way.
+func FormatStringLiteral(value string, preferLong bool) string {
+	shortable := !strings.ContainsAny(value, "\"\r\n")
+	if shortable && !preferLong {
+		return `"` + value + `"`
+	}
+	if !strings.Contains(value, `"}`) {
+		return `{"` + value + `"}`
+	}
+	// The value closes its own long-string delimiter. VCL's third form,
+	// """...""", would be the escape hatch, but the lexer does not accept it
+	// yet, so fall back to whichever form can still hold the value.
+	if shortable {
+		return `"` + value + `"`
+	}
+	return `{"` + value + `"}`
 }
 
 func (r *VCLRenderer) VisitIntegerLiteral(node *ast.IntegerLiteral) interface{} {

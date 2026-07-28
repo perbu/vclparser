@@ -254,35 +254,47 @@ func (p *Parser) parseFloatLiteral() *ast2.FloatLiteral {
 	}
 }
 
-// parseStringLiteral parses a string literal
+// parseStringLiteral parses a short string literal ("...")
 func (p *Parser) parseStringLiteral() *ast2.StringLiteral {
-	// Remove quotes from string literal
-	value := strings.Trim(p.currentToken.Value, `"`)
-
 	return &ast2.StringLiteral{
 		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
-		Value: value,
+		Value: trimShortString(p.currentToken.Value),
 	}
 }
 
 // parseLongStringLiteral parses a long string literal ({" ... "})
 func (p *Parser) parseLongStringLiteral() *ast2.StringLiteral {
-	// Remove {" and "} delimiters from long string literal
-	value := p.currentToken.Value
-	if strings.HasPrefix(value, `{"`) && strings.HasSuffix(value, `"}`) {
-		value = value[2 : len(value)-2]
-	}
-
 	return &ast2.StringLiteral{
 		BaseNode: ast2.BaseNode{
 			StartPos: p.currentToken.Start,
 			EndPos:   p.currentToken.End,
 		},
-		Value: value,
+		Value: trimLongString(p.currentToken.Value),
+		Long:  true,
 	}
+}
+
+// trimShortString removes the surrounding quotes from a "..." token.
+//
+// It strips exactly one quote from each end rather than using strings.Trim,
+// which eats every quote at the boundary and so mangles values such as `""`
+// or a string whose content legitimately ends in a quote.
+func trimShortString(tok string) string {
+	if len(tok) >= 2 && strings.HasPrefix(tok, `"`) && strings.HasSuffix(tok, `"`) {
+		return tok[1 : len(tok)-1]
+	}
+	return tok
+}
+
+// trimLongString removes the surrounding {" and "} from a long string token.
+func trimLongString(tok string) string {
+	if len(tok) >= 4 && strings.HasPrefix(tok, `{"`) && strings.HasSuffix(tok, `"}`) {
+		return tok[2 : len(tok)-2]
+	}
+	return tok
 }
 
 // parseUnaryExpression parses a unary expression
@@ -529,14 +541,9 @@ func (p *Parser) parsePropertyValue() ast2.Expression {
 		p.nextToken() // move to the string token
 
 		if p.currentToken.Type == lexer.CSTR {
-			strValue := strings.Trim(p.currentToken.Value, `"`)
-			stringParts = append(stringParts, strValue)
+			stringParts = append(stringParts, trimShortString(p.currentToken.Value))
 		} else if p.currentToken.Type == lexer.LSTR {
-			strValue := p.currentToken.Value
-			if strings.HasPrefix(strValue, `{"`) && strings.HasSuffix(strValue, `"}`) {
-				strValue = strValue[2 : len(strValue)-2]
-			}
-			stringParts = append(stringParts, strValue)
+			stringParts = append(stringParts, trimLongString(p.currentToken.Value))
 		}
 	}
 
@@ -546,18 +553,17 @@ func (p *Parser) parsePropertyValue() ast2.Expression {
 	}
 
 	// Concatenate all strings with newlines (for probe .request properties)
-	concatenated := stringParts[0]
-	for i := 1; i < len(stringParts); i++ {
-		concatenated += "\r\n" + stringParts[i]
-	}
+	concatenated := strings.Join(stringParts, "\r\n")
 
-	// Return a single StringLiteral with the concatenated value
+	// Return a single StringLiteral with the concatenated value. It carries
+	// embedded CRLFs, which only the long form can represent.
 	return &ast2.StringLiteral{
 		BaseNode: ast2.BaseNode{
 			StartPos: firstExpr.Start(),
 			EndPos:   p.currentToken.End,
 		},
 		Value: concatenated,
+		Long:  true,
 	}
 }
 
